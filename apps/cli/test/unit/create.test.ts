@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 import type { Command } from 'commander';
 
 const HOOK = '0x' + 'cc'.repeat(20);
@@ -46,7 +47,7 @@ describe('task create command', () => {
   });
 
   it('creates a basic bounty task, defaulting visibility to public', async () => {
-    mockX402Post.mockResolvedValue({ taskId: '0xtask' });
+    mockX402Post.mockResolvedValue(writeOutcome({ taskId: '0xtask' }));
 
     await createCmd.parseAsync(BASE_ARGS, { from: 'node' });
 
@@ -60,11 +61,11 @@ describe('task create command', () => {
         submissionVisibility: 'public',
       })
     );
-    expect(mockPrintResult).toHaveBeenCalledWith({ taskId: '0xtask' });
+    expect(mockPrintResult).toHaveBeenCalledWith({ taskId: '0xtask' }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('passes --task-visibility unlisted through to the request body', async () => {
-    mockX402Post.mockResolvedValue({ taskId: '0xtask' });
+    mockX402Post.mockResolvedValue(writeOutcome({ taskId: '0xtask' }));
 
     await createCmd.parseAsync([...BASE_ARGS, '--task-visibility', 'unlisted'], {
       from: 'node',
@@ -128,7 +129,7 @@ describe('task create command', () => {
     });
 
     it('passes --allowed-viewers (comma-separated, trimmed) through to the request body', async () => {
-      mockX402Post.mockResolvedValue({ taskId: '0xtask' });
+      mockX402Post.mockResolvedValue(writeOutcome({ taskId: '0xtask' }));
 
       await createCmd.parseAsync(
         [
@@ -154,7 +155,7 @@ describe('task create command', () => {
     });
 
     it('passes --access-password through to the request body', async () => {
-      mockX402Post.mockResolvedValue({ taskId: '0xtask' });
+      mockX402Post.mockResolvedValue(writeOutcome({ taskId: '0xtask' }));
 
       await createCmd.parseAsync(
         [...BASE_ARGS, '--task-visibility', 'private', '--access-password', 'hunter22'],
@@ -168,7 +169,7 @@ describe('task create command', () => {
     });
 
     it('allows both --allowed-viewers and --access-password together', async () => {
-      mockX402Post.mockResolvedValue({ taskId: '0xtask' });
+      mockX402Post.mockResolvedValue(writeOutcome({ taskId: '0xtask' }));
 
       await createCmd.parseAsync(
         [
@@ -197,7 +198,7 @@ describe('task create command', () => {
   it.each(['reveal_all', 'winner_only', 'never'])(
     'passes --submission-visibility %s through to the request body',
     async (mode) => {
-      mockX402Post.mockResolvedValue({ taskId: '0xtask' });
+      mockX402Post.mockResolvedValue(writeOutcome({ taskId: '0xtask' }));
 
       await createCmd.parseAsync([...BASE_ARGS, '--submission-visibility', mode], {
         from: 'node',
@@ -224,7 +225,7 @@ describe('task create command', () => {
   });
 
   it('passes hook contract and hook-data when provided', async () => {
-    mockX402Post.mockResolvedValue({ taskId: '0xtask' });
+    mockX402Post.mockResolvedValue(writeOutcome({ taskId: '0xtask' }));
 
     await createCmd.parseAsync([...BASE_ARGS, '--hook', HOOK, '--hook-data', '0x0004'], {
       from: 'node',
@@ -255,7 +256,7 @@ describe('task create command', () => {
   });
 
   it('passes evaluator config when evaluator is provided', async () => {
-    mockX402Post.mockResolvedValue({ taskId: '0xtask' });
+    mockX402Post.mockResolvedValue(writeOutcome({ taskId: '0xtask' }));
 
     await createCmd.parseAsync(
       [

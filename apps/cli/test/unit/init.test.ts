@@ -2,6 +2,8 @@ import { buildWalletLegalAcceptanceMessage } from '@taskmarket/shared';
 import { privateKeyToAccount } from 'viem/accounts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { writeOutcome } from '../helpers/write-outcome.js';
+
 const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
   apiPost: vi.fn(),
@@ -99,17 +101,17 @@ describe('init command', () => {
     mocks.apiPost.mockImplementation(async (path: string, body: Record<string, unknown>) => {
       if (path === '/api/legal/challenge') {
         events.push('challenge');
-        return { bundle, expiresAt, issuedAt, message, nonce, walletAddress };
+        return writeOutcome({ bundle, expiresAt, issuedAt, message, nonce, walletAddress });
       }
       if (path === '/api/legal/accept/wallet') {
         events.push('accept');
         expect(body.signature).toMatch(/^0x[0-9a-f]+$/);
-        return {
+        return writeOutcome({
           acceptedAt: issuedAt,
           bundleDigest: bundle.bundleDigest,
           bundleVersion: bundle.version,
           receipt: 'receipt-1',
-        };
+        });
       }
       throw new Error(`Unexpected POST ${path}`);
     });
@@ -175,17 +177,17 @@ describe('wallet import command', () => {
     mocks.apiPost.mockImplementation(async (path: string, body: Record<string, unknown>) => {
       if (path === '/api/legal/challenge') {
         events.push('challenge');
-        return { bundle, expiresAt, issuedAt, message, nonce, walletAddress };
+        return writeOutcome({ bundle, expiresAt, issuedAt, message, nonce, walletAddress });
       }
       if (path === '/api/legal/accept/wallet') {
         events.push('accept');
         expect(body.signature).toMatch(/^0x[0-9a-f]+$/);
-        return {
+        return writeOutcome({
           acceptedAt: issuedAt,
           bundleDigest: bundle.bundleDigest,
           bundleVersion: bundle.version,
           receipt: 'receipt-1',
-        };
+        });
       }
       throw new Error(`Unexpected POST ${path}`);
     });

@@ -1,7 +1,7 @@
 import { isInFlightApiError } from '@taskmarket/shared';
 
 import { ApiError } from './api.js';
-import { getCurrentIdempotencyKey } from './idempotency.js';
+import { idempotencyKeyForError } from './idempotency.js';
 
 /**
  * The CLI's success envelope. `idempotencyKey` sits beside `data`, not inside it: `data` is the
@@ -10,9 +10,15 @@ import { getCurrentIdempotencyKey } from './idempotency.js';
  * additive, exactly as `status` was on the failure side, and it lets an operator reconciling
  * logs afterwards match a successful write to the key it was recorded under. Read-only commands
  * mint no key, so they emit the envelope they always did.
+ *
+ * The key is passed in, from the `WriteOutcome` the write returned. That is the whole of the
+ * mechanism: a success envelope can only carry a key the caller got back from a write it just
+ * made, so it cannot carry a different write's. A command with nothing to pass -- a read, or a
+ * batch whose several writes have no single answer -- emits the envelope without the field, and
+ * puts its per-write keys in `data` if they matter.
  */
-export function printResult(data: unknown): void {
-  const idempotencyKey = getCurrentIdempotencyKey();
+export function printResult(data: unknown, options?: { idempotencyKey?: string }): void {
+  const idempotencyKey = options?.idempotencyKey;
   console.log(
     JSON.stringify({ ok: true, data, ...(idempotencyKey !== undefined ? { idempotencyKey } : {}) })
   );
@@ -39,9 +45,15 @@ export function printResult(data: unknown): void {
  * - `status` -- the HTTP status, when the failure came from the API at all.
  * - `idempotencyKey` -- the handle the operator is left holding. The intent id that names a write
  *   is minted by the backend and only ever reaches the caller in the response a failure destroys,
- *   so the key the client chose before sending is the only identifier that survives. It travels
- *   on the `ApiError`; the fallback covers a write that failed before or after the HTTP call (a
- *   signing error, say) which still went out, or may still go out, under a key that matters.
+ *   so the key the client chose before sending is the only identifier that survives. It is read
+ *   off the error itself: from the `ApiError` when the backend answered, and otherwise from the
+ *   tag `withIdempotentWrite` puts on anything a write raises, which covers a failure with no
+ *   HTTP response behind it -- a signing error, a dropped connection -- that still went out, or
+ *   may still go out, under a key that matters. Both routes belong to *this* error, so a batch
+ *   that stashes one failure and keeps going still reports the key of the write that failed
+ *   rather than of the write that ran last. There is no third route: a key this function cannot
+ *   read off the error or take from the caller is a key it does not have, and it says so by
+ *   leaving the field out.
  * - the envelope's own fields, spread flat, plus `pending`. Absent entirely when the backend sent
  *   no envelope, rather than defaulted to false: an unclassified failure is not evidence that
  *   nothing is in flight, and a script reading a manufactured `pending: false` would retry on
@@ -61,7 +73,7 @@ export function renderFailure(
   const message = error instanceof Error ? error.message : (options?.fallback ?? String(error));
   const apiError = error instanceof ApiError ? error : undefined;
   const idempotencyKey =
-    options?.idempotencyKey ?? apiError?.idempotencyKey ?? getCurrentIdempotencyKey();
+    options?.idempotencyKey ?? apiError?.idempotencyKey ?? idempotencyKeyForError(error);
   const envelope = apiError?.envelope;
 
   process.stderr.write(

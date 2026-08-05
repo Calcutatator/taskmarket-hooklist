@@ -22,13 +22,16 @@ export const auctionAcceptCmd = new Command('auction-accept')
         return;
       }
     }
-    const result = (await x402Post(`/api/tasks/${taskId}/bids/accept`, body)) as {
+    const { data: result, idempotencyKey } = await x402Post<{
       acceptedPrice: string;
       workerAddress: string;
-    };
-    printResult({
-      acceptedPrice: result.acceptedPrice,
-      acceptedPriceUsdc: formatUsdcBaseUnits(result.acceptedPrice),
-      workerAddress: result.workerAddress,
-    });
+    }>(`/api/tasks/${taskId}/bids/accept`, body);
+    printResult(
+      {
+        acceptedPrice: result.acceptedPrice,
+        acceptedPriceUsdc: formatUsdcBaseUnits(result.acceptedPrice),
+        workerAddress: result.workerAddress,
+      },
+      { idempotencyKey }
+    );
   });

@@ -10,11 +10,14 @@ export const rejectSubmissionCmd = new Command('reject-submission')
   .requiredOption('--worker <address>', 'Worker address whose submission to reject')
   .action(async (taskId: string, opts: { worker: string }) => {
     try {
-      const result = await x402Post(`/api/tasks/${taskId}/reject-submission`, {
-        taskId,
-        worker: opts.worker,
-      });
-      printResult(result as Record<string, unknown>);
+      const { data: result, idempotencyKey } = await x402Post<Record<string, unknown>>(
+        `/api/tasks/${taskId}/reject-submission`,
+        {
+          taskId,
+          worker: opts.worker,
+        }
+      );
+      printResult(result, { idempotencyKey });
     } catch (err) {
       renderFailure(err);
     }

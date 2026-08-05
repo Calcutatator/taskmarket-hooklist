@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 
 vi.mock('../../src/lib/x402.js', () => ({
   x402Post: vi.fn(),
@@ -33,7 +34,7 @@ describe('task accept command', () => {
   });
 
   it('posts to accept endpoint with worker address', async () => {
-    vi.mocked(x402Post).mockResolvedValue({});
+    vi.mocked(x402Post).mockResolvedValue(writeOutcome({}));
 
     await acceptCmd.parseAsync(['node', 'accept', '0xtask', '--worker', '0xworker'], {
       from: 'node',
@@ -43,7 +44,7 @@ describe('task accept command', () => {
       taskId: '0xtask',
       worker: '0xworker',
     });
-    expect(printResult).toHaveBeenCalledWith({ accepted: true });
+    expect(printResult).toHaveBeenCalledWith({ accepted: true }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('propagates errors from x402Post', async () => {

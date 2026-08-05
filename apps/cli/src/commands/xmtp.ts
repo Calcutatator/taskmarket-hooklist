@@ -73,18 +73,18 @@ xmtpCommand
       keystore,
     });
 
-    const status = (await apiPost('/api/xmtp/bootstrap', {
+    const { data: status, idempotencyKey } = await apiPost<{
+      inboxId: string;
+      installationId: string;
+      policyMode: 'allowlist' | 'open';
+    }>('/api/xmtp/bootstrap', {
       deviceId: keystore.deviceId,
       apiToken: keystore.apiToken,
       inboxId: client.inboxId,
       installationId: client.installationId,
       dbPath: client.dbPath,
       clientVersion: process.env.npm_package_version ?? 'unknown',
-    })) as {
-      inboxId: string;
-      installationId: string;
-      policyMode: 'allowlist' | 'open';
-    };
+    });
 
     await saveKeystore({
       ...keystore,
@@ -93,7 +93,7 @@ xmtpCommand
       xmtpDbPath: client.dbPath,
     });
 
-    printResult({ policyMode: status.policyMode });
+    printResult({ policyMode: status.policyMode }, { idempotencyKey });
   });
 
 xmtpCommand
@@ -258,12 +258,15 @@ xmtpCommand
       throw new Error('XMTP not initialized. Run `taskmarket xmtp init` first.');
     }
 
-    const result = await apiPost('/api/xmtp/heartbeat', {
-      deviceId: keystore.deviceId,
-      apiToken: keystore.apiToken,
-      installationId: keystore.xmtpInstallationId,
-    });
-    printResult(result as Record<string, unknown>);
+    const { data: result, idempotencyKey } = await apiPost<Record<string, unknown>>(
+      '/api/xmtp/heartbeat',
+      {
+        deviceId: keystore.deviceId,
+        apiToken: keystore.apiToken,
+        installationId: keystore.xmtpInstallationId,
+      }
+    );
+    printResult(result, { idempotencyKey });
   });
 
 const peersCommand = xmtpCommand
@@ -295,14 +298,17 @@ peersCommand
     }
     const keystore = await loadKeystore();
     const peerInboxId = await resolveInboxId(options.to);
-    const result = await apiPost('/api/xmtp/peers', {
-      deviceId: keystore.deviceId,
-      apiToken: keystore.apiToken,
-      peerInboxId,
-      policy: options.policy,
-      reason: options.reason,
-    });
-    printResult(result as Record<string, unknown>);
+    const { data: result, idempotencyKey } = await apiPost<Record<string, unknown>>(
+      '/api/xmtp/peers',
+      {
+        deviceId: keystore.deviceId,
+        apiToken: keystore.apiToken,
+        peerInboxId,
+        policy: options.policy,
+        reason: options.reason,
+      }
+    );
+    printResult(result, { idempotencyKey });
   });
 
 const allowlistCommand = xmtpCommand
@@ -377,9 +383,12 @@ xmtpCommand
   .description('Revoke stale XMTP installations that have missed heartbeats')
   .action(async () => {
     const keystore = await loadKeystore();
-    const result = await apiPost('/api/xmtp/purge', {
-      deviceId: keystore.deviceId,
-      apiToken: keystore.apiToken,
-    });
-    printResult(result as Record<string, unknown>);
+    const { data: result, idempotencyKey } = await apiPost<Record<string, unknown>>(
+      '/api/xmtp/purge',
+      {
+        deviceId: keystore.deviceId,
+        apiToken: keystore.apiToken,
+      }
+    );
+    printResult(result, { idempotencyKey });
   });

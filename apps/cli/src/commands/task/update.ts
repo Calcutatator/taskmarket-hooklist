@@ -122,7 +122,10 @@ export const updateCmd = new Command('update')
         body.metricDescription = opts.metricDescription;
       }
 
-      const result = await x402Post(`/api/tasks/${taskId}/update`, body);
-      printResult(result as Record<string, unknown>);
+      const { data: result, idempotencyKey } = await x402Post<Record<string, unknown>>(
+        `/api/tasks/${taskId}/update`,
+        body
+      );
+      printResult(result, { idempotencyKey });
     }
   );

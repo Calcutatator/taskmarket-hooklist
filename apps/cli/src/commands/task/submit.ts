@@ -12,7 +12,6 @@ import { signMessage } from '../../lib/signer.js';
 import { apiPost } from '../../lib/api.js';
 import { x402Post } from '../../lib/x402.js';
 import { printError, printResult } from '../../lib/output.js';
-import { withIdempotencyScope } from '../../lib/idempotency.js';
 
 function collectFile(value: string, previous: string[]): string[] {
   return [...previous, value];
@@ -124,52 +123,51 @@ export const submitCmd = new Command('submit')
       const keystore = await loadKeystore();
       const signature = await signMessage(buildSubmitMessage(taskId), keystore);
 
-      // Each file uploads concurrently and each upload is its own write, so each gets its own
-      // idempotency scope. Without one they would all share the command's scope, and a failure
-      // could be reported under a sibling file's key -- a key that names the wrong operation is
-      // worse than none, because re-presenting it returns the wrong write's result.
+      // Each file uploads concurrently and each upload is its own write. Nothing has to be done
+      // to keep their keys apart: a failure carries the key of the upload that raised it, so the
+      // concurrency here is invisible to the reporting.
       const artifactInputs = await Promise.all(
-        opts.file.map((filePath) =>
-          withIdempotencyScope(async () => {
-            const mimeType = mimeTypeForPath(filePath);
+        opts.file.map(async (filePath) => {
+          const mimeType = mimeTypeForPath(filePath);
 
-            // Read file once — used for hashing and as the upload source
-            const data = await fsPromises.readFile(filePath);
+          // Read file once — used for hashing and as the upload source
+          const data = await fsPromises.readFile(filePath);
 
-            if (data.length === 0) {
-              throw new Error(`File is empty: ${basename(filePath)}`);
-            }
+          if (data.length === 0) {
+            throw new Error(`File is empty: ${basename(filePath)}`);
+          }
 
-            const { uploadUrl, artifactKey } = (await apiPost(
-              `/api/tasks/${taskId}/submissions/request-upload-url`,
-              {
-                taskId,
-                workerAddress: keystore.walletAddress,
-                signature,
-                fileName: basename(filePath),
-                mimeType,
-                role: opts.role,
-                sizeBytes: data.length,
-              }
-            )) as { uploadUrl: string; artifactKey: string };
-
-            const sha256Hash = createHash('sha256').update(data).digest('hex');
-            const keccak256Hash = keccak256(new Uint8Array(data)) as string;
-
-            process.stderr.write(`  Uploading ${basename(filePath)}...\n`);
-            await streamingPut(uploadUrl, data, mimeType, basename(filePath));
-
-            return {
-              artifactKey,
+          const {
+            data: { uploadUrl, artifactKey },
+          } = await apiPost<{ uploadUrl: string; artifactKey: string }>(
+            `/api/tasks/${taskId}/submissions/request-upload-url`,
+            {
+              taskId,
+              workerAddress: keystore.walletAddress,
+              signature,
               fileName: basename(filePath),
               mimeType,
               role: opts.role,
               sizeBytes: data.length,
-              sha256Hash,
-              keccak256Hash,
-            };
-          })
-        )
+            }
+          );
+
+          const sha256Hash = createHash('sha256').update(data).digest('hex');
+          const keccak256Hash = keccak256(new Uint8Array(data)) as string;
+
+          process.stderr.write(`  Uploading ${basename(filePath)}...\n`);
+          await streamingPut(uploadUrl, data, mimeType, basename(filePath));
+
+          return {
+            artifactKey,
+            fileName: basename(filePath),
+            mimeType,
+            role: opts.role,
+            sizeBytes: data.length,
+            sha256Hash,
+            keccak256Hash,
+          };
+        })
       );
 
       // Sign a second, content-bound message now that every artifactKey is known --
@@ -189,14 +187,19 @@ export const submitCmd = new Command('submit')
       // handles both cases transparently: it returns the JSON body directly when the first
       // round already succeeds (still within the free allowance), and only runs the
       // sign-and-pay handshake when actually challenged with a 402.
-      const result = (await x402Post(`/api/tasks/${taskId}/submissions/from-keys`, {
-        taskId,
-        workerAddress: keystore.walletAddress,
-        artifacts: artifactInputs,
-        signature: submitSignature,
-      })) as { submissionId: string };
+      // The submission itself is the write this command reports, so its key is the one the
+      // envelope carries -- not any of the per-file uploads that got it here.
+      const { data: result, idempotencyKey } = await x402Post<{ submissionId: string }>(
+        `/api/tasks/${taskId}/submissions/from-keys`,
+        {
+          taskId,
+          workerAddress: keystore.walletAddress,
+          artifacts: artifactInputs,
+          signature: submitSignature,
+        }
+      );
 
-      printResult({ submissionId: result.submissionId });
+      printResult({ submissionId: result.submissionId }, { idempotencyKey });
     } finally {
       submitCmd.setOptionValue('file', []);
     }

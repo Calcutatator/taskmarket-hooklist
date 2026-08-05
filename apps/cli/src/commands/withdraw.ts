@@ -86,12 +86,18 @@ export const withdrawCommand = new Command('withdraw')
       keystore
     );
 
-    const result = (await apiPost('/api/wallet/withdraw', {
-      from,
-      amountBaseUnits,
-      authorization,
-      signature,
-    })) as WithdrawResponse;
+    const { data: result, idempotencyKey } = await apiPost<WithdrawResponse>(
+      '/api/wallet/withdraw',
+      {
+        from,
+        amountBaseUnits,
+        authorization,
+        signature,
+      }
+    );
 
-    printResult({ txHash: result.txHash, amountBaseUnits: result.amountBaseUnits, to: result.to });
+    printResult(
+      { txHash: result.txHash, amountBaseUnits: result.amountBaseUnits, to: result.to },
+      { idempotencyKey }
+    );
   });

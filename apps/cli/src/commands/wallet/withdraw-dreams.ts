@@ -66,20 +66,26 @@ export const withdrawDreamsCommand = new Command('withdraw-dreams')
     const message = buildWithdrawDreamsMessage(destination, nonce, validBefore);
     const signature = await signMessage(message, keystore);
 
-    const result = (await apiPost('/api/wallet/withdraw-dreams', {
-      workerAddress,
-      destination,
-      nonce,
-      validBefore,
-      signature,
-    })) as WithdrawDreamsResponse;
+    const { data: result, idempotencyKey } = await apiPost<WithdrawDreamsResponse>(
+      '/api/wallet/withdraw-dreams',
+      {
+        workerAddress,
+        destination,
+        nonce,
+        validBefore,
+        signature,
+      }
+    );
 
-    printResult({
-      txHash: result.txHash,
-      destination: result.destination,
-      claimedBaseUnits: result.claimedBaseUnits,
-      claimedDreams: formatDreams(result.claimedBaseUnits),
-      dreamsPerUsdc: result.dreamsPerUsdc,
-      usdEquivalent: result.usdEquivalent,
-    });
+    printResult(
+      {
+        txHash: result.txHash,
+        destination: result.destination,
+        claimedBaseUnits: result.claimedBaseUnits,
+        claimedDreams: formatDreams(result.claimedBaseUnits),
+        dreamsPerUsdc: result.dreamsPerUsdc,
+        usdEquivalent: result.usdEquivalent,
+      },
+      { idempotencyKey }
+    );
   });

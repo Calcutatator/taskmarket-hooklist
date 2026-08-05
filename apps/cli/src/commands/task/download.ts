@@ -35,10 +35,10 @@ export const downloadCmd = new Command('download')
         if (opts.artifact) {
           body.artifactId = opts.artifact;
         }
-        const result = (await apiPost(
+        const { data: result } = await apiPost<{ presignedUrl: string }>(
           `/api/tasks/${taskId}/submissions/${opts.submission}/preview`,
           body
-        )) as { presignedUrl: string };
+        );
         presignedUrl = result.presignedUrl;
       } catch (err: unknown) {
         renderFailure(err, { fallback: 'Failed to get download URL.' });

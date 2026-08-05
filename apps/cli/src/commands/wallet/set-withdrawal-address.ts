@@ -30,11 +30,14 @@ export const setWithdrawalAddressCommand = new Command('set-withdrawal-address')
     const message = buildSetWithdrawalAddressMessage(address);
     const signature = await signMessage(message, keystore);
 
-    const result = (await apiPost('/api/wallet/set-withdrawal-address', {
-      walletAddress,
-      withdrawalAddress: address,
-      signature,
-    })) as { withdrawalAddress: string };
+    const { data: result, idempotencyKey } = await apiPost<{ withdrawalAddress: string }>(
+      '/api/wallet/set-withdrawal-address',
+      {
+        walletAddress,
+        withdrawalAddress: address,
+        signature,
+      }
+    );
 
-    printResult({ withdrawalAddress: result.withdrawalAddress });
+    printResult({ withdrawalAddress: result.withdrawalAddress }, { idempotencyKey });
   });

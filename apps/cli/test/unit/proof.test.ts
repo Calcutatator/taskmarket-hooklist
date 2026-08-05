@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 
 vi.mock('../../src/lib/keystore.js', () => ({
   loadKeystore: vi.fn().mockResolvedValue({ walletAddress: '0xworker' }),
@@ -9,7 +10,7 @@ vi.mock('../../src/lib/signer.js', () => ({
 }));
 
 vi.mock('../../src/lib/x402.js', () => ({
-  x402Post: vi.fn().mockResolvedValue({ proofId: 'proof-1', submissionId: 'submission-1' }),
+  x402Post: vi.fn().mockResolvedValue(writeOutcome({ proofId: 'proof-1', submissionId: 'submission-1' })),
 }));
 
 vi.mock('../../src/lib/output.js', () => ({
@@ -33,6 +34,6 @@ describe('task proof command', () => {
     expect(printResult).toHaveBeenCalledWith({
       proofId: 'proof-1',
       submissionId: 'submission-1',
-    });
+    }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 });

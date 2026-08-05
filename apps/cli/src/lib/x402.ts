@@ -6,6 +6,7 @@ import {
   failureMessage,
   legalReceiptHeadersForKeystore,
   readFailureBody,
+  type WriteOutcome,
 } from './api.js';
 import { idempotencyHeaders, resolveIdempotencyKey, withIdempotentWrite } from './idempotency.js';
 import { loadKeystore } from './keystore.js';
@@ -30,11 +31,11 @@ interface PaymentRequirements {
   }[];
 }
 
-export async function x402Post(
+export async function x402Post<T = unknown>(
   path: string,
   body: Record<string, unknown>,
   options?: { idempotencyKey?: string }
-): Promise<unknown> {
+): Promise<WriteOutcome<T>> {
   const url = `${API_URL}${path}`;
   const keystore = await loadKeystore();
   const legalHeaders = legalReceiptHeadersForKeystore(keystore, path, 'POST');
@@ -56,7 +57,7 @@ export async function x402Post(
 
     if (r1.status !== 402) {
       if (r1.ok) {
-        return r1.json();
+        return { data: (await r1.json()) as T, idempotencyKey };
       }
       // Round 1 can fail on a repeated or missing idempotency key, which the middleware rejects
       // ahead of the 402 challenge -- so the envelope has to be read here too, not only after
@@ -122,6 +123,6 @@ export async function x402Post(
         apiErrorEnvelopeOf(read.body) ?? undefined
       );
     }
-    return r2.json();
+    return { data: (await r2.json()) as T, idempotencyKey };
   });
 }

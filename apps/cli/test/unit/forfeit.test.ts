@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 
 vi.mock('../../src/lib/keystore.js', () => ({
   loadKeystore: vi.fn(),
@@ -44,7 +45,7 @@ describe('task forfeit command', () => {
   });
 
   it('signs taskmarket:forfeit:<taskId> and posts the wallet-signed body', async () => {
-    vi.mocked(apiPost).mockResolvedValue({ txHash: '0xtxhash' });
+    vi.mocked(apiPost).mockResolvedValue(writeOutcome({ txHash: '0xtxhash' }));
 
     await forfeitCmd.parseAsync(['node', 'forfeit', '0xtask'], { from: 'node' });
 
@@ -54,7 +55,7 @@ describe('task forfeit command', () => {
       requesterAddress: keystore.walletAddress,
       signature: '0xsig',
     });
-    expect(printResult).toHaveBeenCalledWith({ txHash: '0xtxhash' });
+    expect(printResult).toHaveBeenCalledWith({ txHash: '0xtxhash' }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('surfaces API errors through renderFailure, with the error itself', async () => {

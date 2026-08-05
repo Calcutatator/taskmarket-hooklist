@@ -59,11 +59,14 @@ export const acceptSubmissionsCmd = new Command('accept-submissions')
       if (sum !== 10000) {
         throw new Error(`Winner shares must sum to 10000 basis points (got ${sum})`);
       }
-      const result = (await x402Post(`/api/tasks/${taskId}/accept-submissions`, {
-        taskId,
-        winners,
-      })) as { success: boolean };
-      printResult({ accepted: result.success, winners: winners.length });
+      const { data: result, idempotencyKey } = await x402Post<{ success: boolean }>(
+        `/api/tasks/${taskId}/accept-submissions`,
+        {
+          taskId,
+          winners,
+        }
+      );
+      printResult({ accepted: result.success, winners: winners.length }, { idempotencyKey });
     } catch (err) {
       // Covers both the locally thrown spec errors above and the paid write. A local `Error`
       // renders with no envelope, exactly as it always did; the write's `ApiError` renders with

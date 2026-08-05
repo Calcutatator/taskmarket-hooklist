@@ -14,13 +14,16 @@ export const forfeitCmd = new Command('forfeit')
       const message = buildForfeitMessage(taskId);
       const signature = await signMessage(message, keystore);
 
-      const result = (await apiPost(`/api/tasks/${taskId}/forfeit`, {
-        taskId,
-        requesterAddress: keystore.walletAddress,
-        signature,
-      })) as { txHash: string };
+      const { data: result, idempotencyKey } = await apiPost<{ txHash: string }>(
+        `/api/tasks/${taskId}/forfeit`,
+        {
+          taskId,
+          requesterAddress: keystore.walletAddress,
+          signature,
+        }
+      );
 
-      printResult(result);
+      printResult(result, { idempotencyKey });
     } catch (err) {
       renderFailure(err);
     }

@@ -1,4 +1,15 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
+// The key a write is sent under travels with that write's outcome and nowhere else. There is no
+// ambient "current key", deliberately.
+//
+// There was one, bound with `AsyncLocalStorage` and modelled on the backend's `withRelayEnvelope`
+// (apps/backend/src/services/relay-envelope.ts). The model does not transfer, and the reason is
+// worth keeping: `withRelayEnvelope` binds a value the call tree *consumes* -- a deadline, a
+// receipt nonce that the contract layer needs deep inside the send. Nothing reports it, so it
+// cannot name the wrong thing. A key is a value the output layer *reports*, and a reported value
+// has to be right about which write it names. "The last write started in this scope" is only that
+// write while exactly one write is in play, which is not the shape of a batch, a poll loop, or
+// anything that writes and then keeps working. Ambient is right for the first job and wrong for
+// the second.
 import { randomUUID } from 'node:crypto';
 
 import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
@@ -12,42 +23,37 @@ import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 let pendingEnvKey: string | undefined = process.env.TASKMARKET_IDEMPOTENCY_KEY?.trim() || undefined;
 
 /**
- * What one async scope knows about the writes made inside it.
+ * The key each failed write was sent under, keyed by the error it raised.
  *
- * `ambiguous` latches the moment two writes in the same scope overlap in time. At that point
- * "the key of the write that just failed" has no ambient answer, and reporting the wrong one is
- * worse than reporting none: the key is the handle an operator re-presents, so a key belonging
- * to a different write matches that other operation, returns its result, and leaves the write
- * they wanted undone while telling them it succeeded. Silent and confident is exactly the
- * failure this feature exists to prevent, so an ambiguous scope reports nothing.
+ * This is the association that cannot go stale, because it is made per error rather than per
+ * scope: the error object is the thing being reported, so the key attached to it is the key of
+ * the write being reported, no matter how many other writes have started or finished since. It is
+ * the same move ADR-0057 made for the payment reference -- pair the two values at the one moment
+ * they are certainly a pair, rather than re-deriving the pairing later from ambient state.
+ *
+ * A `WeakMap` rather than a property assignment because a thrown value is not necessarily an
+ * `Error`, is not necessarily extensible, and is not the CLI's to mutate. Entries die with the
+ * error.
  */
-interface Scope {
-  current?: string;
-  active: number;
-  ambiguous: boolean;
-}
-
-const storage = new AsyncLocalStorage<Scope>();
+const keyByError = new WeakMap<object, string>();
 
 /**
- * Bind an idempotency scope for the duration of one logical operation.
+ * Record that `error` was raised by the write `key` names.
  *
- * Ambient rather than a parameter, for the same reason `withRelayEnvelope` is in the backend
- * (apps/backend/src/services/relay-envelope.ts): around a hundred and twenty-eight commands call
- * `printError` with a bare message string, and threading a key through all of them would put the
- * rule in a hundred and twenty-eight places to be forgotten in one.
- *
- * Bind one per *concurrent* unit of work, not per process. `index.ts` binds one around command
- * dispatch, which is the whole of a one-shot command. Anything that forks -- the daemon's three
- * loops, `task submit`'s per-file uploads -- binds one per branch, because two branches writing
- * at once are two operations and only the branch that failed knows which key was its own.
- *
- * Code outside any scope reports no key at all. There is deliberately no process-wide fallback:
- * a long-lived process like the daemon has no such thing as "the write that just failed", and a
- * fallback that guessed would be right most of the time and catastrophically wrong occasionally.
+ * The first recording wins. Writes nest (an outer helper may re-throw an inner write's error),
+ * and the innermost write is the one that actually failed.
  */
-export function withIdempotencyScope<T>(fn: () => Promise<T>): Promise<T> {
-  return storage.run({ active: 0, ambiguous: false }, fn);
+export function rememberIdempotencyKeyFor(error: unknown, key: string): void {
+  if (error === null || (typeof error !== 'object' && typeof error !== 'function')) return;
+  if (keyByError.has(error as object)) return;
+  keyByError.set(error as object, key);
+}
+
+/** The key of the write that raised `error`, if a write raised it. */
+export function idempotencyKeyForError(error: unknown): string | undefined {
+  if (error === null || (typeof error !== 'object' && typeof error !== 'function'))
+    return undefined;
+  return keyByError.get(error as object);
 }
 
 /**
@@ -79,42 +85,25 @@ export function resolveIdempotencyKey(explicit?: string): string {
 }
 
 /**
- * Run one relayed write with `key` as its scope's current key. The transport wraps its whole
- * request in this, so the key is current for exactly as long as the write it names is in flight.
+ * Run one relayed write under `key`, tagging anything it raises with that key on the way past.
  *
- * An overlap detected here latches the scope ambiguous rather than letting the later write's key
- * quietly win. That is the safety net for a fork point nobody wrapped -- including one added
- * years from now by someone who never read this file: a missing scope degrades the report to no
- * key, never to another write's key.
+ * A write has three outcomes and the key travels with all three. Success returns it beside the
+ * payload (`WriteOutcome` in lib/api.ts). A failure the backend classified carries it on the
+ * `ApiError`. Anything else -- a dropped connection, a signing error, a payment the server would
+ * not quote for -- is tagged here, because those failures have no response to build an `ApiError`
+ * from and are exactly the ones most likely to have left a write in flight.
+ *
+ * Tagging is what lets a failure keep its key after the moment has passed: out of the `catch`
+ * that stashed it, past every write that ran afterwards, through the wrapper that added context
+ * to its message. Nothing about the report has to be inferred from when it happens.
  */
 export async function withIdempotentWrite<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  const scope = storage.getStore();
-  if (scope === undefined) {
-    return fn();
-  }
-  if (scope.active > 0 && scope.current !== key) {
-    scope.ambiguous = true;
-  }
-  scope.active += 1;
-  scope.current = key;
   try {
     return await fn();
-  } finally {
-    scope.active -= 1;
+  } catch (error) {
+    rememberIdempotencyKeyFor(error, key);
+    throw error;
   }
-}
-
-/**
- * The key of the write this scope was last making, or undefined when the scope made no write or
- * cannot say unambiguously which write a failure belongs to. Read by the output layer so a
- * failed write leaves the operator holding the handle it was sent under.
- */
-export function getCurrentIdempotencyKey(): string | undefined {
-  const scope = storage.getStore();
-  if (scope === undefined || scope.ambiguous) {
-    return undefined;
-  }
-  return scope.current;
 }
 
 /** Test seam: reset the process-level environment key this module consumes once. */

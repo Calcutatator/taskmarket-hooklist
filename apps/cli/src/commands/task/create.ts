@@ -284,7 +284,10 @@ export const createCmd = new Command('create')
         if (opts.disputeResolver) body.disputeResolver = opts.disputeResolver;
       }
 
-      const result = (await x402Post('/api/tasks', body)) as { success: boolean; taskId: string };
-      printResult({ taskId: result.taskId });
+      const { data: result, idempotencyKey } = await x402Post<{ success: boolean; taskId: string }>(
+        '/api/tasks',
+        body
+      );
+      printResult({ taskId: result.taskId }, { idempotencyKey });
     }
   );
