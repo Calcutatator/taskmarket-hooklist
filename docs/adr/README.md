@@ -255,6 +255,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0038 — Rate limiting lives in one shared module, not bespoke per-feature logic — with two distinct check shapes, not one forced abstraction](0038-rate-limiting-is-a-shared-module-not-per-feature-bespoke-logic.md)
 - [0039 — Singleton RPC gateway owns runtime clients and transport accounting](0039-singleton-rpc-gateway-owns-runtime-clients-and-transport-accounting.md)
 - [0040 — Server-wallet transactions use a durable nonce allocator and outbox](0040-server-wallet-transactions-use-a-database-coordinated-dispatcher.md)
+- [0062 — Retire the pre-rev011 bootstrap and seed a fresh deploy at the revision it runs](0062-retire-the-pre-rev011-bootstrap-and-seed-a-fresh-deploy-at-the-revision-it-runs.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

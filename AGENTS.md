@@ -218,6 +218,22 @@ cd packages/contracts && forge snapshot
 
 CI runs `forge snapshot --check` and fails if the snapshot is stale. This is a frequent source of CI failures — do not skip it.
 
+## `packages/contracts` Is Publicly Mirrored: Never Reference ADRs There
+
+`packages/contracts/` is mirrored to a public `taskmarket-contracts` repository. `docs/adr/` is
+not mirrored and stays internal. So **nothing inside `packages/contracts/` may cite an ADR by
+number** — not Solidity comments, not NatSpec, not test comments, not the revision docs under
+`packages/contracts/docs/`. An `ADR-NNNN` citation there is a dangling reference for every reader
+of the mirror, pointing at a document they cannot open.
+
+Use this codebase's revision numbering instead — `rev007`, `rev011`, `rev020` — which is
+meaningful on both sides of the mirror. Where a contract change needs recorded rationale, write it
+into the matching `packages/contracts/docs/specs/erc8195/revNNN-*.md`, stating the reasoning
+directly rather than deferring to an ADR by number. ADR cross-references stay inside `docs/adr/`.
+
+The reverse direction is fine and encouraged: an ADR may name contract files, revisions, and
+selectors freely, since ADR readers can see the whole repository.
+
 ## Database Migrations
 
 Every new migration file (`apps/backend/drizzle/migrations/NNNN_*.sql`) must have a matching entry appended to `apps/backend/drizzle/migrations/meta/_journal.json`. A `.sql` file with no journal entry is invisible to the runtime migrator (`drizzle-orm`'s `migrate()`, called on every backend boot in `apps/backend/src/server.ts`) — it will never be applied, and it fails silently with no error at startup or in most tests. The first sign of trouble is usually a "relation does not exist" error much later, e.g. in a smoke test.

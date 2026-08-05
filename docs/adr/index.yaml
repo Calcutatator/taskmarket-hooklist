@@ -193,3 +193,8 @@ adrs:
     title: "Server-wallet transactions use a durable nonce allocator and outbox"
     status: Accepted
     date: "2026-08-03"
+  - number: "0062"
+    file: "0062-retire-the-pre-rev011-bootstrap-and-seed-a-fresh-deploy-at-the-revision-it-runs.md"
+    title: "Retire the pre-rev011 bootstrap and seed a fresh deploy at the revision it runs"
+    status: Accepted
+    date: "2026-08-05"
