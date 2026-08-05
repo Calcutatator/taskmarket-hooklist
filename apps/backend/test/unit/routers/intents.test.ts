@@ -128,7 +128,7 @@ describe('intents.get', () => {
       expect(await asStranger).toBe(await asNobody);
     });
 
-    it('is readable by nobody when no initiator was recorded', async () => {
+    it('is readable by no address when no initiator was recorded', async () => {
       const ctx = ctxFor(freeIntent({ payer: null }));
       const missing = ctxFor(null);
 
@@ -141,9 +141,85 @@ describe('intents.get', () => {
         .get({ intentId: 'nope' })
         .catch((error: Error) => error.message);
 
-      // A permissionless caller who never said who they were left nothing to compare against.
-      // Readable by nobody is the honest answer, not a fallback rule invented to fill the space.
+      // A permissionless caller who never said who they were left nothing to compare an
+      // address against. An id names an intent without proving anything about who is asking,
+      // so an id lookup gets the same answer as an id that does not exist. The key is the
+      // other handle and it is evidence; see the reservation cases below.
       expect(await asAnyone).toBe(await asNobody);
+    });
+  });
+
+  /**
+   * Verifies: ADR-0059, ADR-0067
+   *
+   * A reservation is an intent that exists before its payer does. ADR-0059 scopes an intent to
+   * "the address recorded as having initiated it", and on a reservation nothing is recorded
+   * yet -- so the address rule has no address to compare and answers nobody, while the 409 that
+   * created the row tells the caller to poll this very surface. The other handle ADR-0052 gave
+   * them is the idempotency key they minted before sending, and possession of it is what the
+   * row can actually be matched against.
+   */
+  describe('a reservation, whose payer is not known yet', () => {
+    const reservation = (overrides: Record<string, unknown> = {}) =>
+      intentRow({
+        operation: 'x402.reservation',
+        payer: null,
+        paymentTxHash: null,
+        status: 'reserved',
+        txHash: null,
+        ...overrides,
+      });
+
+    it('is readable by the holder of the idempotency key that claimed it', async () => {
+      const ctx = ctxFor(reservation());
+
+      const result = await intentsRouter.createCaller(ctx as never).get({ idempotencyKey: KEY });
+
+      expect(result).toMatchObject({ intentId: 'intent-1', status: 'reserved' });
+    });
+
+    it('is readable by the payer of the authorization it recorded before settling', async () => {
+      // Once the middleware has written the authorization down (ADR-0067) an address *is*
+      // recorded, so the address rule has something to compare again -- without the key.
+      const ctx = ctxFor(reservation({ paymentAuthPayer: PAYER }));
+
+      const result = await intentsRouter.createCaller(ctx as never).get({ intentId: 'intent-1' });
+
+      expect(result.status).toBe('reserved');
+    });
+
+    it('gives a caller presenting nothing but an id what it gives someone asking about nothing', async () => {
+      const ctx = ctxFor(reservation());
+      const missing = ctxFor(null);
+
+      const byId = intentsRouter
+        .createCaller(ctx as never)
+        .get({ intentId: 'intent-1' })
+        .catch((error: Error) => error.message);
+      const asNobody = intentsRouter
+        .createCaller(missing as never)
+        .get({ intentId: 'nope' })
+        .catch((error: Error) => error.message);
+
+      expect(await byId).toBe(await asNobody);
+    });
+
+    it('does not let a key unlock an intent that has a payer', async () => {
+      // The key is the credential only where no initiator was recorded. Once one is, the
+      // address rule is the rule, and a leaked key buys nothing that was not already leaked.
+      const ctx = ctxFor(intentRow({ payer: OTHER }));
+      const missing = ctxFor(null);
+
+      const withKey = intentsRouter
+        .createCaller(ctx as never)
+        .get({ idempotencyKey: KEY })
+        .catch((error: Error) => error.message);
+      const asNobody = intentsRouter
+        .createCaller(missing as never)
+        .get({ idempotencyKey: 'ffffffff-ffff-4fff-8fff-ffffffffffff' })
+        .catch((error: Error) => error.message);
+
+      expect(await withKey).toBe(await asNobody);
     });
   });
 

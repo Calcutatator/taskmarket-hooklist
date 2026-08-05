@@ -59,6 +59,28 @@ function indexedDb(rows: StoredRow[] = []) {
         }),
       }),
     }),
+    // The reservation fill (ADR-0067): `recordRelayedIntent` now tries to turn an existing
+    // `reserved` row into a recorded one before it inserts anything. This double holds no
+    // reservations -- every row in it arrives through the insert above -- so the fill matches
+    // nothing and the insert-then-interpret-the-conflict path these tests exercise is reached
+    // exactly as before. Modelled rather than stubbed to `[]` so that a test that does seed a
+    // reservation gets the real behaviour instead of a silent no-match.
+    update: () => ({
+      set: (values: StoredRow) => ({
+        where: (predicate: { getSQL: () => never }) => ({
+          returning: async () => {
+            const query = dialect.sqlToQuery(predicate.getSQL());
+            const row = rows.find(
+              (candidate) =>
+                candidate.idempotencyKey === query.params[0] && candidate.status === 'reserved'
+            );
+            if (!row) return [];
+            Object.assign(row, values);
+            return [row];
+          },
+        }),
+      }),
+    }),
     select: () => ({
       from: () => ({
         where: (predicate: { getSQL: () => never }) => ({

@@ -187,6 +187,22 @@ describe('useInFlightWrite', () => {
     expect(fetchIntentStatus.mock.calls.length).toBe(callsAtFailure);
   });
 
+  it('keeps waiting on a reservation, which is not an outcome', async () => {
+    // ADR-0067's pre-payment state. It is readable by the holder of the idempotency key, which
+    // is this viewer, and it says only that the write has not finished being paid for -- so the
+    // notice must keep saying "confirming" rather than settling on a verdict there is none of.
+    fetchIntentStatus.mockResolvedValue(statusOf('reserved', { operation: 'x402.reservation' }));
+    const hook = await goInFlight();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+
+    expect(fetchIntentStatus.mock.calls.length).toBeGreaterThan(1);
+    expect(hook.result.current.failure).toBeNull();
+    expect(hook.result.current.stalled).toBe(false);
+  });
+
   it('stops asking once the intent comes back unreadable, and keeps refreshing the page', async () => {
     // The viewer is not the intent's initiator (ADR-0059) -- a third-party-funded submission.
     // The surface must degrade to what it did before this read existed, not show an error.

@@ -296,7 +296,11 @@ export async function reserveRelayedWrite(input: {
     refusal: {
       error:
         existing.status === 'reserved'
-          ? `Another request is already using this idempotency key (intent ${existing.id}) and has not finished paying for it. It was not charged again; read its outcome from intents.get.`
+          ? // Told to poll by key, not by intent id, because on a reservation the key is the
+            // only handle that resolves: no payer is recorded yet, so there is no address for
+            // the id lookup to authorize against and it answers intent_not_found. The key is
+            // echoed on the envelope beside this message, so the instruction is followable.
+            `Another request is already using this idempotency key (intent ${existing.id}) and has not finished paying for it. It was not charged again; read its outcome from intents.get by idempotency key.`
           : `A ${existing.operation} write for this idempotency key already exists (intent ${existing.id}). It was not charged or submitted again; read its outcome from intents.get.`,
       status: 409,
       envelope: {

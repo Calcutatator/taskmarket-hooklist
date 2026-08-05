@@ -41,6 +41,24 @@ function inFlightError(): ApiError {
   });
 }
 
+/**
+ * The refusal a concurrent retry gets from the reservation check, before any 402 (ADR-0067).
+ *
+ * Round one, not round two: nothing was signed and nothing was charged, and the intent it names
+ * is a reservation whose payer is not known yet. A script must read this as "still happening",
+ * because the opposite reading -- a settled refusal -- tells it to start again under a fresh key,
+ * which is a second payment for the operation already in progress.
+ */
+function reservedError(): ApiError {
+  return new ApiError(409, 'POST failed (409): another request is using this key', 'key-abc', {
+    reason: 'idempotency_key_reused',
+    intentId: 'intent_456',
+    intentStatus: 'reserved',
+    operation: 'x402.reservation',
+    idempotencyKey: 'key-abc',
+  });
+}
+
 /** A settled refusal: the write definitively did not happen, so re-running it is safe. */
 function rejectedError(): ApiError {
   return new ApiError(400, 'POST failed (400): task is not expired', 'key-def', {
@@ -109,6 +127,22 @@ describe('a paid command surfaces the failure classification a script branches o
     // The distinction the whole change exists for: this one is safe to run again, the one above
     // is not, and before this a script saw the same bare message for both.
     expect(envelope()).toMatchObject({ reason: 'payment_preflight_rejected', pending: false });
+  });
+
+  it('refund-expired reports pending on a key still being paid for', async () => {
+    mockX402Post.mockRejectedValueOnce(reservedError());
+    const { refundExpiredCmd } = await import('../../src/commands/task/refund-expired.js');
+
+    await run(refundExpiredCmd, ['refund-expired', TASK]);
+
+    // `reserved` is in flight in the most literal sense, and the key it echoes is the handle
+    // that reads the outcome: `intents.get` answers a reservation to whoever holds its key.
+    expect(envelope()).toMatchObject({
+      reason: 'idempotency_key_reused',
+      intentStatus: 'reserved',
+      idempotencyKey: 'key-abc',
+      pending: true,
+    });
   });
 
   it('reject-submission reports pending on an in-flight write', async () => {

@@ -35,12 +35,53 @@ import type { Context } from '../context';
  * thing", since telling those apart would turn this into an oracle for which intent ids and
  * idempotency keys exist.
  *
- * A null initiator is readable by nobody. That is the honest answer to "who started this" when
- * nothing was recorded, not a fallback: it happens only when a permissionless caller declined to
- * identify themselves, and inventing a reader for that row would be inventing the second rule.
+ * A null initiator is readable by no *address*. That is the honest answer to "who started this"
+ * when nothing was recorded, not a fallback: inventing an address that may read such a row would
+ * be inventing the second rule.
+ *
+ * But an address is not the only thing a caller can present (ADR-0067).
+ *
+ * ADR-0067 made the intent a reservation, claimed before the payment challenge, so an intent now
+ * exists during a window in which its payer is genuinely not yet knowable -- and the 409 that
+ * created it tells the caller to read its outcome here. Under the address rule alone that
+ * instruction is wrong in exactly the case a client most needs it: the row is readable by nobody.
+ *
+ * The gap is filled with the handle the caller already holds rather than with a second address
+ * rule. `intents.get` takes either an intent id or the idempotency key, and those two are not
+ * equivalent evidence. An id is minted here and proves nothing about who is asking. The key is
+ * minted by the client before the request is sent, is the one handle that survives a lost
+ * response, and is the whole premise of ADR-0052 -- so presenting it is the closest thing a
+ * pre-payment caller has to identifying themselves, and matching it is a real comparison against
+ * the row rather than an exemption from one.
+ *
+ * Two properties bound it, and both are the point:
+ *
+ * - Key possession is only ever a credential where *no* initiator was recorded. An intent that
+ *   has a payer is answered by the address rule exactly as before, so a leaked key cannot open a
+ *   settled write, and nothing about paid visibility is loosened.
+ * - It is not an enumeration oracle. A caller who does not hold a key cannot ask this question at
+ *   all: the id path is unchanged and still answers `intent_not_found` for a reservation, so the
+ *   only way to reach the key path is to already possess a UUID a client minted, and a wrong
+ *   guess is indistinguishable from a key that does not exist.
+ *
+ * `paymentAuthPayer` is the recorded-address case arriving late. The middleware writes the
+ * authorization down before asking the facilitator to settle it, so from that moment an address
+ * *is* recorded for the reservation and the ordinary rule has something to compare against
+ * without any key. Preferring it when it exists is why this is a gap being filled and not a rule
+ * being replaced: the address rule applies wherever an address exists, and the key answers only
+ * the window where none does.
  */
-function intentVisibleTo(intent: RelayedIntent, callerAddress: string): boolean {
-  return intent.payer?.toLowerCase() === callerAddress.toLowerCase();
+function intentVisibleTo(
+  intent: RelayedIntent,
+  callerAddress: string,
+  presentedIdempotencyKey: string | undefined
+): boolean {
+  // The settled payer, where there is one. Nothing below can widen this case.
+  if (intent.payer) return intent.payer.toLowerCase() === callerAddress.toLowerCase();
+  // The address the reservation is mid-settlement for, recorded before the settle call.
+  if (intent.paymentAuthPayer?.toLowerCase() === callerAddress.toLowerCase()) return true;
+  // No initiator recorded. The key is the only evidence there is, and it is evidence.
+  return presentedIdempotencyKey !== undefined && presentedIdempotencyKey === intent.idempotencyKey;
 }
 
 function notFound(): TRPCError {
@@ -113,7 +154,11 @@ export const intentsRouter = router({
         ? await getRelayedIntent({ db: ctx.db, intentId: input.intentId })
         : await findIntentByIdempotencyKey(ctx.db, input.idempotencyKey!);
 
-      if (!intent || !intentVisibleTo(intent, ctx.caller.address)) throw notFound();
+      // The key is passed as the caller presented it, not as the row records it: a lookup by
+      // intent id presents none, and it must not inherit the row's own key as evidence.
+      if (!intent || !intentVisibleTo(intent, ctx.caller.address, input.idempotencyKey)) {
+        throw notFound();
+      }
 
       return {
         intentId: intent.id,
