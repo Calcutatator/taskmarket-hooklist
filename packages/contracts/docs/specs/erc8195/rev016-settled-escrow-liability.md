@@ -168,8 +168,15 @@ where any caller wanting the historical amount should already be reading it.
 ## API Changes
 
 **New errors.** `TaskAlreadyRefunded()` from `refundExpired` when the task is already `Expired`;
-`NoRewardChange()` from `updateTask` when a caller names the reward the task already has. Neither
-is reachable by any caller that was previously succeeding.
+`NoRewardChange()` from `updateTask` when a caller names the reward the task already has. Both are
+reachable by callers that were previously succeeding, and that is the point of the revision: the
+calls they replace are exactly the ones that were succeeding when they should not have. A second
+`refundExpired` on an already-refunded task used to pass every guard and pay the reward a second
+time out of pooled escrow; it now reverts `TaskAlreadyRefunded()`. An `updateTask` naming the
+reward the task already has used to succeed as a silent no-op while the forwarder had already
+pulled the USDC for the increase; it now reverts `NoRewardChange()` so the transfer unwinds with
+the transaction. Any client that treated either as a success was being paid, or charged, for
+something that did not happen.
 
 **Adding a custom error to a facet is not complete until the backend can decode it.** Relayed calls
 are decoded against `FORWARDER_ABI`, so viem only ever supplies the raw selector and an unmapped

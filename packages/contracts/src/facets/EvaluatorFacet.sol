@@ -285,7 +285,10 @@ contract EvaluatorFacet {
     ///      awards arrays are committed to storage, so a caller-supplied awards array can
     ///      never redirect payout to a party who was never actually the worker/submitter.
     ///      Zero-amount awards are skipped -- they never trigger a transfer or touch
-    ///      task.worker, so their recipient is inert.
+    ///      task.worker, so their recipient is inert. A non-zero award to address(0) reverts
+    ///      here rather than at _payAwards: the verdict is one-shot on chain, so letting it
+    ///      be stored would move the task to Appealing and then revert finalizeVerdict
+    ///      permanently, stranding the escrow.
     function _validateAwardRecipients(
         ITMPCore.Task storage task,
         bytes32 taskId,
@@ -296,7 +299,7 @@ contract EvaluatorFacet {
         for (uint256 i; i < awards.length; ++i) {
             if (awards[i].amount == 0) continue;
             address worker = awards[i].worker;
-            if (worker == address(0)) continue;
+            if (worker == address(0)) revert ITMPCore.InvalidAwardRecipient();
             if (bountyLike) {
                 if (s.taskSubmissionHashes[taskId][worker].length == 0) revert ITMPCore.SubmissionNotFound();
             } else if (worker != task.worker) {
