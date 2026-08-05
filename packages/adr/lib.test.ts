@@ -76,6 +76,7 @@ import {
   findImplementsRefs,
   findVerifiesRefs,
   coerceScope,
+  coerceAllowAuthorSelfReview,
   checkScopeMismatch,
   extractReferencesSection,
   extractCitedFilePaths,
@@ -1145,6 +1146,21 @@ describe('checkAuthorReviewersDeciders (direct)', () => {
     expect(issues).toEqual([]);
   });
 
+  test('self-ack smell is suppressed when author self-review is allowed', () => {
+    const issues = checkAuthorReviewersDeciders(adr('Carol', 'Carol', 'Carol'), 'x.md', 'Accepted', true);
+    expect(issues.some((i) => /self-ack smell/.test(i.message))).toBe(false);
+  });
+
+  test('a blank Deciders still blocks even when author self-review is allowed', () => {
+    const issues = checkAuthorReviewersDeciders(adr('Carol', 'Carol', '—'), 'x.md', 'Accepted', true);
+    expect(issues.some((i) => i.type === 'ERROR' && /Deciders is blank/.test(i.message))).toBe(true);
+  });
+
+  test('a blank Reviewers still warns even when author self-review is allowed', () => {
+    const issues = checkAuthorReviewersDeciders(adr('Carol', '—', 'Carol'), 'x.md', 'Accepted', true);
+    expect(issues.some((i) => i.type === 'WARN' && /Reviewers is blank/.test(i.message))).toBe(true);
+  });
+
   test('property: across every Status x placeholder-combination, Deciders-blocking fires iff Accepted and Deciders is a placeholder', () => {
     const names = ['—', 'Alice', 'Bob', 'Carol'];
     fc.assert(
@@ -1488,6 +1504,30 @@ describe('coerceScope', () => {
     for (const bad of ['', 'DIFF', 'all', 'wholecorpus', undefined, null]) {
       expect(coerceScope(bad)).toBeNull();
     }
+  });
+});
+
+describe('coerceAllowAuthorSelfReview', () => {
+  test('defaults to false when neither env nor config supplies a value', () => {
+    expect(coerceAllowAuthorSelfReview(undefined, undefined)).toBe(false);
+    expect(coerceAllowAuthorSelfReview(null, null)).toBe(false);
+  });
+
+  test('honors the config-file boolean when no env is set', () => {
+    expect(coerceAllowAuthorSelfReview(true, undefined)).toBe(true);
+    expect(coerceAllowAuthorSelfReview(false, undefined)).toBe(false);
+  });
+
+  test('ignores a non-boolean config value and falls back to the default', () => {
+    expect(coerceAllowAuthorSelfReview('true', undefined)).toBe(false);
+    expect(coerceAllowAuthorSelfReview(1, undefined)).toBe(false);
+  });
+
+  test('lets the env var win over the config file (highest precedence)', () => {
+    expect(coerceAllowAuthorSelfReview(false, '1')).toBe(true);
+    expect(coerceAllowAuthorSelfReview(false, 'true')).toBe(true);
+    expect(coerceAllowAuthorSelfReview(true, 'false')).toBe(false);
+    expect(coerceAllowAuthorSelfReview(true, '0')).toBe(false);
   });
 });
 
