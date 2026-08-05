@@ -221,10 +221,24 @@ Before writing assertions about contract behavior, read the relevant facet sourc
 After any change to contract source files (`packages/contracts/src/`), always regenerate the gas snapshot before committing:
 
 ```
-cd packages/contracts && forge snapshot
+make contract snapshot
 ```
 
-CI runs `forge snapshot --check` and fails if the snapshot is stale. This is a frequent source of CI failures — do not skip it.
+CI runs `make contract snapshot-check` and fails if the snapshot is stale. This is a frequent source of CI failures — do not skip it.
+
+**Use the make target, not a bare `forge snapshot`.** The contract suite cannot run in parallel: the
+`RevNNN` upgrade step scripts read their target diamond from `FORGE_DIAMOND_ADDRESS_*`, and
+`vm.setEnv` writes one process-wide environment shared by every concurrently-executing suite, so
+parallel suites retarget each other mid-sequence. The make targets pass `-j 1` for this reason.
+
+The consequence for snapshots specifically is worse than a flaky test run. A bare parallel
+`forge snapshot` has been observed to report spurious failures **and write a snapshot derived from
+that partly-failed run** — so the corrupted file gets committed and the real gas numbers are lost
+with no error anywhere. The same applies to `forge test`: use `make contract test`.
+
+Note that `foundry.toml`'s `threads` key and the `FOUNDRY_THREADS` environment variable are both
+ignored by the test runner; only the CLI flag takes effect. That is why the serialisation lives in
+the make targets rather than in configuration.
 
 ## Database Migrations
 

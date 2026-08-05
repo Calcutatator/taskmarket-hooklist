@@ -94,6 +94,12 @@ a floor under it rather than being an open-ended bet against a fee spike.
 
 ## Decision
 
+> **Amended 2026-08-05 by ADR-0066, at the ceiling only.** What happens *once escalation reaches
+> the cap* is no longer what point 1 and point 2 describe below. Escalation stops there, and one
+> zero-value self-transfer priced a bump above the cap clears the nonce. Everything else here —
+> the geometric curve, the oracle floor, the cap expressed as a multiple of the original fee, and
+> the configuration surface — stands unchanged. See ADR-0066 and the dated note in Consequences.
+
 ### 1. Escalation is geometric, and its base is the fee it is replacing
 
 For a nonce being replaced for the *n*-th time, the replacement fee is:
@@ -337,6 +343,17 @@ ADR.
   Negative trade-off above -- "we will sometimes overpay for gas, knowingly" -- now extends past the
   configured ceiling, which is a real widening of that cost and is stated here rather than left to
   be discovered.
+
+  **Superseded 2026-08-05 by ADR-0066.** The correction above is no longer what the code does. Its
+  diagnosis stands entirely -- holding at the ceiling continues nothing, and a replacement that does
+  not raise the fee is refused -- but its remedy, letting the ceiling yield on every later pass, was
+  reversed. Escalation now *stops* at the cap, and the nonce is cleared by a single zero-value
+  self-transfer priced one bump above it. That keeps the cost asymmetry this ADR argues from (a
+  blocked nonce is worse than a few cents of gas) while restoring the ceiling as something an
+  operator can reason about in advance: the overspend is one 21,000-gas transfer per stuck nonce,
+  not an unbounded climb. `cappedBelowPreviousFee` survives with its meaning intact and a different
+  consumer -- it is now the signal to stop and clear rather than to override. **Read ADR-0066, not
+  this note, for the behaviour in effect.**
 
 - **Correction, decided 2026-08-04: this field is a bigint, not a number.** The table above
   originally specified `int`, following the `z.coerce.number()` pattern the surrounding config

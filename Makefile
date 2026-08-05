@@ -594,9 +594,9 @@ contract:
 		echo "lcov report written to reports/coverage/lcov.info" && \
 		bash scripts/check-coverage.sh /tmp/forge-coverage.txt; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot" ]; then \
-		cd packages/contracts && forge snapshot; \
+		cd packages/contracts && forge snapshot -j 1; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot-check" ]; then \
-		cd packages/contracts && forge snapshot --check --tolerance 1; \
+		cd packages/contracts && forge snapshot --check --tolerance 1 -j 1; \
 	elif [ "$(word 1,$(ARGS))" = "doc" ]; then \
 		cd packages/contracts && forge doc --out docs/natspec && \
 		echo "Docs written to packages/contracts/docs/natspec"; \
