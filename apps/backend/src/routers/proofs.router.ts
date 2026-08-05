@@ -132,6 +132,11 @@ export const proofsRouter = router({
       );
       const proofTypeBytes32 = keccak256(toBytes(input.proofType));
 
+      // Both ids reach the payload, and `proofId` also keys the follow-on anchor intent, so a
+      // fresh pair per attempt would read as a different write under ADR-0061's comparison.
+      // What keeps that unreachable is that this is a paid route: the pre-settlement check in
+      // x402Middleware refuses a repeated key before the handler runs. Metering this route
+      // free requires deriving both from `ctx.idempotencyKey` first, as `claims.claim` does.
       const proofId = randomUUID();
       const submissionId = randomUUID();
 

@@ -737,3 +737,42 @@ describe('relayed intent completions', () => {
     expect(db.transaction).not.toHaveBeenCalled();
   });
 });
+
+describe('completePitchesSelect guards the task but deliberately not the proposals', () => {
+  // This exists to stop a future reader "fixing" the asymmetry for symmetry's sake. The task
+  // update is guarded on the statuses selection may legally move from; the two proposal updates
+  // are not, and must not be. The only natural predicate for them is the task's own status, and
+  // that is exactly what makes one wrong: a legitimate first completion racing an indexer that
+  // has already moved the task past 'worker_selected' would be skipped, and the pitches would
+  // sit at 'pending' for ever with no later pass to repair them.
+  //
+  // Re-stamping on a stale rerun costs nothing in exchange: both values are fixed, and
+  // `pitches.submit` refuses a task that is not open, so the pitch set is frozen once selection
+  // happens and a late rerun writes each row the value it already holds.
+  it('stamps both proposal statuses unconditionally and gates only the task write', async () => {
+    const { db, updateChain } = makeDb();
+
+    await complete(
+      'pitches.select',
+      {
+        contractAddress: null,
+        pitchId: 'pitch-1',
+        taskId: TASK_ID,
+        workerAddress: WORKER,
+      },
+      db
+    );
+
+    // Both proposal writes are issued, and neither carries a status precondition of its own.
+    expect(updateChain(proposals).set.mock.calls.map(([value]: [unknown]) => value)).toEqual([
+      { status: 'selected' },
+      { status: 'rejected' },
+    ]);
+
+    // The task write is the guarded one, and it is guarded on where selection may move from.
+    expect(updateChain(tasks).set).toHaveBeenCalledWith({
+      claimedBy: WORKER,
+      status: 'worker_selected',
+    });
+  });
+});

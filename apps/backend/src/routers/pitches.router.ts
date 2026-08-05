@@ -147,6 +147,12 @@ export const pitchesRouter = router({
         input.pitchText
       );
 
+      // Random is safe only while this write is paid. ADR-0061 refuses a repeated key whose
+      // payload differs, and a fresh id per attempt is such a difference -- but the
+      // pre-settlement check in x402Middleware turns a repeated key away before the handler
+      // runs, so the comparison never sees one here. If this route is ever metered free,
+      // derive the id from `ctx.idempotencyKey` the way `claims.claim` does, in the same
+      // change, or honest retries start being refused.
       const pitchId = randomUUID();
 
       await runRelayedIntent({

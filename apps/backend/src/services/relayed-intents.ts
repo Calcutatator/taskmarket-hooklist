@@ -291,7 +291,22 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(value) ?? 'null';
 }
 
-/** Whether a repeated key is naming the same write, arguments included (ADR-0061). */
+/**
+ * Whether a repeated key is naming the same write, arguments included (ADR-0061).
+ *
+ * Worth knowing before reading a payload as though every operation reached here: most do not.
+ * On a paid route `checkRelayedWriteIdempotency` refuses a repeated key inside x402Middleware,
+ * before the handler runs, so this comparison only ever sees a **free** write --
+ * `claims.claim`, `claims.forfeit`, `submissions.submit`, `evaluations.finalizeVerdict`, the
+ * two `wallet.withdraw*` operations -- or an intent recorded directly by a service.
+ *
+ * That is also the whole of what keeps several paid payloads safe. `bids.submit`,
+ * `bids.auctionAccept`, `pitches.submit`, `proofs.submit` and `acceptance.rate` all mint a
+ * random id, and `bids.auctionAccept` a timestamp and a clock price besides, none of which
+ * survives a second attempt unchanged. Nothing in those routers would fail if they were
+ * metered free the way RFC-0006 metered `submissions.submit`; they would simply start refusing
+ * every honest retry here. Each call site says so, and this is the other end of that thread.
+ */
 function payloadsMatch(intent: RelayedIntent, input: RecordIntentInput): boolean {
   return canonicalizeIntentPayload(intent.payload) === canonicalizeIntentPayload(input.payload);
 }

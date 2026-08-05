@@ -147,6 +147,14 @@ export const bidsRouter = router({
       // it without a second read, but the row that actually persists wins: a re-bid or the
       // indexer's own write of the same BidSubmitted event may already hold this
       // (task, worker) pair, and the unique constraint means there is only ever one row.
+      //
+      // Random is safe here only because this is a paid write. ADR-0061 compares the stored
+      // payload against the incoming one and refuses a mismatch, and a fresh id per attempt is
+      // a mismatch -- but a repeated key never reaches that comparison on a paid route, because
+      // the pre-settlement check in x402Middleware refuses it before the handler runs. Meter
+      // this route free the way RFC-0006 metered submissions and that shield is gone: derive
+      // the id from `ctx.idempotencyKey` (see `claims.claim`) in the same change, or every
+      // honest retry of a bid starts being refused as a different write.
       const bidId = randomUUID();
 
       await runRelayedIntent({
@@ -467,6 +475,12 @@ export const bidsRouter = router({
         payment: settledPaymentReference(ctx.res),
         // The clock price is recorded as quoted, and a rebroadcast replays it rather than
         // re-reading the clock -- what the worker accepted is what lands (ADR-0050 point 7).
+        //
+        // All three of `acceptedAt`, `bidId` and `price` differ between two attempts, so this
+        // payload is the least reproducible of any relayed write. It is safe for the reason
+        // `bids.submit` above is safe and no other: paid, so a repeated key is refused by the
+        // pre-settlement check before ADR-0061's comparison can see it. This route cannot
+        // become free without reworking all three fields first.
         payload: {
           acceptedAt: now.toISOString(),
           bidId: randomUUID(),

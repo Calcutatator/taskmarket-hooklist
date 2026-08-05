@@ -352,6 +352,12 @@ export const acceptanceRouter = router({
 
       const raterAgentId = task.requesterAgentId ? BigInt(task.requesterAgentId) : 0n;
 
+      // `feedbackId` seeds `feedbackURI`, and the `createdAt` clock below seeds `fileContent`
+      // and therefore `feedbackHash`, so four payload fields move between two attempts of one
+      // request. Under ADR-0061 that reads as a different write -- and it stays unreachable
+      // only because this is a paid route, where the pre-settlement check in x402Middleware
+      // refuses a repeated key before the handler runs. Making this write free means deriving
+      // the id and pinning the timestamp first, or every retry of a rating is refused.
       const feedbackId = randomUUID();
       const feedbackURI = `${config.BACKEND_URL}/api/feedback/${feedbackId}`;
 
