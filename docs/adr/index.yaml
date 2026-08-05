@@ -278,3 +278,18 @@ adrs:
     title: A reused idempotency key with different arguments is refused
     status: Accepted
     date: "2026-08-04"
+  - number: "0065"
+    file: "0065-the-backend-decodes-chain-events-from-the-generated-abi.md"
+    title: "The backend decodes chain events from the generated ABI, and CI keeps that artifact current"
+    status: Accepted
+    date: "2026-08-05"
+  - number: "0066"
+    file: "0066-replacement-stops-at-the-cap-and-one-self-transfer-clears-the-nonce.md"
+    title: "Replacement stops at the cap, and a single self-transfer clears the nonce"
+    status: Accepted
+    date: "2026-08-05"
+  - number: "0067"
+    file: "0067-an-intent-is-reserved-before-the-payment-challenge.md"
+    title: "An intent is reserved when the request arrives, before the payment challenge"
+    status: Accepted
+    date: "2026-08-05"
