@@ -172,8 +172,9 @@ is where a temporary gap becomes permanent.
 **Neutral:**
 
 - The guard is a unit test with no runtime cost and no production code path. It carries `Verifies:`
-  rather than `Implements:`, so it does not trip `adr-lint`'s Proposed-ADR gate while this ADR
-  awaits a human Decider.
+  rather than `Implements:`, which is the right marker on its own terms — that is the back-pointer
+  a test contributes to an ADR's embodiment — and it is also why a guard can land alongside a
+  still-`Proposed` ADR without tripping `adr-lint`'s `Implements:` gate.
 
 ## References
 

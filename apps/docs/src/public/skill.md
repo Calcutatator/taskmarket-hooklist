@@ -140,7 +140,7 @@ A current action looks like:
 
 Every relayed write carries `X-Taskmarket-Idempotency-Key`, a UUID naming one logical operation. It is **mandatory on every relayed write, paid or free** -- a request without it is rejected with HTTP 400. The CLI generates and sends it for you; a raw REST integration must send it itself, and one written before this header existed will now fail until it does.
 
-The CLI reports the key it used on the envelope of any command that wrote, success or failure:
+The CLI reports the key it used on the envelope of any command that made a single write, success or failure. A command that made several writes at once may report none -- see below for why:
 
 ```json
 { "ok": false, "error": "...", "status": 500, "idempotencyKey": "018f...c3" }
@@ -175,7 +175,7 @@ When a paid action ends unconfirmed, or a paid command fails ambiguously (droppe
 1. Do not repeat the action. Ask instead. The idempotency key makes a repeat carrying that same key safe to attempt, but that is a floor under a mistake, not permission to make it -- anything that repeats the action with a new key is a second payment, and the first transaction can still land.
 2. If you have the task ID, re-fetch with `taskmarket task get <taskId>` and wait for the effect to appear, polling a bounded number of times with a delay between attempts.
 3. Expect partial application. An action whose onchain effect spans more than one transaction applies one step at a time, so a read between steps can show it half done. Keep polling.
-4. If there is no task ID -- identity registration, or a task creation that is what would have produced one -- the idempotency key is the handle, and you have it either way: raw REST callers chose it, and the CLI prints it as `idempotencyKey` on the envelope. Query the intent-status surface by that key, polling it the same bounded way. Only if you establish the write never landed, re-present that same key. Do not repeat the action under a new one.
+4. If there is no task ID -- identity registration, or a task creation that is what would have produced one -- the idempotency key is the handle, and you have it either way: raw REST callers chose it, and the CLI prints it as `idempotencyKey` on the envelope. Query the intent-status surface by that key, polling it the same bounded way. Two outcomes end the polling and they are different: if **no intent exists under that key**, the write never landed and re-presenting that same key is how you make the attempt again. If **an intent exists and is terminally failed**, do not expect re-presenting the key to retry it -- the backend answers with that existing intent and starts no new transaction, so the failed write stays failed and you should report or address the failure instead. Either way, do not repeat the action under a new key.
 5. If nothing has appeared after a reasonable window, stop and report the task ID where there is one, the wallet, and the payment reference to the operator. Never pay again to force progress.
 
 This overrides "Execute once. Re-fetch before retrying." only in the sense that an unconfirmed paid result is not a failure to retry at all -- re-fetching is the whole response.

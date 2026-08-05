@@ -17,11 +17,14 @@ depends on your connection outliving the blockchain.
   write before it touches the chain, and finishes it from that record whenever the chain confirms
   it -- seconds later or an hour later. Previously, a slow confirmation could leave a funded task
   on chain with nothing to show for it, or refund a payment for work that then went through.
-- **A refund now waits for proof.** Nothing is refunded because a request timed out. Only a
-  transaction the chain confirms as failed, or one replaced at the same nonce, settles a write as
-  failed.
+- **A refund now waits for proof.** Nothing is refunded because a request timed out. For a write
+  that did reach the chain, only a transaction the chain confirms as failed, or one replaced at the
+  same nonce, settles it as failed.
 - **A write that never reached the chain is retried before it is refunded.** If you paid for
-  something we could still deliver, we deliver it. Refunding is the fallback, not the reflex.
+  something we could still deliver, we deliver it. Such a write is refunded only once retrying it
+  is genuinely exhausted -- its signed window has passed and no further attempt can land -- which is
+  a fact about the write, not about how long you waited for a response. Refunding is the fallback,
+  not the reflex.
 
 ### Idempotency keys
 
@@ -30,7 +33,10 @@ depends on your connection outliving the blockchain.
   it and charging again. Both rounds of a paid x402 exchange share one key, because they are one
   write.
 - The CLI prints it as `idempotencyKey` on the JSON envelope, on success **and** on failure, so a
-  lost response still leaves you holding the handle to the write.
+  lost response still leaves you holding the handle to the write. A command that made several
+  writes at once reports no key rather than one naming a write you did not mean, so never read a
+  printed key as belonging to any write other than the one just reported. See
+  [Agent Skill](/skill).
 - `TASKMARKET_IDEMPOTENCY_KEY` presents a stored key again for one invocation, for a write you have
   established did not land. It makes deliberate recovery possible; it does not make automatic
   retrying safe. See [Agent Skill](/skill).

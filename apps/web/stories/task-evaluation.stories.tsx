@@ -112,6 +112,24 @@ export const EvaluatorAppointed: Story = {
 
 /** A registered evaluator resolves to its agent name rather than raw hex. */
 export const RegisteredEvaluatorIdentity: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // Each party links to its agent profile and reads as a name, not as hex. The name itself
+    // is derived from the id, so this asserts the shape rather than pinning today's wordlist.
+    const links = canvas.getAllByRole('link');
+    const evaluatorLink = links.find((link) => link.getAttribute('href')?.endsWith('/42'));
+    const resolverLink = links.find((link) => link.getAttribute('href')?.endsWith('/7'));
+    await expect(evaluatorLink).toBeDefined();
+    await expect(resolverLink).toBeDefined();
+    await expect(evaluatorLink?.textContent ?? '').not.toMatch(/^0x/);
+    await expect(resolverLink?.textContent ?? '').not.toMatch(/^0x/);
+    // The compact address that stands in when no id is known must be gone -- asserting only
+    // that a name appears would still pass if the hex were rendered alongside it.
+    await expect(canvas.queryByText('0x2222...2222')).toBeNull();
+    await expect(canvas.queryByText('0x5555...5555')).toBeNull();
+    // The full address stays reachable as the element's title, so naming the agent loses nothing.
+    await expect(canvas.getByTitle(addresses.evaluator)).toBeVisible();
+  },
   render: () => (
     <TaskEvaluationTerms disputeResolverAgentId="7" evaluatorAgentId="42" task={appointedTask} />
   ),
@@ -199,6 +217,18 @@ export const NoneAndIneligible: Story = {
 
 /** A claimed task can never take an evaluator, so the control does not render. */
 export const NoneAndTaskAlreadyClaimed: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // The requester is eligible in every other respect -- NoneButViewerEligible is the same
+    // viewer on the same task before it was claimed -- so the claim is the only thing keeping
+    // the control away. waitFor, because the control appears only once the wallet connects.
+    await waitFor(() =>
+      expect(canvas.queryByRole('button', { name: 'Appoint evaluator' })).toBeNull()
+    );
+    // Nothing else offers the action either: a disabled or renamed control would be a
+    // different bug wearing the same passing assertion.
+    await expect(canvas.queryByRole('button')).toBeNull();
+  },
   render: () => (
     <ConnectedAs account={addresses.requester}>
       <AssignEvaluatorAction

@@ -115,8 +115,13 @@ describe('proofs router', () => {
       expect(typeof result.proofId).toBe('string');
       expect(typeof result.submissionId).toBe('string');
       expect(contractSubmitProof).toHaveBeenCalledOnce();
-      // The deliverable commitment is a second contract call, so it is a second intent of
-      // its own, recorded and dispatched by the proof's completion handler (ADR-0047).
+      // The deliverable commitment is a second contract call, so it is a second intent of its
+      // own, recorded and dispatched by the proof's completion handler. ADR-0047 withdrew the
+      // chaining subsystem, so this is not a chained follow-on; the decision that governs a
+      // completion handler recording follow-on work is ADR-0052 point 8, which names "a
+      // deliverable anchor after a proof" directly and gives it a key derived from the parent
+      // rather than a random one, so an at-least-once completion rerun collapses onto the same
+      // follow-on instead of making a second chain call.
       expect(contractSubmitWork).toHaveBeenCalledOnce();
       expect(ctx.insertChain(proofs).values).toHaveBeenCalledOnce();
       expect(ctx.insertChain(submissions).values).toHaveBeenCalledOnce();
