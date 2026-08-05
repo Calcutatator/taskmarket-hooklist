@@ -263,7 +263,7 @@ swap-reward-hook:
 
 release:
 	@SQL_COUNT=$$(ls apps/backend/drizzle/migrations/*.sql 2>/dev/null | wc -l | tr -d ' '); \
-	JOURNAL_COUNT=$$(python3 -c "import json; d=json.load(open('apps/backend/drizzle/migrations/meta/_journal.json')); print(len(d['entries']))" 2>/dev/null); \
+	JOURNAL_COUNT=$$(node -e 'console.log(JSON.parse(require("fs").readFileSync("apps/backend/drizzle/migrations/meta/_journal.json","utf8")).entries.length)' 2>/dev/null); \
 	if [ "$$SQL_COUNT" != "$$JOURNAL_COUNT" ]; then \
 		echo "ERROR: migration journal out of sync ($$SQL_COUNT .sql files, $$JOURNAL_COUNT journal entries). Add the missing entry to apps/backend/drizzle/migrations/meta/_journal.json before releasing."; \
 		exit 1; \
@@ -305,7 +305,7 @@ build:
 		pnpm --filter @taskmarket/shared build; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		forge build --root packages/contracts && \
-		cd packages/contracts && python3 scripts/generate-abi.py; \
+		cd packages/contracts && pnpm generate-abi; \
 	else \
 		echo "Unknown app or package: $(word 1,$(ARGS))"; \
 		echo "Usage: make build <backend|frontend|web|docs|shared|contracts|storybook|all>"; \
@@ -593,7 +593,7 @@ contract:
 		cd packages/contracts && forge snapshot --check --tolerance 1; \
 	elif [ "$(word 1,$(ARGS))" = "abi-check" ]; then \
 		forge build --root packages/contracts && \
-		cd packages/contracts && python3 scripts/generate-abi.py && \
+		cd packages/contracts && pnpm generate-abi && \
 		if [ -n "$$(git status --porcelain -- abi/)" ]; then \
 			git --no-pager diff -- abi/; \
 			echo "Error: packages/contracts/abi/ is out of date with the contract sources."; \

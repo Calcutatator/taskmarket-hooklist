@@ -476,9 +476,18 @@ importers:
 
   packages/contracts:
     devDependencies:
+      '@types/node':
+        specifier: ^20.11.0
+        version: 20.19.33
       solhint:
         specifier: ^6.2.1
         version: 6.2.1(typescript@5.7.3)
+      tsx:
+        specifier: ^4.7.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.3.3
+        version: 5.7.3
 
   packages/eslint-config:
     dependencies:
