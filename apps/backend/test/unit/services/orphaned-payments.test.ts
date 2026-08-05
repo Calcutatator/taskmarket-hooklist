@@ -67,7 +67,7 @@ describe('services/orphaned-payments', () => {
         failureReason: 'Contract call rejected: EnforcedPause',
       });
 
-      expect(result).toEqual({ refunded: true, refundTxHash: REFUND_TX_HASH });
+      expect(result).toEqual({ pending: false, refunded: true, refundTxHash: REFUND_TX_HASH });
       expect(contractRefundOrphanedPayment).toHaveBeenCalledWith(PAYER, 1000n);
       expect(db.insert).toHaveBeenCalledOnce();
     });
@@ -89,7 +89,7 @@ describe('services/orphaned-payments', () => {
         failureReason: 'boom',
       });
 
-      expect(result).toEqual({ refunded: false, refundTxHash: null });
+      expect(result).toEqual({ pending: false, refunded: false, refundTxHash: null });
       expect(contractRefundOrphanedPayment).not.toHaveBeenCalled();
       expect(db.update).not.toHaveBeenCalled();
     });
@@ -113,7 +113,73 @@ describe('services/orphaned-payments', () => {
         failureReason: 'boom',
       });
 
-      expect(result).toEqual({ refunded: false, refundTxHash: null });
+      expect(result).toEqual({ pending: false, refunded: false, refundTxHash: null });
+    });
+
+    /**
+     * The same rule `handlePostPaymentFailure` states at its own guard, one level down: a
+     * pending transaction is not a failed one. `contractRefundOrphanedPayment` raises
+     * `ServerTransactionPendingError` when the refund transfer was broadcast but its receipt
+     * did not arrive in the request budget -- the transfer is live. Writing 'failed' there
+     * puts the row straight back in `retryFailedOrphanedRefunds`'s claimable set, and the
+     * retry sends a second plain ERC-20 transfer for the same payment. There is no on-chain
+     * idempotency behind it, so that is two refunds for one payment.
+     */
+    it('does not mark a row failed when the refund transfer is still in flight', async () => {
+      const db = makeFakeDb();
+      db.insert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+      const claim = updateChain([{ id: 'ignored' }]);
+      const settle = updateChain();
+      db.update.mockReturnValueOnce(claim).mockReturnValueOnce(settle);
+      vi.mocked(contractRefundOrphanedPayment).mockRejectedValue(
+        new ServerTransactionPendingError(REFUND_TX_HASH as `0x${string}`, 11)
+      );
+
+      const result = await recordAndRefundOrphanedPayment({
+        db: db as any,
+        payer: PAYER as `0x${string}`,
+        amount: 1000n,
+        paymentTxHash: PAYMENT_TX_HASH as `0x${string}`,
+        context: 'task_create',
+        failureReason: 'boom',
+      });
+
+      // The live hash is reported and recorded, and the row is not claimable again.
+      expect(result).toEqual({
+        pending: true,
+        refunded: false,
+        refundTxHash: REFUND_TX_HASH,
+      });
+
+      const written = settle.set.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+      expect(written?.refundStatus).not.toBe('failed');
+      expect(written?.refundTxHash).toBe(REFUND_TX_HASH);
+    });
+
+    it('leaves an in-flight refund in a state retryFailedOrphanedRefunds cannot re-claim', async () => {
+      const db = makeFakeDb();
+      db.insert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+      const claim = updateChain([{ id: 'ignored' }]);
+      const settle = updateChain();
+      db.update.mockReturnValueOnce(claim).mockReturnValueOnce(settle);
+      vi.mocked(contractRefundOrphanedPayment).mockRejectedValue(
+        new ServerTransactionPendingError(REFUND_TX_HASH as `0x${string}`, 11)
+      );
+
+      await recordAndRefundOrphanedPayment({
+        db: db as any,
+        payer: PAYER as `0x${string}`,
+        amount: 1000n,
+        paymentTxHash: PAYMENT_TX_HASH as `0x${string}`,
+        context: 'task_create',
+        failureReason: 'boom',
+      });
+
+      // `retryFailedOrphanedRefunds` selects on 'failed' and `attemptRefund` claims
+      // 'pending'/'failed'. Any status outside that set is safe; 'refunding' is the one the
+      // row is already holding and the one the schema's check constraint permits.
+      const written = settle.set.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+      expect(['pending', 'failed']).not.toContain(written?.refundStatus);
     });
   });
 

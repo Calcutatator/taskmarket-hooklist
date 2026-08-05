@@ -112,6 +112,70 @@ describe('server transaction reconciler', () => {
     expect(state.rows[0]).toMatchObject({ status: 'broadcast', txHash: REPLACEMENT_HASH });
   });
 
+  // Verifies: ADR-0066
+  it('sends exactly one clearing self-transfer per stuck nonce, not one per pass', async () => {
+    const { state, store } = createMemoryServerTransactionStore(10);
+    await broadcastOne(store);
+
+    // Escalation has reached the cap, so every pass from here would price a clearing transfer.
+    // Only the first may actually go out: the nonce is cleared once, and the row then waits for
+    // that transfer's receipt like any other broadcast.
+    const sendReplacement = vi.fn().mockResolvedValue({
+      clearing: true,
+      fees: FEES,
+      hash: REPLACEMENT_HASH,
+    });
+    const reconcile = createServerTransactionReconciler({
+      getReceiptStatus: vi.fn().mockResolvedValue(null),
+      sendReplacement,
+      store,
+      stuckAfterMs: STUCK_AFTER_MS,
+    });
+
+    await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 2));
+    await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 4));
+    await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 6));
+
+    expect(sendReplacement).toHaveBeenCalledTimes(1);
+    // And the outbox says which of the row's transactions was the clearing transfer, so an
+    // operator reading the table can tell it from the work it replaced.
+    expect(state.rows[0]).toMatchObject({
+      clearingTxHash: REPLACEMENT_HASH,
+      replacedTxHash: HASH,
+      txHash: REPLACEMENT_HASH,
+    });
+  });
+
+  // Verifies: ADR-0066
+  it('settles a cleared nonce as failed through the mined-replacement rule', async () => {
+    const { store } = createMemoryServerTransactionStore(10);
+    await broadcastOne(store);
+    const intents = settlementSpies();
+
+    const getReceiptStatus = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue('success' as const);
+    const reconcile = createServerTransactionReconciler({
+      getReceiptStatus,
+      intents,
+      sendReplacement: vi
+        .fn()
+        .mockResolvedValue({ clearing: true, fees: FEES, hash: REPLACEMENT_HASH }),
+      store,
+      stuckAfterMs: STUCK_AFTER_MS,
+    });
+
+    await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 2));
+    await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 4));
+
+    // No new settlement path: this is the same confirmed evidence any mined replacement
+    // produces -- the nonce is spent by a transaction that did none of the intent's work.
+    expect(intents.onFailed).toHaveBeenCalledTimes(1);
+    expect(intents.onFailed.mock.calls[0]?.[1]).toContain('superseded by replacement');
+    expect(intents.onConfirmed).not.toHaveBeenCalled();
+  });
+
   it('recovers without an operator restart when a replacement is itself rejected', async () => {
     const { state, store } = createMemoryServerTransactionStore(10);
     await broadcastOne(store);

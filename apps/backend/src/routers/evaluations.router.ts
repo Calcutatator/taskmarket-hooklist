@@ -20,7 +20,7 @@ import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 // Shared with the rebroadcast path rather than duplicated here, so the first send and every
 // retry of it map a verdict to the same on-chain enum (ADR-0050).
-import { VERDICT_MAP } from '../services/intents/evaluations-intents';
+import { verdictCode } from '../services/intents/evaluations-intents';
 import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 import type {
   EvaluationsAppealIntentPayload,
@@ -97,7 +97,7 @@ export const evaluationsRouter = router({
             await contractEvaluate(
               input.taskId as `0x${string}`,
               payer as `0x${string}`,
-              VERDICT_MAP[input.verdict] ?? 0,
+              verdictCode(input.verdict),
               input.score,
               input.confidence,
               input.evidenceHash as `0x${string}`,
@@ -282,7 +282,7 @@ export const evaluationsRouter = router({
             await contractResolveDispute(
               input.taskId as `0x${string}`,
               payer as `0x${string}`,
-              VERDICT_MAP[input.verdict] ?? 0,
+              verdictCode(input.verdict),
               awards
             )
           ).txHash,

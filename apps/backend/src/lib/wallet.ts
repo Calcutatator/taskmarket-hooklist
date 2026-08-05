@@ -116,14 +116,16 @@ export function startServerWalletReconciler(): NodeJS.Timeout {
         });
       }
 
-      if (decision.cappedBelowPreviousFee) {
-        // The configured ceiling has been exceeded on purpose. Obeying it here would price the
-        // replacement at exactly the fee it replaces, which every provider rejects as an
-        // insufficient bump -- so the nonce would stay blocked while the reconciler replaced it
-        // forever. Logged at error because the deployment's REPLACEMENT_GAS_MAX_MULTIPLE (or
-        // REPLACEMENT_GAS_MAX_FEE_WEI) is now demonstrably too low for its fee regime, and every
-        // pass from here is spending above what the operator asked for (ADR-0051).
-        logger.error('Replacement gas ceiling exceeded to keep the fee above the previous bid', {
+      if (decision.clearing) {
+        // Escalation has reached the ceiling and stopped there. Obeying the cap for one more
+        // pass would price the replacement at exactly the fee it replaces, which every provider
+        // rejects as an insufficient bump, so the nonce would stay blocked while the reconciler
+        // replaced it forever. What goes out instead is the single clearing self-transfer,
+        // above the cap by the minimum bump, which frees the nonce and ends this row's
+        // escalation (ADR-0066). Logged at error because the deployment's
+        // REPLACEMENT_GAS_MAX_MULTIPLE (or REPLACEMENT_GAS_MAX_FEE_WEI) is now demonstrably too
+        // low for its fee regime, and because the work in this transaction is being abandoned.
+        logger.error('Replacement gas reached the ceiling; clearing the nonce instead', {
           maxFeePerGas: decision.fees.maxFeePerGas.toString(),
           nonce,
           originalMaxFeePerGas: originalFees?.maxFeePerGas.toString() ?? null,
@@ -132,7 +134,9 @@ export function startServerWalletReconciler(): NodeJS.Timeout {
       }
 
       // A zero-value self-transfer is the cheapest way to occupy a nonce. It supersedes a
-      // stuck transaction at the same nonce and unblocks everything queued behind it.
+      // stuck transaction at the same nonce and unblocks everything queued behind it. The
+      // clearing transfer is the same transaction priced above the cap; what makes it the last
+      // one is the flag returned below, not anything the chain can see.
       const hash = await wallet.client.sendTransaction({
         account: wallet.account,
         chain: wallet.client.chain,
@@ -144,7 +148,7 @@ export function startServerWalletReconciler(): NodeJS.Timeout {
       });
       // The fee goes back to the reconciler to be persisted: it is the base the *next*
       // escalation multiplies, and re-reading the oracle in its place is the defect fixed here.
-      return { fees: decision.fees, hash };
+      return { clearing: decision.clearing, fees: decision.fees, hash };
     },
     store: buildRuntimeStore(),
   });

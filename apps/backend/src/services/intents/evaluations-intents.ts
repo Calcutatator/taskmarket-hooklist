@@ -1,6 +1,8 @@
 // Implements: ADR-0045, ADR-0050
 import { and, eq, inArray } from 'drizzle-orm';
 
+import type { EvaluateInput, ResolveDisputeInput } from '@taskmarket/shared';
+
 import { getServerConfig } from '../../config/env';
 import { DeterministicRelayError } from '../../lib/relay-failure';
 import type { db as DbType } from '../../db/client';
@@ -19,13 +21,27 @@ import { recordTaskSettlement } from '../settlement-recorder';
 type Db = typeof DbType;
 
 /**
+ * Every verdict the API accepts, taken from the request schemas rather than restated.
+ *
+ * This union is what makes an unmapped verdict a compile error instead of a payout: `VERDICT_MAP`
+ * below is declared total over it, so adding a member to either schema without giving it an
+ * on-chain code stops the build. Restating the vocabulary here would make that guarantee
+ * vacuous -- it would only ever be exhaustive over its own copy.
+ */
+type Verdict = EvaluateInput['verdict'] | ResolveDisputeInput['verdict'];
+
+/**
  * The verdict vocabulary, shared by the request path and every rebroadcast of it.
  *
  * Deliberately one table rather than a copy per caller. A rebroadcast has to produce the same
  * call the original send did (ADR-0050 point 7), and two copies of a mapping are two things
  * that can drift apart without anything noticing.
+ *
+ * `Record<Verdict, number>` and not `Record<string, number>`: the loose type is what allowed a
+ * lookup to return `undefined`, and every call site that got one paired it with `?? 0` -- which
+ * is APPROVE. Total over the union, there is no such lookup to write a fallback for.
  */
-export const VERDICT_MAP: Record<string, number> = { approve: 0, reject: 1, partial: 2 };
+export const VERDICT_MAP: Record<Verdict, number> = { approve: 0, reject: 1, partial: 2 };
 
 /**
  * The verdict's on-chain code, or a refusal to send anything at all.
@@ -43,8 +59,8 @@ export const VERDICT_MAP: Record<string, number> = { approve: 0, reject: 1, part
  * intent instead reaches a visible terminal state: `failed` if nothing was paid, or budget-
  * exhausted and handed to settlement's refund sweep if something was.
  */
-function verdictCode(verdict: string): number {
-  const code = VERDICT_MAP[verdict];
+export function verdictCode(verdict: string): number {
+  const code = (VERDICT_MAP as Record<string, number | undefined>)[verdict];
   if (code === undefined) {
     throw new DeterministicRelayError(
       `unknown verdict "${verdict}"; expected one of ${Object.keys(VERDICT_MAP).join(', ')}`

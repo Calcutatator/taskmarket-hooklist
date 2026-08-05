@@ -309,6 +309,13 @@
       "when": 1785804896000,
       "tag": "0043_add_server_wallet_transaction_gas",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1785960569000,
+      "tag": "0044_add_server_wallet_clearing_tx_hash",
+      "breakpoints": true
     }
   ]
 }

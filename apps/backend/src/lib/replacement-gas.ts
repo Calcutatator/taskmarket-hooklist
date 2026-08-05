@@ -1,5 +1,18 @@
 // Implements: ADR-0051
+// Implements: ADR-0066
 import type { GasFees } from './server-transaction-store';
+
+/**
+ * How far above the fee it replaces a clearing transfer is priced, as a percentage.
+ *
+ * Nodes enforce a minimum replacement bump -- around 10% on the mempools we relay through -- so
+ * this is that minimum with room for rounding in bigint division and for a stricter provider,
+ * matching the reasoning behind ADR-0051's `min(125)` on the escalation percentage. It is
+ * deliberately *not* the configured escalation percentage: the clearing transfer is the one
+ * transaction allowed above the cap, so it exceeds it by the smallest margin that still lands
+ * rather than by however far the operator's curve happens to step.
+ */
+const CLEARING_BUMP_PCT = 125n;
 
 export type ReplacementGasPolicy = {
   /** Each attempt as a percentage of the previous attempt's fee. */
@@ -24,19 +37,29 @@ export type ReplacementGasDecision = {
    */
   cappedBelowOpeningBid: boolean;
   /**
-   * True when a ceiling was *overridden* to keep the fee above the one it replaces.
+   * True when the ceiling can no longer raise the fee -- clamping would price this attempt at
+   * or below the one it replaces, which every node refuses as an insufficient bump.
    *
    * A separate field from `cappedBelowOpeningBid` rather than a widening of it, because the two
-   * report opposite things about the ceiling. `cappedBelowOpeningBid` says the ceiling was
-   * obeyed and the transaction went out underpriced; this says the ceiling was disregarded and
-   * the transaction went out above it. An operator reading a single merged flag could not tell
-   * whether their configured maximum was honoured, which is the one fact they set it to control.
+   * report different things about the ceiling. `cappedBelowOpeningBid` says the ceiling held an
+   * ordinary attempt below the market; this says the ceiling has been reached and escalation
+   * has nowhere left to go. An operator reading a single merged flag could not tell them apart.
    *
    * Both mean the same thing about the configuration -- `REPLACEMENT_GAS_MAX_MULTIPLE` (or
-   * `REPLACEMENT_GAS_MAX_FEE_WEI`) is too low for the fee regime this deployment is in -- and
-   * this one means it has already begun costing more than it saves.
+   * `REPLACEMENT_GAS_MAX_FEE_WEI`) is too low for the fee regime this deployment is in.
    */
   cappedBelowPreviousFee: boolean;
+  /**
+   * True when this attempt is the clearing self-transfer rather than a further escalation
+   * (ADR-0066).
+   *
+   * Escalation stops at the cap. Rather than exceed the ceiling for ever -- which makes the cap
+   * bound nothing -- or replace at the fee it is replacing -- which every node refuses -- the
+   * reconciler sends one zero-value self-transfer priced just above the cap, which frees the
+   * nonce and unblocks the queue. The caller is responsible for sending exactly one of these
+   * per stuck nonce; this function only says that the moment has arrived.
+   */
+  clearing: boolean;
   fees: GasFees;
 };
 
@@ -86,27 +109,25 @@ function escalateField(
     value = policy.maxFeeWei;
   }
 
-  // Monotonicity wins over the ceiling, always. A ceiling reached once is reached on every
-  // later pass -- the escalation is computed from `previous`, which is now the ceiling itself
-  // -- so clamping would return exactly `previous`, and a replacement that does not raise the
-  // fee is rejected as underpriced. Holding at the cap therefore does not "hold" anything: it
-  // replaces forever while putting nothing on the network, which is the stuck-nonce loop
-  // ADR-0051 exists to end, reached through the ceiling instead of through a flat oracle.
+  // Escalation stops here (ADR-0066). A ceiling reached once is reached on every later pass --
+  // the escalation is computed from `previous`, which is now the ceiling itself -- so clamping
+  // returns exactly `previous`, and a replacement that does not raise the fee is rejected as
+  // underpriced. Holding at the cap therefore holds nothing: it replaces forever while putting
+  // nothing on the network. Exceeding the cap instead, which is what shipped before, makes the
+  // cap bound nothing at all, which was its whole purpose.
   //
-  // The cost asymmetry settles which side gives. Exceeding the cap costs cents: a replacement
-  // is a 21,000-gas self-transfer, and the cap bounds a per-gas price, not an exposure. A
-  // blocked nonce blocks every paid write on the shared server wallet (incident #54). So the
-  // fee is restored to the full escalation -- not to `previous + 1`, which is strictly greater
-  // arithmetically but still under every provider's minimum-bump rule and so still lands
-  // nothing.
+  // So neither: the curve halts, and this attempt becomes the single clearing self-transfer.
+  // It is priced above the ceiling by the minimum bump and no more -- enough to be accepted,
+  // and bounded, because there is exactly one of it per stuck nonce. A 21,000-gas transfer at
+  // that price costs cents, while a blocked nonce blocks every paid write on the shared server
+  // wallet (incident #54).
   //
-  // This does not make the ceiling inert. It still binds on the first attempt and on the first
-  // pass that reaches it, where the clamped value is genuinely above `previous`; only the
-  // passes after that override it, and each one says so.
+  // This does not make the ceiling inert. It still binds every attempt up to and including the
+  // pass that reaches it, where the clamped value is genuinely above `previous`.
   let cappedBelowPreviousFee = false;
   if (previous !== null && value <= previous) {
     cappedBelowPreviousFee = true;
-    value = escalated;
+    value = maxOf(ceilDiv(previous * CLEARING_BUMP_PCT, 100n), previous + 1n);
   }
 
   // A fee of zero is not a transaction. Only reachable from a zero original or a zero
@@ -148,6 +169,10 @@ export function computeReplacementFees(input: {
     capped: maxFee.capped || priorityFee.capped,
     cappedBelowOpeningBid: maxFee.cappedBelowOpeningBid || priorityFee.cappedBelowOpeningBid,
     cappedBelowPreviousFee: maxFee.cappedBelowPreviousFee || priorityFee.cappedBelowPreviousFee,
+    // The same condition, named for what the caller must now do with it. Either field reaching
+    // the end of its curve is enough: the transaction goes out at one price pair, and a nonce
+    // that cannot be escalated on its max fee cannot be escalated at all.
+    clearing: maxFee.cappedBelowPreviousFee || priorityFee.cappedBelowPreviousFee,
     fees: {
       maxFeePerGas: maxFee.value,
       // A priority fee above the max fee is rejected outright, and the clamps above are
