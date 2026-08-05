@@ -52,6 +52,7 @@ const REASON_CODES: Record<ApiErrorReason, TRPCError['code']> = {
   idempotency_key_reused: 'CONFLICT',
   idempotency_key_required: 'BAD_REQUEST',
   idempotency_key_conflict: 'CONFLICT',
+  idempotency_key_payload_mismatch: 'CONFLICT',
   payment_already_spent: 'CONFLICT',
   // No tRPC code maps to 503. The path that raises this answers Express directly with a 503, so
   // this mapping only covers the case where it is ever raised from inside a procedure.

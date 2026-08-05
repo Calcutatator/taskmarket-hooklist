@@ -8,7 +8,7 @@ import {
 import { z } from 'zod';
 import { claims, tasks } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { randomUUID } from 'crypto';
+import { derivedIdempotencyKey } from '../services/relayed-intents';
 import { contractClaimTask, contractForfeitAndReopen } from '../services/contract';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import type {
@@ -115,7 +115,13 @@ export const claimsRouter = router({
 
       // Minted before the intent is recorded so the id in the payload is the id returned to
       // the caller, whether the completion runs here or from a reconciler pass later.
-      const claimId = randomUUID();
+      //
+      // Derived from the caller's own key rather than random, because the payload is now
+      // compared against the stored one to tell a retry from a different write (ADR-0061): a
+      // fresh id on every attempt would make an honest retry of this free write look like a
+      // change of arguments and get it refused. It also fixes what a retry returned -- a
+      // random id would hand the caller an id the completion never wrote.
+      const claimId = derivedIdempotencyKey(`${ctx.idempotencyKey}:claims.claim:claimId`);
 
       // Free, but still an intent (ADR-0045). Nothing is refundable here; what the intent
       // buys is that a receipt landing after this request has gone still produces the claim

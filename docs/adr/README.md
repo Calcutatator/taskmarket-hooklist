@@ -271,6 +271,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0058 — Every API error carries a machine-readable reason, and in-flight is a 409 rather than a 500](0058-every-api-error-carries-a-machine-readable-reason.md)
 - [0059 — An intent is readable by the address recorded as having initiated it](0059-an-intent-is-readable-by-the-address-recorded-as-having-initiated-it.md)
 - [0060 — A relayed payload is sufficient, and a broadcaster is pure](0060-a-relayed-payload-is-sufficient-and-a-broadcaster-is-pure.md)
+- [0061 — A reused idempotency key with different arguments is refused](0061-a-reused-idempotency-key-with-different-arguments-is-refused.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting
