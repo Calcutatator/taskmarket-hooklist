@@ -207,7 +207,7 @@ On a tRPC response it is at `error.data.taskmarket`. On a raw-REST body and on a
 | `intent_completion_deferred` | 500 | The chain call is confirmed and the work happened; only recording it is outstanding, and it is retried automatically. | Poll the task or the intent. Nothing to resubmit and nothing to refund. |
 | `payment_rejected` | 402 / 400 / 500 | The x402 exchange did not produce a settled payment. Nothing was charged. | Safe to retry with the same key. |
 | `payment_preflight_rejected` | 400 / 403 / 404 / 409 | A pre-settlement check on your inputs or on task state rejected the request. Nothing was charged. | Fix the request. |
-| `idempotency_check_unavailable` | 503 | The idempotency precondition could not be read, so the request was refused rather than risking a double charge. | Retry with the **same** key. |
+| `idempotency_check_unavailable` | 503 | The idempotency precondition could not be established, so the request was refused rather than risking a double charge. Nothing was charged. Also covers the narrow case where a colliding key vanished between claim and read. | Retry with the **same** key. |
 | `unclassified` | varies | No more specific classification. | Treat as an ordinary failure of unknown kind. Do not assume nothing is in flight. |
 
 Treat an unrecognised `reason` as no information rather than as a value to compare against: it means the backend classifies something your integration predates.

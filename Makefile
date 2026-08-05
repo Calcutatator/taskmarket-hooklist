@@ -290,7 +290,8 @@ build:
 		echo "Usage: make build <backend|frontend|web|docs|shared|contracts|storybook|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
-		pnpm turbo build; \
+		pnpm turbo build && \
+		$(MAKE) build contracts; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
 		pnpm --filter @taskmarket/backend build; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \

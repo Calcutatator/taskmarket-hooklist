@@ -164,7 +164,12 @@ function requireIdempotencyKey(key: string | undefined, operation: string): stri
 
 export type RelayedWriteRefusal = {
   error: string;
-  status: 400 | 409;
+  /**
+   * 503 is here for the one refusal that is not the caller's fault: the precondition could not
+   * be established, so nothing was charged and the same key is safe to present again. A 409
+   * would report it as a conflict the caller caused, which is the wrong thing to retry against.
+   */
+  status: 400 | 409 | 503;
   envelope: ApiErrorEnvelope;
 };
 
@@ -283,11 +288,23 @@ export async function reserveRelayedWrite(input: {
     // The colliding row went away between the insert and this read. Refusing is still the safe
     // answer: retrying with the same key will now succeed, and charging on the assumption that
     // it is free is the one outcome that cannot be taken back.
+    //
+    // `idempotency_check_unavailable`, not `idempotency_key_reused`. The distinction is not
+    // cosmetic: `isInFlightApiError` reads a reused-key envelope as in flight only while its
+    // `intentStatus` is non-terminal, and there is no status to send here -- the row this
+    // refusal is about no longer exists to have one. A reused-key envelope with no status
+    // therefore reads as *terminal* to every client that branches on the field rather than the
+    // prose, which is the opposite of what the message says, and would send a caller off to
+    // start again under a fresh key.
+    //
+    // `idempotency_check_unavailable` says exactly what happened -- the precondition could not
+    // be established, nothing was charged -- and its documented remedy is already "retry with
+    // the same key", which is the advice this branch wants to give.
     return {
       refusal: {
         error: 'This idempotency key could not be claimed; retry this request with the same key.',
-        status: 409,
-        envelope: { reason: 'idempotency_key_reused', idempotencyKey: input.key },
+        status: 503,
+        envelope: { reason: 'idempotency_check_unavailable', idempotencyKey: input.key },
       },
     };
   }
