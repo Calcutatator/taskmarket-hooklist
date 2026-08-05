@@ -123,10 +123,23 @@ export type ApiErrorEnvelope = z.infer<typeof ApiErrorEnvelopeSchema>;
  * Exported from shared so the web app and the CLI branch on the same set rather than each
  * deciding for itself which reasons are non-terminal -- the mistake the substring matching made
  * structurally possible.
+ *
+ * The question this set asks is only ever "is something still landing", never "was anything
+ * charged". That is why `payment_already_spent`, `payment_payer_mismatch` and
+ * `idempotency_key_payload_mismatch` all stay out of it despite naming a settled payment: in
+ * each of those the write the caller described provably did not happen and nothing is on its way
+ * -- what is outstanding is a refund, which `reason` reports and this predicate does not.
+ * `intent_completion_deferred` is the opposite case and belongs here: its chain call is
+ * confirmed, so the work *did* happen and only the recording of it is outstanding.
  */
 const IN_FLIGHT_REASONS: ReadonlySet<ApiErrorReason> = new Set([
   'intent_in_flight',
   'idempotency_key_reused',
+  // Not "may still succeed" but "already succeeded, still being written down". Both are
+  // answered the same way -- poll, never resubmit -- and reporting this one as settled told a
+  // script following the documented rule that re-running it was an ordinary retry. It is not:
+  // the chain call is confirmed, so a re-run is a second paid action for work already done.
+  'intent_completion_deferred',
 ]);
 
 /**

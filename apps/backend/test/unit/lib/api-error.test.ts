@@ -3,7 +3,12 @@
 import { describe, expect, it } from 'vitest';
 import { API_ERROR_REASONS, apiErrorEnvelopeOf, isInFlightApiError } from '@taskmarket/shared';
 
-import { apiError, apiErrorBody, codeForReason, envelopeForError } from '../../../src/lib/api-error';
+import {
+  apiError,
+  apiErrorBody,
+  codeForReason,
+  envelopeForError,
+} from '../../../src/lib/api-error';
 
 describe('the API error envelope', () => {
   it('gives an in-flight write a 409 rather than a 500', () => {
@@ -95,9 +100,9 @@ describe('what a client branches on', () => {
     expect(
       isInFlightApiError({ reason: 'idempotency_key_reused', intentStatus: 'broadcast' })
     ).toBe(true);
-    expect(
-      isInFlightApiError({ reason: 'idempotency_key_reused', intentStatus: 'recorded' })
-    ).toBe(true);
+    expect(isInFlightApiError({ reason: 'idempotency_key_reused', intentStatus: 'recorded' })).toBe(
+      true
+    );
   });
 
   it('reads a repeated key naming a settled write as not in flight', () => {
@@ -112,25 +117,42 @@ describe('what a client branches on', () => {
   });
 
   it('reads every terminal reason as not in flight', () => {
+    const nonTerminal = new Set([
+      'intent_in_flight',
+      'idempotency_key_reused',
+      'intent_completion_deferred',
+    ]);
     for (const reason of API_ERROR_REASONS) {
-      if (reason === 'intent_in_flight' || reason === 'idempotency_key_reused') continue;
+      if (nonTerminal.has(reason)) continue;
       expect(isInFlightApiError({ reason }), reason).toBe(false);
     }
   });
 
-  it('reads a completion-deferred result as not in flight', () => {
-    // The chain call landed and the work happened. Nothing is waiting on the chain, so a
-    // client that polls here would poll an intent that is never going to move for its sake.
-    expect(isInFlightApiError({ reason: 'intent_completion_deferred' })).toBe(false);
+  it('reads a completion-deferred result as in flight', () => {
+    // The chain call is confirmed, so the work happened and only the recording of it is
+    // outstanding. Reporting this as settled told a script following the documented
+    // `pending: false` rule -- "the write did not happen, retrying is an ordinary decision" --
+    // to re-run a paid action that had already succeeded. The caller pays twice.
+    expect(isInFlightApiError({ reason: 'intent_completion_deferred' })).toBe(true);
+  });
+
+  it('keeps a settled payment out of the in-flight set when the write itself did not happen', () => {
+    // The set answers "is something still landing", not "was anything charged". Each of these
+    // named a payment that settled, and in each the write the caller described provably did not
+    // happen -- what is outstanding is a refund, which `reason` reports. Marking them in flight
+    // would tell a caller to poll an intent that will never move on their behalf.
+    expect(isInFlightApiError({ reason: 'payment_already_spent' })).toBe(false);
+    expect(isInFlightApiError({ reason: 'payment_payer_mismatch' })).toBe(false);
+    expect(isInFlightApiError({ reason: 'idempotency_key_payload_mismatch' })).toBe(false);
   });
 
   it('treats an unrecognised reason as no information at all', () => {
     // A client built against an older shared package must not compare a value it cannot
     // interpret; it must see nothing.
     expect(apiErrorEnvelopeOf({ taskmarket: { reason: 'something_new' } })).toBeNull();
-    expect(isInFlightApiError(apiErrorEnvelopeOf({ taskmarket: { reason: 'something_new' } }))).toBe(
-      false
-    );
+    expect(
+      isInFlightApiError(apiErrorEnvelopeOf({ taskmarket: { reason: 'something_new' } }))
+    ).toBe(false);
   });
 
   it('finds the envelope in each shape a transport delivers it in', () => {

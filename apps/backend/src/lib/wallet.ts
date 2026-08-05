@@ -116,6 +116,21 @@ export function startServerWalletReconciler(): NodeJS.Timeout {
         });
       }
 
+      if (decision.cappedBelowPreviousFee) {
+        // The configured ceiling has been exceeded on purpose. Obeying it here would price the
+        // replacement at exactly the fee it replaces, which every provider rejects as an
+        // insufficient bump -- so the nonce would stay blocked while the reconciler replaced it
+        // forever. Logged at error because the deployment's REPLACEMENT_GAS_MAX_MULTIPLE (or
+        // REPLACEMENT_GAS_MAX_FEE_WEI) is now demonstrably too low for its fee regime, and every
+        // pass from here is spending above what the operator asked for (ADR-0051).
+        logger.error('Replacement gas ceiling exceeded to keep the fee above the previous bid', {
+          maxFeePerGas: decision.fees.maxFeePerGas.toString(),
+          nonce,
+          originalMaxFeePerGas: originalFees?.maxFeePerGas.toString() ?? null,
+          previousMaxFeePerGas: previousFees?.maxFeePerGas.toString() ?? null,
+        });
+      }
+
       // A zero-value self-transfer is the cheapest way to occupy a nonce. It supersedes a
       // stuck transaction at the same nonce and unblocks everything queued behind it.
       const hash = await wallet.client.sendTransaction({

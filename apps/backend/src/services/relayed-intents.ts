@@ -197,16 +197,26 @@ export async function checkRelayedWriteIdempotency(input: {
  *
  * Formatted as a UUID because that is what the column is validated against; the digest is
  * only a way to spread a scope string over that shape, and nothing reads it back out.
+ *
+ * It has to be a *valid* UUID, not merely a UUID-shaped string. Our own pattern is loose enough
+ * that raw digest nibbles passed it, but `z.string().uuid()` -- which any validator on this
+ * value could reasonably be written with -- checks the version and variant nibbles, and raw
+ * digest nibbles fail it 15 times in 16. So the version is stamped to 4 and the variant to RFC
+ * 4122, exactly as a name-based UUID does.
+ *
+ * Overwriting those six bits does not weaken what this is for. The key is a deterministic name,
+ * not a secret and not a uniqueness claim against an adversary: what matters is that the same
+ * scope always yields the same key, and a fixed substitution at fixed positions preserves that
+ * exactly.
  */
 export function derivedIdempotencyKey(scope: string): string {
   const digest = createHash('sha256').update(`taskmarket:intent:${scope}`).digest('hex');
-  return [
-    digest.slice(0, 8),
-    digest.slice(8, 12),
-    digest.slice(12, 16),
-    digest.slice(16, 20),
-    digest.slice(20, 32),
-  ].join('-');
+  const version = `4${digest.slice(13, 16)}`;
+  // The variant nibble is 8, 9, a or b -- two fixed bits and two taken from the digest.
+  const variant = `${'89ab'[parseInt(digest[16], 16) & 0b11]}${digest.slice(17, 20)}`;
+  return [digest.slice(0, 8), digest.slice(8, 12), version, variant, digest.slice(20, 32)].join(
+    '-'
+  );
 }
 
 export async function findIntentByIdempotencyKey(

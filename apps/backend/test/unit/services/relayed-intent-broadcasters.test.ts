@@ -415,12 +415,67 @@ describe('rebroadcasting a relayed write from its persisted payload', () => {
           }
         );
 
-        await expect(
-          broadcast!({ db: hostileDb as never, intent: row() })
-        ).resolves.toBe(testCase.hash);
+        await expect(broadcast!({ db: hostileDb as never, intent: row() })).resolves.toBe(
+          testCase.hash
+        );
       });
     });
   }
+});
+
+describe('a verdict outside the vocabulary', () => {
+  // Verifies: ADR-0047, ADR-0050
+  const cases = [
+    { fn: 'contractEvaluate', operation: 'evaluations.evaluate', payer: EVALUATOR },
+    { fn: 'contractResolveDispute', operation: 'evaluations.resolveDispute', payer: EVALUATOR },
+  ] as const;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  for (const testCase of cases) {
+    it(`refuses to send anything at all from ${testCase.operation}`, async () => {
+      // Both sites used to fall back to `?? 0`, and 0 is APPROVE -- so a verdict nobody can
+      // interpret did not fail, it paid the awards out. Money must not move on a value we
+      // could not read.
+      const broadcast = getRelayedIntentBroadcaster(testCase.operation)!;
+      const payload = {
+        awards: [{ amount: '900000', rank: 1, worker: WORKER }],
+        confidence: 800,
+        evidenceHash: EVIDENCE_HASH,
+        firstAwardWorker: WORKER,
+        mode: 'bounty',
+        score: 950,
+        taskId: TASK_ID,
+        verdict: 'approved',
+      };
+
+      await expect(
+        broadcast({ db: {} as never, intent: intent(testCase.operation, payload, testCase.payer) })
+      ).rejects.toThrow(/unknown verdict "approved"/);
+      expect(mockFor(testCase.fn)).not.toHaveBeenCalled();
+    });
+  }
+
+  it('is classified deterministic so the reconciler stops instead of retrying forever', async () => {
+    // This runs on the broadcast path, which a reconciler pass reaches with no caller waiting.
+    // `classifyRelayFailure` defaults to transient, so a plain Error would put a payload that
+    // can never succeed back in the queue on every pass, forever -- ADR-0047's unbounded loop.
+    // Stated as deterministic, the intent reaches a visible terminal state instead.
+    const { classifyRelayFailure } = await import('../../../src/lib/relay-failure');
+    const broadcast = getRelayedIntentBroadcaster('evaluations.resolveDispute')!;
+    const error = await broadcast({
+      db: {} as never,
+      intent: intent(
+        'evaluations.resolveDispute',
+        { awards: [], firstAwardWorker: WORKER, taskId: TASK_ID, verdict: '' },
+        EVALUATOR
+      ),
+    }).catch((thrown: unknown) => thrown);
+
+    expect(classifyRelayFailure(error)).toBe('deterministic');
+  });
 });
 
 describe('the relay envelope a rebroadcast replays', () => {
@@ -430,9 +485,8 @@ describe('the relay envelope a rebroadcast replays', () => {
     // it is fixed at record time. `dispatchRelayedIntent` binds the stored envelope around the
     // broadcaster; the broadcasters themselves are envelope-agnostic, which is what keeps the
     // rule in one place rather than in every operation.
-    const { currentRelayEnvelope, withRelayEnvelope } = await import(
-      '../../../src/services/relay-envelope'
-    );
+    const { currentRelayEnvelope, withRelayEnvelope } =
+      await import('../../../src/services/relay-envelope');
     const stored = { receiptNonce: `0x${'cd'.repeat(32)}` as const, validBefore: 1_900_000_000n };
 
     const broadcast = getRelayedIntentBroadcaster('tasks.cancel')!;
