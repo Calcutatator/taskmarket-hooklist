@@ -76,7 +76,11 @@ function submissionBudget(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === '') return fallback;
   const parsed = Number(raw);
-  if (!Number.isInteger(parsed) || parsed < 1) {
+  // isSafeInteger, not isInteger: `Number('1e30')` is an integer by that test, and this budget
+  // caps a loop that settles one real USDC authorization per iteration. A value that large is
+  // not a cap at all, and it is indistinguishable from the unbounded run this guard exists to
+  // prevent.
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
     console.error('\n=== Rate-limit smoke test ABORTED (nothing was checked) ===');
     console.error(`reason: ${name}=${raw} is not a positive whole number of submissions`);
     console.error(`fix:    unset ${name} to use the default (${fallback}), or set an integer >= 1`);

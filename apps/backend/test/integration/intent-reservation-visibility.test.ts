@@ -7,6 +7,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { envelopeForError } from '../../src/lib/api-error';
 import { relayedIntents } from '../../src/db/schema';
 import { createIsolatedMigratedDatabase } from '../helpers/integration-database';
 import { stubServerEnvironment } from '../helpers/server-environment';
@@ -39,12 +40,22 @@ function get(address: string, input: { intentId?: string; idempotencyKey?: strin
   return intentsRouter.createCaller(callerFor(address) as never).get(input);
 }
 
-function messageOf(promise: Promise<unknown>): Promise<string> {
+/**
+ * The whole answer a refused lookup gives: its classified reason and its prose.
+ *
+ * Both, because either alone is too weak for what these tests compare. Two calls that agree
+ * only on a message agree just as well when a broken database makes both of them throw the
+ * same thing, and the reason is what a client actually branches on (ADR-0049 point 3).
+ */
+function answerFor(promise: Promise<unknown>): Promise<string> {
   return promise.then(
     () => 'resolved',
-    (error: Error) => error.message
+    (error: Error) => `${envelopeForError(error).reason}: ${error.message}`
   );
 }
+
+/** What `intents.get` answers for anything the caller may not see. */
+const NOT_FOUND_ANSWER = 'intent_not_found: No such intent';
 
 describeWithDatabase('a reservation is readable by the holder of its idempotency key', () => {
   beforeAll(async () => {
@@ -100,24 +111,29 @@ describeWithDatabase('a reservation is readable by the holder of its idempotency
         payload: { note: 'not yours' },
       });
 
-      const asStranger = messageOf(get(CALLER, { idempotencyKey: key }));
-      const asNobody = messageOf(get(CALLER, { idempotencyKey: randomUUID() }));
+      const asStranger = answerFor(get(CALLER, { idempotencyKey: key }));
+      const asNobody = answerFor(get(CALLER, { idempotencyKey: randomUUID() }));
 
       // A key is a credential only where no initiator was recorded. Holding one for an intent
       // that has a payer buys nothing, so a leaked key cannot open a settled write.
-      expect(await asStranger).not.toBe('resolved');
+      //
+      // Named, not merely "not resolved": a broken database would make both calls throw the
+      // same message and satisfy the equality on its own. The equality stays because
+      // indistinguishability is the property being protected -- this only pins which answer
+      // both calls are giving.
+      expect(await asStranger).toBe(NOT_FOUND_ANSWER);
       expect(await asStranger).toBe(await asNobody);
     });
 
     it('says the same thing to a reservation’s id as to an id that names nothing', async () => {
       const reserved = (await reserveRelayedWrite({ db: database, key: randomUUID() })).intent!;
 
-      const byId = messageOf(get(CALLER, { intentId: reserved.id }));
-      const byNothing = messageOf(get(CALLER, { intentId: randomUUID() }));
+      const byId = answerFor(get(CALLER, { intentId: reserved.id }));
+      const byNothing = answerFor(get(CALLER, { intentId: randomUUID() }));
 
       // The id path is unchanged. An id proves nothing about who is asking, so the only way to
       // reach a reservation is to already hold the UUID a client minted for it.
-      expect(await byId).not.toBe('resolved');
+      expect(await byId).toBe(NOT_FOUND_ANSWER);
       expect(await byId).toBe(await byNothing);
     });
   });

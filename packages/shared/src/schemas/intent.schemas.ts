@@ -86,6 +86,20 @@ export const IntentStatusResponseSchema = z
       return;
     }
 
+    // A terminal reason is a verdict, and only a failure has one. The lifecycle agrees: the
+    // completion path clears `lastError` when it marks an intent completed, and the read
+    // surface reports the column only for `failed` -- on `recorded` and `broadcast` the same
+    // column is a progress note about an attempt that is still being carried. A response that
+    // carried one on a non-terminal status would tell a caller their write is dead while it is
+    // still landing, which is the exact misreading ADR-0049 point 3 exists to prevent.
+    if (value.terminalReason !== null && value.status !== 'failed') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['terminalReason'],
+        message: 'Only a failed intent has a terminal reason',
+      });
+    }
+
     if (value.taskId === null) return;
 
     if (value.status !== 'completed') {

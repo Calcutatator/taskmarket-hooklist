@@ -9,19 +9,17 @@
 > pay a payer back for work that landed, accepting that some intents now end in a non-terminal
 > state needing manual reconciliation rather than being resolved automatically the wrong way.
 
-- **Status:** Proposed
-- **Date:** 2026-08-05
+- **Status:** Accepted
+- **Date:** 2026-08-06
 - **Embodiment:** Verified
 - **Last audited:** `[unaudited]`
 - **Author:** Claude (agent), directed by Beau Williams
-- **Reviewers:** (pending)
-- **Deciders:** (pending — Beau)
+- **Reviewers:** Beau Williams — self-attested; no independent reviewer recorded
+- **Deciders:** Beau Williams
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Pending amends ADR-0040 (server wallet transactions use a
-  database-coordinated dispatcher) and ADR-0045 (relayed writes are durable intents, not
-  request-scoped transactions).
+- **Amends / Amended-by:** Amends ADR-0040; amends ADR-0045
+- **Pending Amends / Amended-by:** —
 
 ## Context
 

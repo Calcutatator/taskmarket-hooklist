@@ -9,17 +9,17 @@
 > schema and that an envelope from a backend predating this reads as no information rather than
 > as a terminal outcome.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-06
 - **Embodiment:** Verified
 - **Last audited:** 2026-08-06
 - **Author:** Claude Code (drafted for review)
-- **Reviewers:** (pending — no independent reviewer recorded)
-- **Deciders:** (pending — Beau)
+- **Reviewers:** Beau Williams — self-attested; no independent reviewer recorded
+- **Deciders:** Beau Williams
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Amends ADR-0058
+- **Amends / Amended-by:** Amends ADR-0058
+- **Pending Amends / Amended-by:** —
 
 ## Context
 
