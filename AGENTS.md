@@ -248,17 +248,47 @@ Write every migration statement so that re-running it against a database where i
 - `ALTER TABLE "x" ADD COLUMN "y" ...` → `ALTER TABLE "x" ADD COLUMN IF NOT EXISTS "y" ...`
 - `CREATE INDEX "x"` / `CREATE UNIQUE INDEX "x"` → add `IF NOT EXISTS`
 - `DROP TABLE|INDEX|COLUMN "x"` → add `IF EXISTS`
-- `ALTER TABLE "x" ADD CONSTRAINT "y" ...` has no portable `IF NOT EXISTS` form in this Postgres version — wrap it instead:
+- `ALTER TABLE "x" ADD CONSTRAINT "y" ...` has no portable `IF NOT EXISTS` form in this Postgres version — wrap it instead, catching **both** exceptions:
   ```sql
   DO $$ BEGIN
     ALTER TABLE "bids" ADD CONSTRAINT "bids_task_worker_unique" UNIQUE ("task_id", "worker_address");
-  EXCEPTION WHEN duplicate_object THEN NULL;
+  EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
   END $$;
   ```
+  `duplicate_object` alone is not enough, and this exact statement is why: a `UNIQUE` or `PRIMARY KEY` constraint also creates an index behind it, so a repeat raises `duplicate_table` for the index name rather than `duplicate_object` for the constraint. Migration `0009` followed the `duplicate_object`-only form this section used to show, and still failed on re-apply.
+- `ALTER TABLE "x" RENAME COLUMN "a" TO "b"` has no guarded form at all. Run it only while the old name is still there:
+  ```sql
+  DO $$ BEGIN
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'tasks' AND column_name = 'proposal_deadline'
+    ) THEN
+      ALTER TABLE "tasks" RENAME COLUMN "proposal_deadline" TO "pitch_deadline";
+    END IF;
+  END $$;
+  ```
+- **A statement that reads a column some later migration drops** is the case no guard on the statement itself can fix, and the easiest to miss — it reviews well, applies cleanly, and only fails much later when something re-runs it. A backfill like `UPDATE tasks SET claimed_by = worker` keeps working until a later migration drops `worker`. Guard on the column, and keep the statement unparsed until then:
+  ```sql
+  DO $$ BEGIN
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'tasks' AND column_name = 'worker'
+    ) THEN
+      EXECUTE 'UPDATE "tasks" SET "claimed_by" = "worker" WHERE "claimed_by" IS NULL';
+    END IF;
+  END $$;
+  ```
+  `EXECUTE` is load-bearing: plpgsql parses a static statement when it reaches it, so a plain `UPDATE` naming a dropped column still throws even inside the `IF`.
 
 `pnpm db:generate` (`drizzle-kit generate`) never adds any of these guards itself — add them by hand after generating, before committing.
 
-This matters because the migrator's gating logic (above) only ever compares a migration's `"when"` against the database's last-applied timestamp — an already-applied migration is skipped purely because its `"when"` is old, not because the migrator remembers having run that specific file. If a `"when"` value for an already-applied migration is ever mistakenly retimed forward (the exact class of mistake the `task_drop_id` incident was, one step removed), a non-idempotent statement re-running will throw (`relation`/`column`/`constraint already exists`) and crash-loop the backend on every subsequent boot, since `server.ts` calls `process.exit(1)` on migration failure. Idempotency guards turn that failure mode into a no-op instead of an outage. `migrations-journal.test.ts` (above) also fails CI if any migration file introduces an unguarded statement, so this is enforced automatically, not just documented here.
+This matters because the migrator's gating logic (above) only ever compares a migration's `"when"` against the database's last-applied timestamp — an already-applied migration is skipped purely because its `"when"` is old, not because the migrator remembers having run that specific file. If a `"when"` value for an already-applied migration is ever mistakenly retimed forward (the exact class of mistake the `task_drop_id` incident was, one step removed), a non-idempotent statement re-running will throw (`relation`/`column`/`constraint already exists`) and crash-loop the backend on every subsequent boot, since `server.ts` calls `process.exit(1)` on migration failure. Idempotency guards turn that failure mode into a no-op instead of an outage.
+
+`apps/backend/test/integration/migration-idempotency.test.ts` enforces this: it applies every migration to a throwaway database, then re-applies every one of them against the final schema. Note the second half — a migration is re-run against *today's* schema, not the schema of its own moment, which is what a retimed `"when"` would actually do to it.
+
+It needs `DATABASE_URL` and skips silently without one, so a local run that does not set it proves nothing. CI provides one.
+
+`migrations-journal.test.ts` (above) covers only what can be checked without a database — sequential `idx`, strictly increasing `"when"`, `.sql`-file/journal-entry parity. It does **not** check idempotency, and this section previously claimed it did. Seven migrations were non-idempotent by the time anyone ran the check.
 
 ## Changesets
 
