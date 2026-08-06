@@ -1,5 +1,4 @@
 // Implements: ADR-0055
-import { randomBytes } from 'crypto';
 import {
   parseAbi,
   parseAbiItem,
@@ -16,12 +15,7 @@ import { ServerTransactionPendingError } from '../lib/server-transaction-dispatc
 import { getPublicClient, runWithRpcApplicationAttempt } from '../lib/rpc-gateway';
 import { getServerConfig } from '../config/env';
 import { SETTLEMENT_READ_ABI, TASK_COMPLETED_EVENT } from './settlement-contract';
-import {
-  currentRelayEnvelope,
-  currentRelayOutboxLink,
-  newRelayEnvelope,
-  RELAY_VALID_WINDOW_SECS,
-} from './relay-envelope';
+import { currentRelayEnvelope, currentRelayOutboxLink, newRelayEnvelope } from './relay-envelope';
 import { computeRelayReceiptHash } from './relay-receipt';
 import {
   projectSettlementLogs,
@@ -635,19 +629,30 @@ async function relayThroughForwarderResult(
       // so callers that catch specific revert names see the same message format as pre-send failures.
       let revertReason = 'unknown revert';
       try {
-        // Fresh deadline and nonce for the synthetic call only. This is a read-only
-        // simulateContract whose sole purpose is to surface the revert reason behind an
-        // already-failed transaction; nothing is broadcast and no real deadline is extended.
-        // They are refreshed so the diagnostic does not trip over an expired deadline or a
-        // spent nonce before it reaches the revert we are actually trying to read.
-        const freshValidBefore = BigInt(Math.floor(Date.now() / 1000) + RELAY_VALID_WINDOW_SECS);
-        const freshNonce = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
+        // Replay the transaction that actually failed, argument for argument -- the same
+        // `validBefore` and the same `receiptNonce` the send used, not fresh ones.
+        //
+        // These used to be regenerated here, on the reasoning that a diagnostic should not trip
+        // over an expired deadline or a spent nonce on its way to the "real" revert. That reads
+        // backwards: an expired deadline and a spent nonce ARE real reverts, and they are the two
+        // this replay is least able to afford losing. A relay that failed ReceiptExpired or
+        // ReceiptAlreadyUsed cannot reproduce under a fresh envelope -- the replay succeeds, no
+        // revert is decoded, and `revertReason` stays at its initialised 'unknown revert'.
+        //
+        // That string is not inert. classifyRelayFailure reads it as transient, so a permanent
+        // failure arriving by this path was indistinguishable from a retryable one and got
+        // retried until it aged out. Replaying the original envelope is what makes the two
+        // separable.
+        //
+        // This remains a read-only eth_call. simulateContract never signs and never broadcasts,
+        // so reusing the original nonce cannot spend it or re-send anything; the node evaluates
+        // the call against current state and discards it.
         await runWithRpcApplicationAttempt(attempt + 1, () =>
           publicClient.simulateContract({
             address: forwarderAddr,
             abi: FORWARDER_ABI,
             functionName: 'relay',
-            args: [pgtrSenderAddr, paymentAmount, freshValidBefore, freshNonce, data],
+            args: [pgtrSenderAddr, paymentAmount, validBefore, receiptNonce, data],
             account: account.address,
           })
         );

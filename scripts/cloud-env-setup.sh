@@ -68,10 +68,49 @@ echo "==> [1/14] Toolchain (Node, pnpm, bun, Foundry)"
 # active at install time, and nvm keeps each version's global packages separate. Skipping
 # this let pnpm get installed under the sandbox's default node, invisible once `make` later
 # switches to .nvmrc's version via its own ENV_LOADER ("pnpm: command not found").
-export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-if [ -s "$NVM_DIR/nvm.sh" ]; then
-  . "$NVM_DIR/nvm.sh" && nvm install && nvm use
+# Finding nvm is the whole problem here. This script runs non-interactively, so $NVM_DIR is
+# unset and .bashrc -- which is where the real location is exported -- is never sourced. The
+# previous `${NVM_DIR:-$HOME/.nvm}` fallback therefore looked only in ~/.nvm, missed the actual
+# install at /opt/nvm, failed its `-s` guard, and skipped the whole block silently. The entire
+# stack then ran on the sandbox's default Node 22 despite .nvmrc pinning 24 and package.json
+# declaring engines ">=24", with nothing anywhere saying so.
+#
+# So: search the known locations rather than assuming one, and if the right Node still cannot be
+# selected, fail loudly instead of continuing on the wrong one. A silent skip is what let the
+# original wrong-Node run go unnoticed.
+NVM_SH=""
+for candidate in "${NVM_DIR:-}" /opt/nvm "$HOME/.nvm" /usr/local/nvm; do
+  if [ -n "$candidate" ] && [ -s "$candidate/nvm.sh" ]; then
+    NVM_SH="$candidate/nvm.sh"
+    export NVM_DIR="$candidate"
+    break
+  fi
+done
+
+REQUIRED_NODE_MAJOR="$(tr -dc '0-9' < .nvmrc)"
+if [ -n "$NVM_SH" ]; then
+  echo "    nvm found at $NVM_DIR, selecting Node $REQUIRED_NODE_MAJOR from .nvmrc"
+  # shellcheck disable=SC1090
+  . "$NVM_SH"
+  nvm install
+  nvm use
+else
+  echo "    WARNING: no nvm.sh found (looked in \$NVM_DIR, /opt/nvm, \$HOME/.nvm, /usr/local/nvm)."
+  echo "             Falling back to whatever node is already on PATH."
 fi
+
+# Checked whether or not nvm was found: the point is the Node actually in effect, not whether a
+# particular mechanism ran. Everything after this -- the global pnpm install, the backend, every
+# smoke -- inherits this interpreter.
+ACTIVE_NODE_MAJOR="$(node -v 2>/dev/null | sed 's/^v//; s/\..*//')"
+if [ "$ACTIVE_NODE_MAJOR" != "$REQUIRED_NODE_MAJOR" ]; then
+  echo "ERROR: Node $REQUIRED_NODE_MAJOR is required (.nvmrc, package.json engines >=$REQUIRED_NODE_MAJOR)," >&2
+  echo "       but the active node is ${ACTIVE_NODE_MAJOR:-none} ($(command -v node || echo 'not on PATH'))." >&2
+  echo "       Install it and make it active, e.g.:" >&2
+  echo "         export NVM_DIR=/opt/nvm && . \"\$NVM_DIR/nvm.sh\" && nvm install $REQUIRED_NODE_MAJOR && nvm use $REQUIRED_NODE_MAJOR" >&2
+  exit 1
+fi
+echo "    node $(node -v) active"
 if ! command -v pnpm > /dev/null 2>&1; then
   npm install -g pnpm@8.15.0
 fi
@@ -183,7 +222,21 @@ if ! curl -sf -X POST "$ANVIL_RPC_URL" -H 'Content-Type: application/json' \
   # exec'd child or wrapped by another runtime. setsid detaches the whole process
   # into its own session with no controlling terminal, so a session/terminal hangup
   # elsewhere can't reach it at all.
-  setsid nohup anvil --host 127.0.0.1 --port 8545 --chain-id 84532 > /tmp/anvil.log 2>&1 &
+  # --block-time 1: mine every second instead of only when a transaction arrives.
+  #
+  # On-demand mining freezes block.timestamp between transactions, so chain time advances only
+  # as a side effect of write traffic. Any contract guard comparing block.timestamp against a
+  # wall-clock deadline then reads a timestamp arbitrarily far in the past. refund-expired is
+  # the sharp case: it creates a 1-second task, polls a wall-clock API until the window closes,
+  # and calls refundExpired -- which simulates against the block the *create* mined, whose
+  # timestamp is at or before expiryTime. CoreFacet.sol's `block.timestamp > task.expiryTime` is
+  # strict, so it reverted TaskNotYetExpired every time; observed lag reached 55 seconds.
+  #
+  # A one-second interval keeps chain time tracking wall-clock time closely enough that every
+  # expiry/window guard in the suite behaves as its smoke test assumes. This does not replace
+  # nudgeChainForward() (_x402.ts): that issues an explicit evm_mine and still works unchanged
+  # here, it simply no longer carries the whole burden of advancing time.
+  setsid nohup anvil --host 127.0.0.1 --port 8545 --chain-id 84532 --block-time 1 > /tmp/anvil.log 2>&1 &
   for _ in $(seq 1 30); do
     curl -sf -X POST "$ANVIL_RPC_URL" -H 'Content-Type: application/json' \
       -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' > /dev/null 2>&1 && break
