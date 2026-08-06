@@ -1404,3 +1404,43 @@ export async function listAbandonedIntents(input: {
     )
     .limit(input.limit);
 }
+
+/** The statuses an intent can still move on from. Everything else is terminal. */
+export const NON_TERMINAL_INTENT_STATUSES = ['reserved', 'recorded', 'broadcast'] as const;
+
+/**
+ * How long an intent may sit untouched before it counts as stuck.
+ *
+ * Taken from `RESERVATION_TTL_MS` (10 minutes) above, tripled. That TTL is the longest window
+ * this service allows any intent to sit in one state legitimately -- the reconciler's own
+ * `DEFAULT_STUCK_AFTER_MS` (90s) and the 300s receipt window are both shorter, so anything past
+ * three reservation lifetimes is past every sweep that was ever going to touch the row. The
+ * multiple is there because this number only has to be well clear of normal settlement, not
+ * tight: a counter that fires early is a counter people learn to ignore.
+ */
+export const STALE_INTENT_AFTER_MS = 3 * RESERVATION_TTL_MS;
+
+/**
+ * How many intents are non-terminal and have stopped moving -- a count, and nothing else.
+ *
+ * Reported on the public `/api/health`, so it may say only how many, never which: an id, payer,
+ * amount or operation name here would put private facts about somebody else's write on an
+ * unauthenticated endpoint (ADR-0059 scopes intent visibility to the payer).
+ *
+ * Written as a positive `IN` over the non-terminal statuses rather than a `NOT IN` over the
+ * terminal ones so that `idx_relayed_intents_status` remains usable: the terminal rows are the
+ * bulk of the table over time, and this is polled.
+ */
+export async function countStaleNonTerminalIntents(input: { db: Db; now?: Date }): Promise<number> {
+  const cutoff = new Date((input.now ?? new Date()).getTime() - STALE_INTENT_AFTER_MS);
+  const rows = await input.db
+    .select({ value: sql<number>`count(*)::int` })
+    .from(relayedIntents)
+    .where(
+      and(
+        inArray(relayedIntents.status, [...NON_TERMINAL_INTENT_STATUSES]),
+        lt(relayedIntents.updatedAt, cutoff)
+      )
+    );
+  return rows[0]?.value ?? 0;
+}
