@@ -193,3 +193,13 @@ adrs:
     title: "Server-wallet transactions use a durable nonce allocator and outbox"
     status: Accepted
     date: "2026-08-03"
+  - number: "0063"
+    file: "0063-the-reconciler-settles-a-nonce-spent-by-a-foreign-transaction.md"
+    title: The reconciler settles a nonce spent by a foreign transaction
+    status: Proposed
+    date: "2026-08-05"
+  - number: "0064"
+    file: "0064-deploy-and-owner-operations-use-a-separate-eoa-from-the-relayer.md"
+    title: Deploy and owner operations use a separate EOA from the relayer
+    status: Proposed
+    date: "2026-08-05"
