@@ -1,10 +1,10 @@
 import { router, publicProcedure } from '../trpc';
-import { RegistrationSource, type ApiErrorEnvelope } from '@taskmarket/shared';
+import { RegistrationSource } from '@taskmarket/shared';
 import { z } from 'zod';
 import { agents } from '../db/schema';
 import { sql } from 'drizzle-orm';
 import { contractRegisterIdentityTx } from '../services/contract';
-import { apiError } from '../lib/api-error';
+import { apiError, intentStatusOf } from '../lib/api-error';
 import { lowerAddressEq } from '../lib/agents';
 import { getServerConfig } from '../config/env';
 import { settledPaymentReference } from '../middleware/x402';
@@ -124,7 +124,7 @@ export const identityRouter = router({
         throw apiError({
           idempotencyKey: ctx.idempotencyKey,
           intentId: intent.id,
-          intentStatus: intent.status as ApiErrorEnvelope['intentStatus'],
+          intentStatus: intentStatusOf(intent.status),
           message: 'Identity registered on chain but the agent id was not recorded',
           operation: 'identity.register',
           reason: 'intent_completion_deferred',

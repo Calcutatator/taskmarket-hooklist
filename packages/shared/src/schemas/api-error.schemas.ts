@@ -91,19 +91,32 @@ export const ApiErrorReasonSchema = z.enum(API_ERROR_REASONS);
 export type ApiErrorReason = (typeof API_ERROR_REASONS)[number];
 
 /**
- * The envelope every API error carries: under `error.data.taskmarket` on a tRPC response, and
- * as a sibling of `error` on the raw-REST and x402 middleware bodies.
+ * The five states a relayed intent can be in, as reported on an error envelope.
  *
- * Every field beyond `reason` is optional because not every reason has one -- a rejected payment
- * has no intent, and an intent rejected before broadcast has no transaction hash. What is not
- * optional is that a caller can branch without reading `message`.
+ * Exported so a producer reading the column can *parse* it into this type rather than assert it:
+ * `relayed_intents.status` is a `text` column, so its TypeScript type is `string` and a cast to
+ * this union is a claim the compiler cannot check.
  */
-export const ApiErrorEnvelopeSchema = z.object({
-  reason: ApiErrorReasonSchema,
+export const ApiErrorIntentStatusSchema = z.enum([
+  'reserved',
+  'recorded',
+  'broadcast',
+  'completed',
+  'failed',
+]);
+
+export type ApiErrorIntentStatus = z.infer<typeof ApiErrorIntentStatusSchema>;
+
+/** The reasons that do not assert an intent exists, and so carry `intentStatus` only sometimes. */
+type ReasonWithoutRequiredIntentStatus = Exclude<ApiErrorReason, 'idempotency_key_reused'>;
+
+const REASONS_WITHOUT_REQUIRED_INTENT_STATUS = API_ERROR_REASONS.filter(
+  (reason) => reason !== 'idempotency_key_reused'
+) as [ReasonWithoutRequiredIntentStatus, ...ReasonWithoutRequiredIntentStatus[]];
+
+const ENVELOPE_FIELDS = {
   /** The durable handle to the write, where one was recorded. Key on this, not on `txHash`. */
   intentId: z.string().optional(),
-  /** The intent's status at the moment this answer was produced. */
-  intentStatus: z.enum(['reserved', 'recorded', 'broadcast', 'completed', 'failed']).optional(),
   /** The operation the intent stands for, e.g. `tasks.create`. */
   operation: z.string().optional(),
   /** The caller's own key for the operation, echoed so a dropped response is still traceable. */
@@ -113,7 +126,38 @@ export const ApiErrorEnvelopeSchema = z.object({
    * land a replacement at the same nonce, which is a different hash for the same intent.
    */
   txHash: z.string().optional(),
-});
+} as const;
+
+/**
+ * The envelope every API error carries: under `error.data.taskmarket` on a tRPC response, and
+ * as a sibling of `error` on the raw-REST and x402 middleware bodies.
+ *
+ * Every field beyond `reason` is optional because not every reason has one -- a rejected payment
+ * has no intent, and an intent rejected before broadcast has no transaction hash. What is not
+ * optional is that a caller can branch without reading `message`.
+ *
+ * The one exception is `intentStatus` on `idempotency_key_reused`, and it is a union rather than
+ * one object for exactly that reason. That reason *asserts* an intent under this key exists, so
+ * it always has a status, and `isInFlightApiError` cannot answer without one: a reused key is in
+ * flight while its intent is non-terminal and terminal otherwise, and an absent status leaves
+ * that question with no answer but a guess. Requiring it here makes the guess unrepresentable at
+ * the boundary where it would otherwise be made (ADR-0070) -- omitting it is a compile error at
+ * every producer and a parse failure on every wire shape.
+ */
+export const ApiErrorEnvelopeSchema = z.discriminatedUnion('reason', [
+  z.object({
+    reason: z.literal('idempotency_key_reused'),
+    /** Required here: the reason means an intent under this key exists, so it has a status. */
+    intentStatus: ApiErrorIntentStatusSchema,
+    ...ENVELOPE_FIELDS,
+  }),
+  z.object({
+    reason: z.enum(REASONS_WITHOUT_REQUIRED_INTENT_STATUS),
+    /** The intent's status at the moment this answer was produced, where there is an intent. */
+    intentStatus: ApiErrorIntentStatusSchema.optional(),
+    ...ENVELOPE_FIELDS,
+  }),
+]);
 
 export type ApiErrorEnvelope = z.infer<typeof ApiErrorEnvelopeSchema>;
 
@@ -150,6 +194,9 @@ const IN_FLIGHT_REASONS: ReadonlySet<ApiErrorReason> = new Set([
  * confirming" is the false positive that leaves a user waiting for a write that is already
  * dead. A reused key naming a `completed` intent is likewise not in flight -- the write landed,
  * and the caller reads its result from `intents.get`.
+ *
+ * There is no "status absent" case to handle: the schema requires `intentStatus` on that reason,
+ * so an envelope that reached here without one never parsed (ADR-0070).
  */
 export function isInFlightApiError(envelope: ApiErrorEnvelope | null | undefined): boolean {
   if (!envelope || !IN_FLIGHT_REASONS.has(envelope.reason)) return false;

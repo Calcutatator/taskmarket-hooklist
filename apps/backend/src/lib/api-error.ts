@@ -2,10 +2,25 @@
 import { TRPCError } from '@trpc/server';
 import {
   type ApiErrorEnvelope,
+  type ApiErrorIntentStatus,
   type ApiErrorReason,
   ApiErrorEnvelopeSchema,
+  ApiErrorIntentStatusSchema,
   apiErrorEnvelopeOf,
 } from '@taskmarket/shared';
+
+/**
+ * The intent status a `relayed_intents` row carries, parsed rather than asserted.
+ *
+ * The column is `text` with a database CHECK constraint, so TypeScript only knows it as `string`
+ * and `status as ApiErrorEnvelope['intentStatus']` is a claim nothing verifies. A value outside
+ * the five would travel unchallenged to a client that branches on it. Parsing makes that loud and
+ * local instead: unreachable while the constraint holds, and an error at the producer rather than
+ * a lie on the wire if it ever does not (ADR-0070).
+ */
+export function intentStatusOf(status: string): ApiErrorIntentStatus {
+  return ApiErrorIntentStatusSchema.parse(status);
+}
 
 /**
  * The one way this backend produces an error a client is expected to branch on.
@@ -76,6 +91,17 @@ export function codeForReason(reason: ApiErrorReason): TRPCError['code'] {
 }
 
 /**
+ * What a throw site provides: the envelope itself, plus the human message and an optional status
+ * override. Typed off `ApiErrorEnvelope` rather than restating its fields, so the union's own
+ * rules apply at the throw site -- `idempotency_key_reused` without an `intentStatus` does not
+ * compile, and does not reach the parse below (ADR-0070).
+ */
+export type ApiErrorInput = ApiErrorEnvelope & {
+  message: string;
+  code?: TRPCError['code'];
+};
+
+/**
  * Build a classified error. The status follows from the reason, so a throw site chooses the fact
  * and never the transport detail.
  *
@@ -83,17 +109,9 @@ export function codeForReason(reason: ApiErrorReason): TRPCError['code'] {
  * -- a preflight rejection is a 400, a 403 or a 404 depending on what it checked -- but the
  * reason is what a client branches on either way.
  */
-export function apiError(input: {
-  reason: ApiErrorReason;
-  message: string;
-  code?: TRPCError['code'];
-  intentId?: string;
-  intentStatus?: ApiErrorEnvelope['intentStatus'];
-  operation?: string;
-  idempotencyKey?: string;
-  txHash?: string;
-}): ApiError {
-  const { reason, message, code, ...rest } = input;
+export function apiError(input: ApiErrorInput): ApiError {
+  const { message, code, ...envelopeInput } = input;
+  const { reason, ...rest } = envelopeInput;
   const envelope = ApiErrorEnvelopeSchema.parse({
     reason,
     // `undefined` entries are dropped rather than serialised as null, so a client can test
@@ -128,14 +146,10 @@ export function envelopeForError(error: unknown): ApiErrorEnvelope {
  * client has one reader for both -- which is the whole point of a discriminator that a paid write
  * can be refused at either layer.
  */
-export function apiErrorBody(input: {
-  message: string;
-  reason: ApiErrorReason;
-  intentId?: string;
-  intentStatus?: ApiErrorEnvelope['intentStatus'];
-  operation?: string;
-  idempotencyKey?: string;
-}): { error: string; taskmarket: ApiErrorEnvelope } {
+export function apiErrorBody(input: ApiErrorEnvelope & { message: string }): {
+  error: string;
+  taskmarket: ApiErrorEnvelope;
+} {
   const { message, ...envelopeInput } = input;
   return { error: message, taskmarket: apiError({ ...envelopeInput, message }).envelope };
 }

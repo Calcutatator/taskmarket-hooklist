@@ -1,7 +1,7 @@
 // Verifies: ADR-0045, ADR-0050, ADR-0052
-// Verifies: ADR-0058
+// Verifies: ADR-0058, ADR-0070
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { isInFlightApiError } from '@taskmarket/shared';
+import { apiErrorEnvelopeOf, isInFlightApiError } from '@taskmarket/shared';
 import { stubServerEnvironment } from '../../helpers/server-environment';
 
 import { envelopeForError } from '../../../src/lib/api-error';
@@ -196,6 +196,28 @@ describe('runRelayedIntent', () => {
       intentId: 'intent-1',
       intentStatus: 'broadcast',
       idempotencyKey: KEY,
+    });
+  });
+
+  it('emits a reused-key envelope a client can parse from both of its producers', async () => {
+    // Both throw sites for this reason, checked through the shared reader rather than the
+    // in-process object: the reason asserts an intent exists, so the schema requires the
+    // status, and an envelope missing it would arrive as no information at all (ADR-0070).
+    recorded.mockReturnValue(row({ status: 'reserved' }));
+    const unpaid = await run(vi.fn()).catch((e: unknown) => e);
+
+    expect(apiErrorEnvelopeOf(envelopeForError(unpaid))).toMatchObject({
+      reason: 'idempotency_key_reused',
+      intentStatus: 'reserved',
+    });
+
+    claimBudget = 0;
+    recorded.mockReturnValue(row({ status: 'broadcast', txHash: TX_HASH }));
+    const duplicate = await run(vi.fn()).catch((e: unknown) => e);
+
+    expect(apiErrorEnvelopeOf(envelopeForError(duplicate))).toMatchObject({
+      reason: 'idempotency_key_reused',
+      intentStatus: 'broadcast',
     });
   });
 

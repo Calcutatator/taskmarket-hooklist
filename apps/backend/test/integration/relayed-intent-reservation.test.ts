@@ -1,5 +1,7 @@
 // Implements: ADR-0067
+// Verifies: ADR-0070
 import { randomUUID } from 'node:crypto';
+import { apiErrorEnvelopeOf } from '@taskmarket/shared';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -55,6 +57,9 @@ describeWithDatabase('a relayed intent is reserved before it is paid for', () =>
     expect(second.refusal?.status).toBe(409);
     expect(second.refusal?.envelope.reason).toBe('idempotency_key_reused');
     expect(second.refusal?.envelope.intentStatus).toBe('reserved');
+    // Through the shared reader too: the reason asserts an intent exists, so the status is part
+    // of the envelope's contract and one built without it would parse to nothing (ADR-0070).
+    expect(apiErrorEnvelopeOf(second.refusal?.envelope)?.intentStatus).toBe('reserved');
   });
 
   /**

@@ -7,7 +7,7 @@ import type { db as DbType } from '../db/client';
 import { type ApiErrorEnvelope, IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 
 import { relayedIntents, serverWalletTransactions, type RelayedIntent } from '../db/schema';
-import { apiError } from '../lib/api-error';
+import { apiError, intentStatusOf } from '../lib/api-error';
 import { logger } from '../lib/logger';
 import { newRelayEnvelope, type RelayEnvelope, type RelayOutboxLink } from './relay-envelope';
 import { recordUnattachedPayment } from './orphaned-payments';
@@ -346,7 +346,7 @@ export async function reserveRelayedWrite(input: {
       envelope: {
         reason: 'idempotency_key_reused',
         intentId: existing.id,
-        intentStatus: existing.status as ApiErrorEnvelope['intentStatus'],
+        intentStatus: intentStatusOf(existing.status),
         operation: existing.operation,
         idempotencyKey: existing.idempotencyKey,
       },
@@ -792,7 +792,7 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
           throw apiError({
             reason: 'payment_already_spent',
             intentId: settled.id,
-            intentStatus: settled.status as ApiErrorEnvelope['intentStatus'],
+            intentStatus: intentStatusOf(settled.status),
             operation: settled.operation,
             idempotencyKey: settled.idempotencyKey,
             message: `This payment has already funded ${settled.operation} (intent ${settled.id}); it cannot fund another write.`,
@@ -838,7 +838,7 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
         operation: input.operation,
         idempotencyKey,
         intentId: existing.id,
-        intentStatus: existing.status as ApiErrorEnvelope['intentStatus'],
+        intentStatus: intentStatusOf(existing.status),
         message: `The ${IDEMPOTENCY_KEY_HEADER} you sent already names a ${existing.operation} write with different arguments (intent ${existing.id}); the arguments you just sent were not applied. To retry that write, re-send the arguments it was created with. To make a different write, generate a fresh key.`,
       });
     }
@@ -867,7 +867,7 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
       throw apiError({
         reason: 'payment_already_spent',
         intentId: settled.id,
-        intentStatus: settled.status as ApiErrorEnvelope['intentStatus'],
+        intentStatus: intentStatusOf(settled.status),
         operation: settled.operation,
         idempotencyKey: settled.idempotencyKey,
         message: `This payment has already funded ${settled.operation} (intent ${settled.id}); it cannot fund another write.`,

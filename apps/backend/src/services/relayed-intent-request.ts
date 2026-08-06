@@ -1,10 +1,9 @@
 // Implements: ADR-0045, ADR-0048, ADR-0052
 // Implements: ADR-0049
-import type { ApiErrorEnvelope } from '@taskmarket/shared';
 
 import type { db as DbType } from '../db/client';
 import type { RelayedIntent } from '../db/schema';
-import { apiError } from '../lib/api-error';
+import { apiError, intentStatusOf } from '../lib/api-error';
 import { ServerTransactionPendingError } from '../lib/server-transaction-dispatcher';
 import { registerRelayedIntentHandlers } from './intents/register';
 import { withRelayEnvelope } from './relay-envelope';
@@ -180,7 +179,7 @@ export async function runRelayedIntent(
     throw apiError({
       reason: 'idempotency_key_reused',
       intentId: current.id,
-      intentStatus: current.status as ApiErrorEnvelope['intentStatus'],
+      intentStatus: intentStatusOf(current.status),
       operation: current.operation,
       idempotencyKey: current.idempotencyKey,
       txHash: current.txHash ?? undefined,

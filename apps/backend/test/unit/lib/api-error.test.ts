@@ -1,5 +1,6 @@
 // Verifies: ADR-0049
 // Verifies: ADR-0058
+// Verifies: ADR-0070
 import { describe, expect, it } from 'vitest';
 import { API_ERROR_REASONS, apiErrorEnvelopeOf, isInFlightApiError } from '@taskmarket/shared';
 
@@ -8,6 +9,7 @@ import {
   apiErrorBody,
   codeForReason,
   envelopeForError,
+  intentStatusOf,
 } from '../../../src/lib/api-error';
 
 describe('the API error envelope', () => {
@@ -50,6 +52,43 @@ describe('the API error envelope', () => {
 
     expect(error.envelope).toEqual({ reason: 'idempotency_key_required' });
     expect('txHash' in error.envelope).toBe(false);
+  });
+
+  it('refuses a reused-key envelope that does not say what the intent is doing', () => {
+    // The reason asserts an intent under this key exists, so it has a status, and every reader
+    // of this envelope needs it: without one, "is this still landing" has no answer but a
+    // guess. Unparseable rather than defaulted (ADR-0070).
+    expect(apiErrorEnvelopeOf({ reason: 'idempotency_key_reused', intentId: 'i-1' })).toBeNull();
+    expect(
+      apiErrorEnvelopeOf({
+        reason: 'idempotency_key_reused',
+        intentId: 'i-1',
+        intentStatus: 'recorded',
+      })?.intentStatus
+    ).toBe('recorded');
+  });
+
+  it('keeps intentStatus optional for every reason that may not name an intent', () => {
+    expect(apiErrorEnvelopeOf({ reason: 'payment_rejected' })?.reason).toBe('payment_rejected');
+    expect(apiErrorEnvelopeOf({ reason: 'intent_in_flight' })?.reason).toBe('intent_in_flight');
+    expect(apiErrorEnvelopeOf({ reason: 'idempotency_check_unavailable' })?.reason).toBe(
+      'idempotency_check_unavailable'
+    );
+  });
+
+  it('still reads an unrecognised shape as no information at all', () => {
+    // The guarantee a client on an older shared package depends on: what it cannot parse it
+    // must treat as nothing, never as something to compare against.
+    expect(apiErrorEnvelopeOf({ reason: 'not_a_reason' })).toBeNull();
+    expect(
+      apiErrorEnvelopeOf({ reason: 'idempotency_key_reused', intentStatus: 'in_progress' })
+    ).toBeNull();
+  });
+
+  it('parses a relayed intent status rather than asserting it', () => {
+    // The column is `text`; a cast to the five would let a drifted value travel unchallenged.
+    expect(intentStatusOf('broadcast')).toBe('broadcast');
+    expect(() => intentStatusOf('in_progress')).toThrow();
   });
 
   it('classifies an error nobody classified rather than leaving the field absent', () => {
@@ -117,13 +156,12 @@ describe('what a client branches on', () => {
   });
 
   it('reads every terminal reason as not in flight', () => {
-    const nonTerminal = new Set([
-      'intent_in_flight',
-      'idempotency_key_reused',
-      'intent_completion_deferred',
-    ]);
+    const nonTerminal = new Set(['intent_in_flight', 'intent_completion_deferred']);
     for (const reason of API_ERROR_REASONS) {
-      if (nonTerminal.has(reason)) continue;
+      // `idempotency_key_reused` is skipped by its literal rather than through the set so the
+      // compiler narrows it away: it is the one reason that cannot form an envelope without an
+      // `intentStatus`, and the two tests above cover both of its answers.
+      if (reason === 'idempotency_key_reused' || nonTerminal.has(reason)) continue;
       expect(isInFlightApiError({ reason }), reason).toBe(false);
     }
   });
