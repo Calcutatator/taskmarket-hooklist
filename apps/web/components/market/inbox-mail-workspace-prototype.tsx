@@ -1,5 +1,6 @@
 'use client';
 
+import type { TaskActionQueueItem, TaskActionWaitingItem } from '@taskmarket/shared';
 import {
   AlertCircleIcon,
   ArrowLeftIcon,
@@ -11,26 +12,26 @@ import {
   PlugZapIcon,
   UploadCloudIcon,
 } from 'lucide-react';
+import type { Route } from 'next';
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type Ref } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { formatUsdcUnits } from '@/lib/format';
+import { taskActionHref, taskActionTitle } from '@/lib/market/task-action-presentation';
+import { taskTitle } from '@/lib/market/task-title';
 import { cn } from '@/lib/utils';
 
-export type InboxMailPrototypeMessage = {
-  dueLabel?: string;
-  id: string;
-  kind: 'rate' | 'review' | 'submit' | 'waiting';
-  priority: 'follow_up' | 'required' | 'urgent' | 'waiting';
-  rewardLabel: string;
-  role: 'requester' | 'worker';
-  subject: string;
-  taskTitle: string;
-};
+type PrototypeActionIntent = 'rate_workers' | 'review_work' | 'submit_work';
+
+type InboxMailPrototypeAction = TaskActionQueueItem & { intent: PrototypeActionIntent };
+type InboxMailPrototypeWaiting = TaskActionWaitingItem & { reason: 'waiting_for_submissions' };
+
+export type InboxMailPrototypeMessage = InboxMailPrototypeAction | InboxMailPrototypeWaiting;
 
 const REVIEW_SUBMISSIONS = [
   {
@@ -40,7 +41,7 @@ const REVIEW_SUBMISSIONS = [
     worker: '0x7421…b3fA',
   },
   {
-    file: 'state-transitions.pdf',
+    file: 'complete-state-transition-audit-with-requester-worker-evaluator-and-dispute-annotations.pdf',
     meta: '9 pages · 1.1 MB',
     submitted: 'Aug 6, 16:05 UTC',
     worker: '0x9c11…2d7B',
@@ -53,7 +54,37 @@ const REVIEW_SUBMISSIONS = [
   },
 ] as const;
 
-function PriorityBadge({ priority }: { priority: InboxMailPrototypeMessage['priority'] }) {
+function isActionMessage(message: InboxMailPrototypeMessage): message is InboxMailPrototypeAction {
+  return 'intent' in message;
+}
+
+function messageSubject(message: InboxMailPrototypeMessage): string {
+  return isActionMessage(message)
+    ? taskActionTitle(message.intent, message.progress)
+    : 'Waiting for submissions';
+}
+
+function messageDueLabel(message: InboxMailPrototypeMessage): string | null {
+  if (!message.dueAt) return null;
+  const deadline = new Intl.DateTimeFormat('en', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(message.dueAt));
+  return isActionMessage(message) ? `Due ${deadline}` : `Next checkpoint ${deadline}`;
+}
+
+function messageRewardLabel(message: InboxMailPrototypeMessage): string {
+  return isActionMessage(message)
+    ? `${formatUsdcUnits(message.task.reward)} reward`
+    : 'Waiting for submissions';
+}
+
+function PriorityBadge({ message }: { message: InboxMailPrototypeMessage }) {
+  if (!isActionMessage(message)) {
+    return <Badge variant="terminal">Waiting</Badge>;
+  }
+  const { priority } = message;
   if (priority === 'urgent') {
     return (
       <Badge className="text-foreground" variant="destructive">
@@ -63,9 +94,6 @@ function PriorityBadge({ priority }: { priority: InboxMailPrototypeMessage['prio
   }
   if (priority === 'follow_up') {
     return <Badge variant="outline">Follow up</Badge>;
-  }
-  if (priority === 'waiting') {
-    return <Badge variant="terminal">Waiting</Badge>;
   }
   return <Badge variant="outline">Action required</Badge>;
 }
@@ -81,13 +109,16 @@ function MessageRow({
   onSelect: () => void;
   selected: boolean;
 }) {
+  const dueLabel = messageDueLabel(message);
+  const subject = messageSubject(message);
+
   return (
     <li>
       <button
         aria-current={selected ? 'true' : undefined}
         ref={buttonRef}
         className={cn(
-          'grid w-full gap-3 rounded-lg border p-4 text-left transition-[background-color,border-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+          'grid w-full gap-3 rounded-lg border p-4 text-left transition-[background-color,border-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none',
           selected
             ? 'border-primary/64 bg-primary/8'
             : 'border-border/58 bg-card/44 hover:border-primary/36 hover:bg-card/58'
@@ -96,25 +127,23 @@ function MessageRow({
         type="button"
       >
         <div className="flex flex-wrap items-center gap-2">
-          <PriorityBadge priority={message.priority} />
+          <PriorityBadge message={message} />
           <Badge variant="outline">{message.role}</Badge>
-          {message.dueLabel ? (
+          {dueLabel ? (
             <span className="ml-auto inline-flex items-center gap-1 font-mono text-[0.68rem] uppercase tracking-wide text-muted-foreground">
               <Clock3Icon aria-hidden="true" className="size-3.5" />
-              {message.dueLabel}
+              {dueLabel}
             </span>
           ) : null}
         </div>
         <div className="grid min-w-0 gap-1">
-          <p className="font-mono text-sm font-bold text-foreground dark:text-primary">
-            {message.subject}
-          </p>
+          <p className="font-mono text-sm font-bold text-foreground dark:text-primary">{subject}</p>
           <p className="line-clamp-2 font-display text-base font-semibold leading-snug text-foreground">
-            {message.taskTitle}
+            {taskTitle(message.task)}
           </p>
         </div>
         <p className="border-t border-border/58 pt-3 font-mono text-xs text-muted-foreground">
-          {message.rewardLabel}
+          {messageRewardLabel(message)}
         </p>
       </button>
     </li>
@@ -122,24 +151,28 @@ function MessageRow({
 }
 
 function DetailHeader({ message }: { message: InboxMailPrototypeMessage }) {
+  const dueLabel = messageDueLabel(message);
+
   return (
     <header className="grid gap-4 border-b border-border/58 px-5 py-5 sm:px-7 sm:py-6">
       <div className="grid gap-1.5">
-        <h2 className="font-mono text-sm font-bold text-primary">{message.subject}</h2>
+        <h2 className="font-mono text-sm font-bold text-primary">{messageSubject(message)}</h2>
         <p className="max-w-4xl font-display text-2xl font-semibold leading-tight text-foreground sm:text-3xl">
-          {message.taskTitle}
+          {taskTitle(message.task)}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline">{message.role}</Badge>
-        <PriorityBadge priority={message.priority} />
-        {message.dueLabel ? (
+        <PriorityBadge message={message} />
+        {dueLabel ? (
           <span className="inline-flex items-center gap-1 font-mono text-[0.68rem] uppercase tracking-wide text-muted-foreground">
             <Clock3Icon aria-hidden="true" className="size-3.5" />
-            {message.dueLabel}
+            {dueLabel}
           </span>
         ) : null}
-        <span className="font-mono text-xs text-muted-foreground">{message.rewardLabel}</span>
+        <span className="font-mono text-xs text-muted-foreground">
+          {messageRewardLabel(message)}
+        </span>
       </div>
     </header>
   );
@@ -196,8 +229,16 @@ function ReviewDetail() {
   );
 }
 
-function DetailFooter({ kind }: { kind: InboxMailPrototypeMessage['kind'] }) {
-  if (kind === 'review') {
+function messageHref(message: InboxMailPrototypeMessage): Route {
+  return isActionMessage(message)
+    ? (taskActionHref('/dashboard/tasks', message.task.id, message.intent) as Route)
+    : (`/dashboard/tasks/${encodeURIComponent(message.task.id)}#task-activity` as Route);
+}
+
+function DetailFooter({ message }: { message: InboxMailPrototypeMessage }) {
+  const href = messageHref(message);
+
+  if (isActionMessage(message) && message.intent === 'review_work') {
     return (
       <footer className="flex flex-wrap items-center gap-3 border-t border-border/58 bg-card/44 px-5 py-4 sm:px-7">
         <p className="mr-auto flex max-w-sm items-start gap-2 text-xs leading-5 text-muted-foreground">
@@ -209,7 +250,7 @@ function DetailFooter({ kind }: { kind: InboxMailPrototypeMessage['kind'] }) {
           Reject
         </Button>
         <Button asChild variant="link">
-          <Link href="/dashboard/tasks/task-review?focus=review_work#task-activity">
+          <Link href={href}>
             Open full task
             <ArrowRightIcon aria-hidden="true" />
           </Link>
@@ -218,12 +259,12 @@ function DetailFooter({ kind }: { kind: InboxMailPrototypeMessage['kind'] }) {
     );
   }
 
-  if (kind === 'submit') {
+  if (isActionMessage(message) && message.intent === 'submit_work') {
     return (
       <footer className="flex flex-wrap items-center gap-3 border-t border-border/58 bg-card/44 px-5 py-4 sm:px-7">
         <Button type="button">Submit work</Button>
         <Button asChild variant="link">
-          <Link href="/dashboard/tasks/task-delivery?focus=submit_work#task-participation">
+          <Link href={href}>
             Open full task
             <ArrowRightIcon aria-hidden="true" />
           </Link>
@@ -235,11 +276,11 @@ function DetailFooter({ kind }: { kind: InboxMailPrototypeMessage['kind'] }) {
     );
   }
 
-  if (kind === 'rate') {
+  if (isActionMessage(message)) {
     return (
       <footer className="border-t border-border/58 bg-card/44 px-5 py-4 sm:px-7">
         <Button asChild variant="link">
-          <Link href="/dashboard/tasks/task-rating?focus=rate_workers#settlement-payouts">
+          <Link href={href}>
             Open full task
             <ArrowRightIcon aria-hidden="true" />
           </Link>
@@ -251,7 +292,7 @@ function DetailFooter({ kind }: { kind: InboxMailPrototypeMessage['kind'] }) {
   return (
     <footer className="border-t border-border/58 bg-card/44 px-5 py-4 sm:px-7">
       <Button asChild variant="link">
-        <Link href="/dashboard/tasks/task-waiting#task-activity">
+        <Link href={href}>
           Open full task
           <ArrowRightIcon aria-hidden="true" />
         </Link>
@@ -301,7 +342,7 @@ function SubmitDetail() {
           Upload evidence
         </h3>
         <button
-          className="flex min-h-28 w-full items-center gap-4 rounded-lg border border-dashed border-primary/58 bg-primary/8 p-4 text-left transition-colors hover:bg-primary/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-h-28 w-full items-center gap-4 rounded-lg border border-dashed border-primary/58 bg-primary/8 p-4 text-left transition-colors hover:bg-primary/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
           type="button"
         >
           <span className="grid size-12 shrink-0 place-items-center rounded-md border border-primary/36 bg-background/52 text-primary">
@@ -402,16 +443,21 @@ function WaitingDetail() {
 }
 
 function MessageDetail({
+  backButtonRef,
   message,
   onBack,
 }: {
+  backButtonRef: Ref<HTMLButtonElement>;
   message: InboxMailPrototypeMessage;
   onBack: () => void;
 }) {
   return (
-    <article className="flex min-h-0 flex-1 flex-col bg-card/44" aria-label={message.subject}>
+    <article
+      className="flex min-h-0 flex-1 flex-col bg-card/44"
+      aria-label={messageSubject(message)}
+    >
       <div className="border-b border-border/58 px-4 py-3 md:hidden">
-        <Button onClick={onBack} size="sm" type="button" variant="ghost">
+        <Button ref={backButtonRef} onClick={onBack} size="sm" type="button" variant="ghost">
           <ArrowLeftIcon aria-hidden="true" />
           Back to Inbox
         </Button>
@@ -419,18 +465,18 @@ function MessageDetail({
       <DetailHeader message={message} />
       <ScrollArea className="min-h-0 flex-1">
         <div className="px-5 py-5 sm:px-7 sm:py-6">
-          {message.kind === 'review' ? (
+          {isActionMessage(message) && message.intent === 'review_work' ? (
             <ReviewDetail />
-          ) : message.kind === 'submit' ? (
+          ) : isActionMessage(message) && message.intent === 'submit_work' ? (
             <SubmitDetail />
-          ) : message.kind === 'rate' ? (
+          ) : isActionMessage(message) ? (
             <RatingDetail />
           ) : (
             <WaitingDetail />
           )}
         </div>
       </ScrollArea>
-      <DetailFooter kind={message.kind} />
+      <DetailFooter message={message} />
     </article>
   );
 }
@@ -451,17 +497,24 @@ export function InboxMailWorkspacePrototype({
     startOnList ? null : (initialSelectedId ?? messages[0]?.id ?? null)
   );
   const [activeView, setActiveView] = useState<'action' | 'waiting'>('action');
+  const backButtonRef = useRef<HTMLButtonElement>(null);
   const messageButtonsRef = useRef(new Map<string, HTMLButtonElement>());
   const lastSelectedIdRef = useRef<string | null>(selectedId);
-  const actionMessages = messages.filter((message) => message.kind !== 'waiting');
-  const waitingMessages = messages.filter((message) => message.kind === 'waiting');
+  const actionMessages = messages.filter(isActionMessage);
+  const waitingMessages = messages.filter(
+    (message): message is InboxMailPrototypeWaiting => !isActionMessage(message)
+  );
   const visibleMessages = activeView === 'action' ? actionMessages : waitingMessages;
   const selected = visibleMessages.find((message) => message.id === selectedId) ?? null;
 
   useEffect(() => setCurrentStatus(status), [status]);
 
   useEffect(() => {
-    if (selectedId !== null || !lastSelectedIdRef.current) return;
+    if (selectedId !== null) {
+      backButtonRef.current?.focus();
+      return;
+    }
+    if (!lastSelectedIdRef.current) return;
     messageButtonsRef.current.get(lastSelectedIdRef.current)?.focus();
   }, [selectedId]);
 
@@ -491,7 +544,7 @@ export function InboxMailWorkspacePrototype({
         <div className="flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/58 bg-card/44 px-4 py-3 sm:px-6">
           <button
             aria-pressed={activeView === 'action'}
-            className="border-b-2 border-transparent px-3 py-3 font-mono text-xs font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-primary aria-pressed:text-primary"
+            className="border-b-2 border-transparent px-3 py-3 font-mono text-xs font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none aria-pressed:border-primary aria-pressed:text-primary"
             onClick={() => selectView('action')}
             type="button"
           >
@@ -499,7 +552,7 @@ export function InboxMailWorkspacePrototype({
           </button>
           <button
             aria-pressed={activeView === 'waiting'}
-            className="border-b-2 border-transparent px-3 py-3 font-mono text-xs font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-primary aria-pressed:text-primary"
+            className="border-b-2 border-transparent px-3 py-3 font-mono text-xs font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none aria-pressed:border-primary aria-pressed:text-primary"
             onClick={() => selectView('waiting')}
             type="button"
           >
@@ -516,15 +569,15 @@ export function InboxMailWorkspacePrototype({
             role="region"
           >
             <div className="grid content-start gap-3">
-              <Skeleton className="h-24 w-full" />
-              <Skeleton className="h-32 w-full" />
-              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-24 w-full motion-reduce:animate-none" />
+              <Skeleton className="h-32 w-full motion-reduce:animate-none" />
+              <Skeleton className="h-32 w-full motion-reduce:animate-none" />
             </div>
             <div className="hidden content-start gap-5 md:grid">
-              <Skeleton className="h-20 w-3/4" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-5/6" />
-              <Skeleton className="h-56 w-full" />
+              <Skeleton className="h-20 w-3/4 motion-reduce:animate-none" />
+              <Skeleton className="h-4 w-full motion-reduce:animate-none" />
+              <Skeleton className="h-4 w-5/6 motion-reduce:animate-none" />
+              <Skeleton className="h-56 w-full motion-reduce:animate-none" />
             </div>
           </div>
         ) : currentStatus === 'disconnected' ? (
@@ -594,14 +647,14 @@ export function InboxMailWorkspacePrototype({
                 selected ? 'hidden' : 'flex'
               )}
             >
+              <div className="border-b border-border/58 px-4 py-3">
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {activeView === 'action'
+                    ? 'Finish these actions to clear your Inbox.'
+                    : 'No action is needed from you right now.'}
+                </p>
+              </div>
               <ScrollArea className="min-h-0 flex-1">
-                <div className="border-b border-border/58 px-4 py-3">
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    {activeView === 'action'
-                      ? 'Finish these actions to clear your Inbox.'
-                      : 'No action is needed from you right now.'}
-                  </p>
-                </div>
                 <ul className="grid gap-2 p-3 sm:p-4">
                   {visibleMessages.map((message) => (
                     <MessageRow
@@ -620,7 +673,11 @@ export function InboxMailWorkspacePrototype({
             </nav>
             <div className={cn('min-h-0 flex-col', selected ? 'flex' : 'hidden md:flex')}>
               {selected ? (
-                <MessageDetail message={selected} onBack={() => setSelectedId(null)} />
+                <MessageDetail
+                  backButtonRef={backButtonRef}
+                  message={selected}
+                  onBack={() => setSelectedId(null)}
+                />
               ) : (
                 <div className="grid flex-1 place-items-center p-8 text-center text-muted-foreground">
                   <p>Select a message to review its task context and next action.</p>

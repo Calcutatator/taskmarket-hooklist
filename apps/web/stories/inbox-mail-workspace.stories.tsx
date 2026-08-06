@@ -7,46 +7,94 @@ import {
   type InboxMailPrototypeMessage,
 } from '@/components/market/inbox-mail-workspace-prototype';
 
+import { addresses, taskFixture } from './fixtures';
+
+const reviewTask = taskFixture({
+  description:
+    'Audit the complete settlement workflow and document every state transition that matters',
+  id: 'task-review',
+  requester: addresses.requester,
+  requesterPubkey: addresses.requester,
+  status: 'pending_approval',
+  submissionCount: 3,
+});
+
 const messages: InboxMailPrototypeMessage[] = [
   {
-    dueLabel: 'Due Aug 7',
+    actions: [
+      {
+        action: 'accept',
+        command: 'taskmarket task accept task-review',
+        role: 'requester',
+      },
+      {
+        action: 'reject_submission',
+        command: 'taskmarket task reject-submission task-review',
+        role: 'requester',
+      },
+    ],
+    dueAt: '2026-08-07T00:00:00.000Z',
     id: 'review',
-    kind: 'review',
+    intent: 'review_work',
     priority: 'urgent',
-    rewardLabel: '250 USDC reward',
+    progress: { completed: 0, total: 3 },
     role: 'requester',
-    subject: 'Review 3 submissions',
-    taskTitle:
-      'Audit the complete settlement workflow and document every state transition that matters',
+    task: reviewTask,
   },
   {
-    dueLabel: 'Due Aug 12',
+    actions: [
+      {
+        action: 'submit',
+        command: 'taskmarket task submit task-delivery',
+        role: 'worker',
+      },
+    ],
+    dueAt: '2026-08-12T00:00:00.000Z',
     id: 'submit',
-    kind: 'submit',
+    intent: 'submit_work',
     priority: 'required',
-    rewardLabel: '250 USDC reward',
+    progress: null,
     role: 'worker',
-    subject: 'Submit your work',
-    taskTitle: 'Prepare a responsive launch-page implementation with verified keyboard flow',
+    task: taskFixture({
+      claimedBy: addresses.worker,
+      description: 'Prepare a responsive launch-page implementation with verified keyboard flow',
+      id: 'task-delivery',
+      mode: 'claim',
+      status: 'claimed',
+    }),
   },
   {
+    actions: [
+      {
+        action: 'rate',
+        command: 'taskmarket task rate task-rating',
+        role: 'requester',
+        targetWorker: addresses.worker,
+      },
+    ],
+    dueAt: null,
     id: 'rate',
-    kind: 'rate',
+    intent: 'rate_workers',
     priority: 'follow_up',
-    rewardLabel: '250 USDC reward',
+    progress: { completed: 1, total: 3 },
     role: 'requester',
-    subject: 'Rate 2 workers',
-    taskTitle: 'Compare three onboarding prototypes and document the strongest interaction model',
+    task: taskFixture({
+      description:
+        'Compare three onboarding prototypes and document the strongest interaction model',
+      id: 'task-rating',
+      phase: 'resolved',
+      status: 'completed',
+    }),
   },
   {
-    dueLabel: 'Next checkpoint Aug 14',
+    dueAt: '2026-08-14T00:00:00.000Z',
     id: 'waiting',
-    kind: 'waiting',
-    priority: 'waiting',
-    rewardLabel: 'Waiting for submissions',
+    reason: 'waiting_for_submissions',
     role: 'requester',
-    subject: 'Waiting for submissions',
-    taskTitle: 'Create a launch illustration system for the Taskmarket protocol',
+    task: taskFixture({
+      description: 'Create a launch illustration system for the Taskmarket protocol',
+      id: 'task-waiting',
+    }),
   },
 ];
 
@@ -113,6 +161,7 @@ export const MobileSelectAndReturn: Story = {
 
     await userEvent.click(submitMessage);
     await expect(canvas.getByRole('heading', { name: 'Submit your work' })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: /back to inbox/i })).toHaveFocus();
 
     await userEvent.click(canvas.getByRole('button', { name: /back to inbox/i }));
     await expect(canvas.getByRole('navigation', { name: /inbox messages/i })).toBeVisible();
@@ -139,8 +188,11 @@ export const LongContent: Story = {
       message.id === 'review'
         ? {
             ...message,
-            taskTitle:
-              'Audit the complete settlement workflow across requester, worker, evaluator, appeal, timeout, and payout states without losing the decision context',
+            task: {
+              ...message.task,
+              description:
+                'Audit the complete settlement workflow across requester, worker, evaluator, appeal, timeout, and payout states without losing the decision context',
+            },
           }
         : message
     ),
@@ -150,6 +202,25 @@ export const LongContent: Story = {
     const detail = within(canvas.getByRole('article', { name: 'Review 3 submissions' }));
     await expect(
       detail.getByText(/audit the complete settlement workflow across requester/i)
+    ).toBeVisible();
+  },
+};
+
+export const LongEvidence: Story = {
+  play: async ({ canvasElement }) => {
+    await expect(
+      within(canvasElement).getByText(
+        'complete-state-transition-audit-with-requester-worker-evaluator-and-dispute-annotations.pdf'
+      )
+    ).toBeVisible();
+  },
+};
+
+export const DarkTheme: Story = {
+  globals: { theme: 'dark' },
+  play: async ({ canvasElement }) => {
+    await expect(
+      within(canvasElement).getByRole('heading', { name: 'Review 3 submissions' })
     ).toBeVisible();
   },
 };
@@ -166,9 +237,12 @@ export const LightTheme: Story = {
 export const Loading: Story = {
   args: { status: 'loading' },
   play: async ({ canvasElement }) => {
+    const skeleton = canvasElement.querySelector<HTMLElement>('[data-slot="skeleton"]');
+    if (!skeleton) throw new Error('Expected the loading state to render a skeleton');
     await expect(
       within(canvasElement).getByRole('region', { name: /loading inbox workspace/i })
     ).toBeVisible();
+    await expect(skeleton).toHaveClass('motion-reduce:animate-none');
   },
 };
 
