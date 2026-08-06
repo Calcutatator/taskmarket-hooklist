@@ -3,26 +3,22 @@ import { z } from 'zod';
 import { HealthResponseSchema } from '@taskmarket/shared';
 import { getServerConfig } from '../config/env';
 import { getFreeSubmissionAllowance, getHardSubmissionCeiling } from '../config/payments';
-import { db } from '../db/client';
-import { logger } from '../lib/logger';
-import { countStaleNonTerminalIntents } from '../services/relayed-intents';
+import { readStaleIntentSnapshot } from '../services/intent-health-snapshot';
 
 /**
- * The stuck-intent count, or `undefined` if it could not be computed.
+ * Health does no database work, and that is a requirement rather than an accident.
  *
- * Health is the endpoint that says the service is up, so a failure here must never turn into a
- * 500 -- a database hiccup that hid one number would otherwise read as the whole backend being
- * down. The failure is logged so it is still findable (ADR-0053) and the field is dropped.
+ * This route is public, unauthenticated and polled continuously -- by load balancers, uptime
+ * checks, smoke tests and anyone who finds it. A query on the request path turns each of those
+ * cheap requests into work for us, which is an amplification vector pointed at the one endpoint
+ * that has to keep answering while the service is under strain: the moment the database is the
+ * thing in trouble, health would queue behind it and report nothing at all.
+ *
+ * So the stale-intent count is read from a value the relayed-intent worker publishes at the end
+ * of each of its passes (`intent-health-snapshot.ts`), not computed here. The cost of the count
+ * is bounded by the sweep interval no matter how hard this route is hit, and health itself is a
+ * pure function of process state.
  */
-async function readStaleIntentCount(): Promise<number | undefined> {
-  try {
-    return await countStaleNonTerminalIntents({ db });
-  } catch (error) {
-    logger.warn('health: stale relayed-intent count unavailable', { error });
-    return undefined;
-  }
-}
-
 export const healthRouter = router({
   check: publicProcedure
     .meta({
@@ -35,9 +31,9 @@ export const healthRouter = router({
     })
     .input(z.object({}))
     .output(HealthResponseSchema)
-    .query(async () => {
+    .query(() => {
       const config = getServerConfig();
-      const staleNonTerminal = await readStaleIntentCount();
+      const intents = readStaleIntentSnapshot();
       return {
         status: 'ok' as const,
         timestamp: new Date().toISOString(),
@@ -50,7 +46,11 @@ export const healthRouter = router({
           freeSubmissionAllowance: getFreeSubmissionAllowance(),
           hardSubmissionCeiling: getHardSubmissionCeiling(),
         },
-        ...(staleNonTerminal === undefined ? {} : { intents: { staleNonTerminal } }),
+        // Omitted until a sweep has published one, and omitted for good in a process that does
+        // not run the worker. Absence is the established way this response says "no answer",
+        // and it is the honest one here: reporting a zero before anything had counted would be
+        // inventing the reassuring answer.
+        ...(intents === undefined ? {} : { intents }),
       };
     }),
 });
