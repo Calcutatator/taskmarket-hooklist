@@ -118,33 +118,33 @@ function MessageRow({
         aria-current={selected ? 'true' : undefined}
         ref={buttonRef}
         className={cn(
-          'grid w-full gap-3 rounded-lg border p-4 text-left transition-[background-color,border-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none',
-          selected
-            ? 'border-primary/64 bg-primary/8'
-            : 'border-border/58 bg-card/44 hover:border-primary/36 hover:bg-card/58'
+          'grid min-h-28 w-full gap-2 border-l-2 px-4 py-4 text-left transition-[background-color,border-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none',
+          selected ? 'border-l-primary bg-primary/8' : 'border-l-transparent hover:bg-card/58'
         )}
         onClick={onSelect}
         type="button"
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <PriorityBadge message={message} />
-          <Badge variant="outline">{message.role}</Badge>
+        <div className="flex min-w-0 items-center gap-2">
+          <p className="min-w-0 truncate font-mono text-xs font-bold text-foreground dark:text-primary">
+            {subject}
+          </p>
+          <span className="ml-auto shrink-0">
+            <PriorityBadge message={message} />
+          </span>
+        </div>
+        <p className="line-clamp-2 font-display text-base font-semibold leading-snug text-foreground">
+          {taskTitle(message.task)}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[0.68rem] uppercase tracking-wide text-muted-foreground">
+          <span>{message.role}</span>
           {dueLabel ? (
-            <span className="ml-auto inline-flex items-center gap-1 font-mono text-[0.68rem] uppercase tracking-wide text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
               <Clock3Icon aria-hidden="true" className="size-3.5" />
               {dueLabel}
             </span>
           ) : null}
+          <span>{messageRewardLabel(message)}</span>
         </div>
-        <div className="grid min-w-0 gap-1">
-          <p className="font-mono text-sm font-bold text-foreground dark:text-primary">{subject}</p>
-          <p className="line-clamp-2 font-display text-base font-semibold leading-snug text-foreground">
-            {taskTitle(message.task)}
-          </p>
-        </div>
-        <p className="border-t border-border/58 pt-3 font-mono text-xs text-muted-foreground">
-          {messageRewardLabel(message)}
-        </p>
       </button>
     </li>
   );
@@ -719,7 +719,7 @@ export function InboxMailWorkspacePrototype({
                 </p>
               </div>
               <ScrollArea className="min-h-0 flex-1">
-                <ul className="grid gap-2 p-3 sm:p-4">
+                <ul className="divide-y divide-border/58">
                   {visibleMessages.map((message) => (
                     <MessageRow
                       buttonRef={(node) => {
