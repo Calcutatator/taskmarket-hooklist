@@ -67,6 +67,10 @@ export const WithdrawDreamsOutputSchema = z.object({
 
 export const ExchangeRateOutputSchema = z.object({
   dreamsPerUsdc: z.string(),
-  workerSplitBps: z.number(),
-  bonusBps: z.number(),
+  // Both are read straight off `TaskTokenRewardHook`, which rejects either above 10000
+  // (`InvalidBps`), and both are required here rather than optional: a client that had to
+  // default the split would default it to the whole reward, and one that had to default the
+  // bonus would report no bonus at all. Neither is a fact this endpoint may leave to the reader.
+  workerSplitBps: z.number().int().min(0).max(10000),
+  bonusBps: z.number().int().min(0).max(10000),
 });

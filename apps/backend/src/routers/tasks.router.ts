@@ -354,7 +354,7 @@ export const tasksRouter = router({
         allowedViewerAddresses,
         evaluatorAssignment,
         inlineTaskDrop,
-        input: input as unknown as Record<string, unknown>,
+        input,
         normalizedPayer,
         payer,
         resolvedTaskDropId,
@@ -687,7 +687,10 @@ export const tasksRouter = router({
           currentLowestBid,
           submissionWindowOpen: computeSubmissionWindowOpen(task, now),
           phase: computeTaskPhase(task, now),
-          netReward: computeNetReward(grossPayout, task.platformFeeBps ?? 0),
+          // Passed straight through, with no `?? 0`: the column is `NOT NULL` and the value is
+          // typed `number`, so a coalesce here only absorbs the compile error that would catch a
+          // future widening of it.
+          netReward: computeNetReward(grossPayout, task.platformFeeBps),
           taskDropId: task.taskDropId ?? null,
         };
       });
@@ -1041,7 +1044,7 @@ export const tasksRouter = router({
               ? null
               : auctionWinningPrice
             : task.reward,
-          task.platformFeeBps ?? 0
+          task.platformFeeBps
         ),
         pendingActions: computePendingActions(
           {
@@ -1603,7 +1606,7 @@ export const tasksRouter = router({
         currentLowestBid: updateCurrentLowestBid,
         submissionWindowOpen: updateSubmissionWindowOpen,
         phase: updatePhase,
-        netReward: computeNetReward(t.mode === 'auction' ? null : t.reward, t.platformFeeBps ?? 0),
+        netReward: computeNetReward(t.mode === 'auction' ? null : t.reward, t.platformFeeBps),
         pendingActions: computePendingActions(
           {
             id: t.id,

@@ -49,7 +49,11 @@ export type TasksCreateInput = {
   mode?: string;
   pitchDeadline?: number | null;
   reward: string;
-  stakeBps?: number;
+  // Required, not optional-with-a-default: `TaskCreateSchema` applies `.default(0)` before this
+  // payload is serialised, so every persisted intent already carries the value the requester's
+  // escrow was priced against. Re-defaulting it at read time would let a rebroadcast hours later
+  // quietly substitute its own number for a stake the requester actually chose.
+  stakeBps: number;
   stakeRequired?: boolean;
   submissionVisibility?: string;
   tags?: string[];
@@ -82,7 +86,10 @@ export type TasksCreateIntentPayload = {
     name: string;
     ownerAddress: string;
   } | null;
-  input: Record<string, unknown>;
+  // Typed, not `Record<string, unknown>`: this is the one place the request side and the two
+  // read sides agree about what was captured, so a field the readers require (`stakeBps`) is
+  // checked against what the writer actually puts here rather than cast into existence twice.
+  input: TasksCreateInput;
   normalizedPayer: string;
   payer: string;
   resolvedTaskDropId: string | null;
@@ -108,7 +115,7 @@ export async function broadcastTasksCreate(context: {
   payload: TasksCreateIntentPayload;
   paymentTxHash: `0x${string}` | null;
 }): Promise<`0x${string}`> {
-  const input = context.payload.input as TasksCreateInput;
+  const input = context.payload.input;
   const durationSecs = BigInt(Math.round(input.duration * 3600));
   const mode = MODE_MAP[input.mode ?? 'bounty'] ?? MODE_MAP['bounty']!;
 
@@ -131,7 +138,7 @@ export async function broadcastTasksCreate(context: {
       ? (AUCTION_SUBTYPE_MAP[input.auctionType] ?? ('0x00000000' as `0x${string}`))
       : ('0x00000000' as `0x${string}`),
     input.stakeRequired ?? false,
-    input.stakeBps ?? 0,
+    input.stakeBps,
     (input.hookContract ?? ZERO_ADDRESS) as `0x${string}`,
     (input.tags ?? []).map((tag) => keccak256(toHex(tag)) as `0x${string}`),
     (input.hookData ?? '0x') as `0x${string}`,
@@ -173,7 +180,7 @@ export async function completeTasksCreate(context: {
   txHash: `0x${string}`;
 }): Promise<void> {
   const { db, payload, recordedAt } = context;
-  const input = payload.input as TasksCreateInput;
+  const input = payload.input;
 
   const config = getServerConfig();
   // The chain's id, not a prediction of it. The payload cannot carry a task id: it is written
@@ -259,7 +266,7 @@ export async function completeTasksCreate(context: {
         requesterAgentId: requesterAgentIdValue,
         requesterPubkey: requesterPubkeyValue,
         reward: input.reward,
-        stakeBps: input.stakeBps ?? 0,
+        stakeBps: input.stakeBps,
         stakeRequired: input.stakeRequired ? 1 : 0,
         status: 'open',
         submissionVisibility,

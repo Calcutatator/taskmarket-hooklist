@@ -285,7 +285,9 @@ export const TaskResponseSchema = z.object({
   // never the hash itself, and never returned for a non-private task.
   hasAccessPassword: z.boolean().optional(),
   stakeRequired: z.boolean(),
-  stakeBps: z.number(),
+  // Same shape the request side already enforces (ADR-0069): a `uint16` fraction of the escrow,
+  // so the response cannot describe a stake the contract could not have held.
+  stakeBps: z.number().int().min(0).max(10000),
   pitchDeadline: z.string().nullable(),
   bidDeadline: z.string().nullable(),
   maxPrice: z.string().nullable(),
@@ -293,7 +295,10 @@ export const TaskResponseSchema = z.object({
   metricTarget: z.string().nullable(),
   claimedBy: z.string().nullable(),
   claimedAt: z.string().nullable(),
-  platformFeeBps: z.number(),
+  // Required, never optional: this is the multiplier every net-reward figure a client shows is
+  // derived from, and the column behind it has been `NOT NULL` since the first migration. A
+  // reader that had to supply its own value on absence would be guessing at money.
+  platformFeeBps: z.number().int().min(0).max(10000),
   submissionCount: z.number().optional().default(0),
   awardCount: z.number().int().nonnegative().optional(),
   // Read-time projection of the rank-1 task_awards row -- not a separately
@@ -322,7 +327,9 @@ export const TaskResponseSchema = z.object({
   hookContract: z.string().nullable().optional(),
   evaluator: z.string().nullable().optional(),
   evaluatorStake: z.string().nullable().optional(),
-  evaluatorFeeBps: z.number().nullable().optional(),
+  // Genuinely absent when no evaluator is configured -- unlike `platformFeeBps`, null here means
+  // "no evaluator fee", which is the same thing as zero, so a reader coalescing to 0 is right.
+  evaluatorFeeBps: z.number().int().min(0).max(10000).nullable().optional(),
   evaluationWindow: z.number().nullable().optional(),
   appealWindow: z.number().nullable().optional(),
   disputeResolver: z.string().nullable().optional(),
@@ -398,7 +405,11 @@ export const TaskDetailResponseSchema = TaskResponseSchema.extend({
   pendingActions: PendingActionSchema.array(),
   awards: TaskAwardSchema.array().optional(),
   dreamsPerUsdc: z.string().optional(),
-  bonusBps: z.number().optional(),
+  // Optional as a set, not individually: the router emits `dreamsPerUsdc`, `bonusBps` and every
+  // `estimated*` field together or not at all, depending on whether the task carries the DREAMS
+  // hook. No client multiplies this by a split of its own -- the worker/requester estimates are
+  // computed server-side -- so the absent case needs no fallback multiplier anywhere.
+  bonusBps: z.number().int().min(0).max(10000).optional(),
   estimatedUsdBonusValue: z.string().optional(),
   estimatedWorkerUsdBonusValue: z.string().optional(),
   estimatedRequesterUsdBonusValue: z.string().optional(),
