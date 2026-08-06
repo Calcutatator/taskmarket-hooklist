@@ -9,6 +9,7 @@ import {
   claimIntentForBroadcast,
   claimIntentForCompletion,
   exhaustIntentBroadcastAttempts,
+  intentOutboxLink,
   markIntentCompleted,
   markIntentFailed,
   persistIntentBroadcast,
@@ -265,8 +266,10 @@ export async function dispatchRelayedIntent(input: {
   try {
     // The stored envelope, not a fresh one: this is the rebroadcast path, and replaying the
     // deadline the intent was recorded with is what makes the deadline mean anything.
-    txHash = await withRelayEnvelope(relayEnvelopeForIntent(claimed), () =>
-      broadcast({ db: input.db, intent: claimed })
+    txHash = await withRelayEnvelope(
+      relayEnvelopeForIntent(claimed),
+      () => broadcast({ db: input.db, intent: claimed }),
+      intentOutboxLink(input.db, claimed.id)
     );
   } catch (error) {
     // The transaction is live and owned by the reconciler (ADR-0045). Recording the hash is

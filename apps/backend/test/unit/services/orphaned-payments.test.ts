@@ -8,6 +8,8 @@ vi.mock('../../../src/services/contract', () => ({
 
 import {
   recordAndRefundOrphanedPayment,
+  refundDidNotComplete,
+  settlePendingOrphanedRefunds,
   retryFailedOrphanedRefunds,
   handlePostPaymentFailure,
   handleStandardFeePostPaymentFailure,
@@ -253,6 +255,84 @@ describe('services/orphaned-payments', () => {
     });
   });
 
+  // Verifies: ADR-0069
+  describe('settlePendingOrphanedRefunds (the exit from `refunding`)', () => {
+    function dbWithJoinRows(rows: unknown[]) {
+      const db = makeFakeDb() as any;
+      db.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(rows),
+          }),
+        }),
+      });
+      db.update.mockReturnValue(updateChain());
+      return db;
+    }
+
+    it('marks a pending refund refunded once its own transfer confirms', async () => {
+      const db = dbWithJoinRows([
+        {
+          id: 'orphan_1',
+          outboxStatus: 'confirmed',
+          outboxTxHash: REFUND_TX_HASH,
+          refundTxHash: REFUND_TX_HASH,
+        },
+      ]);
+
+      await expect(settlePendingOrphanedRefunds(db as any)).resolves.toEqual([
+        { id: 'orphan_1', refundStatus: 'refunded' },
+      ]);
+      expect(db.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not claim success for a refund transfer that was superseded', async () => {
+      // The outbox row confirmed, but on the replacement's hash: the payer's money never left
+      // the server wallet, so this must land where the retry sweep will send it again.
+      const db = dbWithJoinRows([
+        {
+          id: 'orphan_1',
+          outboxStatus: 'confirmed',
+          outboxTxHash: '0xcccc000000000000000000000000000000000000000000000000000000000000',
+          refundTxHash: REFUND_TX_HASH,
+        },
+      ]);
+
+      await expect(settlePendingOrphanedRefunds(db as any)).resolves.toEqual([
+        { id: 'orphan_1', refundStatus: 'failed' },
+      ]);
+    });
+
+    it('leaves a transfer that is still in flight exactly where it is', async () => {
+      const db = dbWithJoinRows([
+        {
+          id: 'orphan_1',
+          outboxStatus: 'broadcast',
+          outboxTxHash: REFUND_TX_HASH,
+          refundTxHash: REFUND_TX_HASH,
+        },
+      ]);
+
+      await expect(settlePendingOrphanedRefunds(db as any)).resolves.toEqual([]);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it('hands a reverted transfer back to the retry sweep', async () => {
+      const db = dbWithJoinRows([
+        {
+          id: 'orphan_1',
+          outboxStatus: 'failed',
+          outboxTxHash: REFUND_TX_HASH,
+          refundTxHash: REFUND_TX_HASH,
+        },
+      ]);
+
+      await expect(settlePendingOrphanedRefunds(db as any)).resolves.toEqual([
+        { id: 'orphan_1', refundStatus: 'failed' },
+      ]);
+    });
+  });
+
   describe('handlePostPaymentFailure', () => {
     // Verifies: ADR-0045
     it('never refunds a transaction that is still in flight', async () => {
@@ -346,6 +426,65 @@ describe('services/orphaned-payments', () => {
         code: 'INTERNAL_SERVER_ERROR',
         message: expect.stringContaining('flagged for manual review'),
       });
+    });
+  });
+
+  // Verifies: ADR-0069
+  describe('refundDidNotComplete (structured, not string-matched)', () => {
+    async function failureFrom(refundResult: 'ok' | 'pending' | 'failed', message: string) {
+      const db = makeFakeDb();
+      db.insert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+      db.update
+        .mockReturnValueOnce(updateChain([{ id: 'ignored' }]))
+        .mockReturnValueOnce(updateChain());
+      if (refundResult === 'ok') {
+        vi.mocked(contractRefundOrphanedPayment).mockResolvedValue(REFUND_TX_HASH as `0x${string}`);
+      } else if (refundResult === 'pending') {
+        vi.mocked(contractRefundOrphanedPayment).mockRejectedValue(
+          new ServerTransactionPendingError(REFUND_TX_HASH as `0x${string}`, 7)
+        );
+      } else {
+        vi.mocked(contractRefundOrphanedPayment).mockRejectedValue(new Error('out of gas'));
+      }
+      try {
+        await handlePostPaymentFailure({
+          db: db as any,
+          payer: PAYER as `0x${string}`,
+          amount: 1000n,
+          paymentTxHash: PAYMENT_TX_HASH as `0x${string}`,
+          context: 'tasks.create',
+          error: new Error(message),
+        });
+      } catch (error) {
+        return error;
+      }
+      throw new Error('handlePostPaymentFailure must always throw');
+    }
+
+    it('reports a failed refund even when the revert reason contains the word refunded', async () => {
+      // `failureMessage` is a decoded revert reason and `tasks.refundExpired` is a live
+      // operation, so a revert that says "refunded" is reachable, not hypothetical.
+      // The message is operator-controlled: `failureMessage` is a decoded revert reason, and
+      // `tasks.refundExpired` is a live operation, so a revert named like AlreadyRefunded is
+      // reachable. String-matching read this as a success and logged nothing.
+      const error = await failureFrom('failed', 'execution reverted: already refunded');
+      // The old test -- `!message.includes('refunded')` -- is false here, which is exactly the
+      // silence being fixed. The structured answer disagrees, and it is the one that is right.
+      expect((error as Error).message.includes('refunded')).toBe(true);
+      expect((error as Error).message).toContain('could not be completed');
+      expect(refundDidNotComplete(error)).toBe(true);
+    });
+
+    it('reports a completed refund as complete', async () => {
+      expect(refundDidNotComplete(await failureFrom('ok', 'boom'))).toBe(false);
+    });
+
+    it('does not report an in-flight refund as a failure', async () => {
+      expect(refundDidNotComplete(await failureFrom('pending', 'boom'))).toBe(false);
+    });
+
+    it('is false for anything that never reached a refund at all', () => {
+      expect(refundDidNotComplete(new Error('unrelated'))).toBe(false);
     });
   });
 

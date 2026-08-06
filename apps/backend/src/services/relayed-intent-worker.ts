@@ -3,6 +3,7 @@ import { db } from '../db/client';
 import { logger } from '../lib/logger';
 import { dispatchRelayedIntent } from './relayed-intent-registry';
 import { settleAbandonedIntents } from './relayed-intent-settlement';
+import { settlePendingOrphanedRefunds } from './orphaned-payments';
 import { expireStaleReservations } from './reservation-sweep';
 import { listUnbroadcastIntents } from './relayed-intents';
 
@@ -85,6 +86,20 @@ export function createRelayedIntentWorker(options?: {
     // decided from its own retry budget, while a reservation cannot be retired until the token
     // contract has said no payment landed against it.
     await expireStaleReservations(MAX_INTENTS_PER_PASS);
+
+    // The far end of a refund, and the mirror of the sweep above: a refund transfer whose
+    // receipt was slow left its ledger row in `refunding`, and nothing used to move it on
+    // (ADR-0069). Here rather than in the reconciler because a refund transfer has no intent
+    // for the reconciler's settlement callbacks to resolve; the outbox row it does have is
+    // exactly what this reads.
+    try {
+      await settlePendingOrphanedRefunds(database);
+    } catch (error) {
+      // Ledger bookkeeping must not take down the intent passes above it.
+      logger.error('Settling pending orphaned refunds failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   };
 }
 

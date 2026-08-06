@@ -4,7 +4,7 @@ import type { Hex } from 'viem';
 import { db } from '../db/client';
 import type { RelayedIntentSettlement } from '../lib/server-transaction-reconciler';
 import { logger } from '../lib/logger';
-import { handlePostPaymentFailure } from './orphaned-payments';
+import { handlePostPaymentFailure, refundDidNotComplete } from './orphaned-payments';
 import { completeRelayedIntent, releaseIntentGuard } from './relayed-intent-registry';
 import {
   findIntentByTransactionId,
@@ -125,11 +125,12 @@ export async function settleAbandonedIntents(limit: number): Promise<void> {
         paymentTxHash: intent.paymentTxHash as `0x${string}`,
       });
     } catch (error) {
-      // Always throws by design (see onFailed below); only a genuine refund failure matters.
-      const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes('refunded')) {
+      // Always throws by design (see onFailed below); only a genuine refund failure matters,
+      // and which it was is read from the structured outcome the error carries rather than
+      // from its prose (ADR-0069).
+      if (refundDidNotComplete(error)) {
         logger.error('Refund for an abandoned intent did not complete', {
-          error: message,
+          error: error instanceof Error ? error.message : String(error),
           intentId: intent.id,
           operation: intent.operation,
         });
@@ -239,10 +240,9 @@ export function createRelayedIntentSettlement(): RelayedIntentSettlement {
           paymentTxHash: intent.paymentTxHash as `0x${string}`,
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (!message.includes('refunded')) {
+        if (refundDidNotComplete(error)) {
           logger.error('Refund for a confirmed-failed intent did not complete', {
-            error: message,
+            error: error instanceof Error ? error.message : String(error),
             intentId: intent.id,
             operation: intent.operation,
           });

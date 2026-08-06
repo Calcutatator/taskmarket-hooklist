@@ -276,6 +276,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0066 — Replacement stops at the cap, and a single self-transfer clears the nonce](0066-replacement-stops-at-the-cap-and-one-self-transfer-clears-the-nonce.md)
 - [0067 — An intent is reserved when the request arrives, before the payment challenge](0067-an-intent-is-reserved-before-the-payment-challenge.md)
 - [0068 — The idempotency key is claimed before settlement, not before the challenge](0068-the-key-is-claimed-before-settlement-not-before-the-challenge.md)
+- [0069 — The outbox row is an intent's evidence that a nonce may be spent](0069-the-outbox-row-is-the-intents-evidence-that-a-nonce-was-spent.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

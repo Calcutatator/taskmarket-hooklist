@@ -12,6 +12,7 @@ import { completeRelayedIntent } from './relayed-intent-registry';
 import {
   claimIntentForBroadcast,
   getRelayedIntent,
+  intentOutboxLink,
   type IntentPaymentReference,
   persistIntentBroadcast,
   recordRelayedIntent,
@@ -194,7 +195,14 @@ export async function runRelayedIntent(
     // Bound so the first attempt uses the same envelope every later rebroadcast will use.
     // Without this the original send would carry one deadline and every retry another, and
     // the stored one would only ever apply to attempts this process did not make.
-    txHash = await withRelayEnvelope(relayEnvelopeForIntent(claimed), () => input.send());
+    // The outbox link travels with the envelope: the nonce this send allocates is linked to
+    // the intent before the send happens, so an unanswered send leaves evidence that a
+    // transaction may be live rather than looking like one that never started (ADR-0069).
+    txHash = await withRelayEnvelope(
+      relayEnvelopeForIntent(claimed),
+      () => input.send(),
+      intentOutboxLink(input.db, claimed.id)
+    );
   } catch (error) {
     // Live, not failed. Link it so the reconciler owns the outcome and let the caller see the
     // pending error as-is; the intent stays non-terminal until the chain says otherwise.

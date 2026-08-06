@@ -25,7 +25,25 @@ export function newRelayEnvelope(now: () => number = Date.now): RelayEnvelope {
   };
 }
 
-const storage = new AsyncLocalStorage<RelayEnvelope>();
+/**
+ * How the intent layer hears about the nonce its relay call is allocated.
+ *
+ * Ambient for the same reason the envelope is: the thirty-odd `contract*` functions between an
+ * intent and the forwarder have no business knowing about intents, and there is exactly one
+ * reader (`relayThroughForwarderResult`) and one writer (the intent broadcast path).
+ *
+ * The link has to be written when the nonce is allocated rather than when the send returns,
+ * because "no outbox row and no hash" is the evidence every sweep refunds on, and a send that
+ * never answered produces neither while its transaction mines (ADR-0069).
+ */
+export type RelayOutboxLink = {
+  onAllocated: (transactionId: string) => Promise<void>;
+  onReleased: () => Promise<void>;
+};
+
+type RelayContext = { envelope: RelayEnvelope; outboxLink?: RelayOutboxLink };
+
+const storage = new AsyncLocalStorage<RelayContext>();
 
 /**
  * Pin the relay envelope for the duration of one broadcast attempt.
@@ -40,10 +58,19 @@ const storage = new AsyncLocalStorage<RelayEnvelope>();
  * Callers outside the intent mechanism bind nothing and get a fresh envelope, which is right:
  * a one-shot call with no durable record has nothing to replay.
  */
-export function withRelayEnvelope<T>(envelope: RelayEnvelope, fn: () => Promise<T>): Promise<T> {
-  return storage.run(envelope, fn);
+export function withRelayEnvelope<T>(
+  envelope: RelayEnvelope,
+  fn: () => Promise<T>,
+  outboxLink?: RelayOutboxLink
+): Promise<T> {
+  return storage.run({ envelope, outboxLink }, fn);
 }
 
 export function currentRelayEnvelope(): RelayEnvelope | undefined {
-  return storage.getStore();
+  return storage.getStore()?.envelope;
+}
+
+/** The outbox link bound for this broadcast, or undefined outside the intent mechanism. */
+export function currentRelayOutboxLink(): RelayOutboxLink | undefined {
+  return storage.getStore()?.outboxLink;
 }

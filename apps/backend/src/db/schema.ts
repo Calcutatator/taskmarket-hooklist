@@ -711,9 +711,15 @@ export const orphanedPayments = pgTable(
     paymentTxHash: text('payment_tx_hash').notNull().unique(),
     context: text('context').notNull(),
     failureReason: text('failure_reason'),
-    // 'pending' | 'refunding' | 'refunded' | 'failed' -- 'refunding' is a transient
-    // claim state a row briefly holds between attemptRefund's compare-and-swap and the
-    // refund transfer settling; see services/orphaned-payments.ts.
+    // 'pending' | 'refunding' | 'refunded' | 'failed'.
+    //
+    // 'refunding' is the claim state a row holds between attemptRefund's compare-and-swap and
+    // the refund transfer settling. It is transient because something moves it on, not because
+    // time does: `settlePendingOrphanedRefunds` joins the row's refund hash to the outbox and
+    // writes 'refunded' or 'failed' from what the chain said about that transfer (ADR-0069).
+    // It was documented as transient while nothing selected it at all, which made it terminal
+    // in practice -- every refund whose receipt was slow parked here permanently.
+    // See services/orphaned-payments.ts.
     refundStatus: text('refund_status').notNull().default('pending'),
     refundTxHash: text('refund_tx_hash'),
     createdAt: timestamp('created_at').defaultNow().notNull(),

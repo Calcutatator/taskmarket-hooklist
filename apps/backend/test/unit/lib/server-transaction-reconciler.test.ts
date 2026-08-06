@@ -7,9 +7,8 @@ import { stubServerEnvironment } from '../../helpers/server-environment';
 // The reconciler logs, and the logger reads validated server config at import time.
 const restoreServerEnvironment = stubServerEnvironment();
 
-const { createServerTransactionReconciler } = await import(
-  '../../../src/lib/server-transaction-reconciler'
-);
+const { createServerTransactionReconciler } =
+  await import('../../../src/lib/server-transaction-reconciler');
 
 afterAll(restoreServerEnvironment);
 
@@ -23,9 +22,7 @@ function replacementSender(hash = REPLACEMENT_HASH) {
 }
 const STUCK_AFTER_MS = 90_000;
 
-async function broadcastOne(
-  store: ReturnType<typeof createMemoryServerTransactionStore>['store']
-) {
+async function broadcastOne(store: ReturnType<typeof createMemoryServerTransactionStore>['store']) {
   const dispatch = createServerTransactionDispatcher({
     getPendingNonce: vi.fn().mockResolvedValue(10),
     store,
@@ -174,6 +171,71 @@ describe('server transaction reconciler', () => {
     expect(intents.onFailed).toHaveBeenCalledTimes(1);
     expect(intents.onFailed.mock.calls[0]?.[1]).toContain('superseded by replacement');
     expect(intents.onConfirmed).not.toHaveBeenCalled();
+  });
+
+  // Verifies: ADR-0069
+  it('settles the original when it mines after a replacement was already broadcast', async () => {
+    const { state, store } = createMemoryServerTransactionStore(10);
+    await broadcastOne(store);
+    const intents = settlementSpies();
+
+    // The replacement went out because the gateway lagged; the original mined anyway. The
+    // replacement is nonce-too-low from that moment on, so its receipt is null forever and
+    // nothing would ever read the hash it superseded.
+    let lagging = true;
+    const getReceiptStatus = vi.fn(async (hash: string) => {
+      // The lag that makes the replacement go out at all: the original's receipt is not
+      // visible yet on the first pass.
+      if (lagging) {
+        lagging = false;
+        return null;
+      }
+      return hash === HASH ? 'success' : null;
+    });
+    const reconcile = createServerTransactionReconciler({
+      getReceiptStatus: getReceiptStatus as never,
+      intents,
+      sendReplacement: replacementSender(),
+      store,
+      stuckAfterMs: STUCK_AFTER_MS,
+    });
+
+    await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 2));
+    await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 4));
+
+    // Routed through the existing confirmed path, and the outbox row carries the hash that
+    // actually mined again, so the hash join in listConfirmedUnsettledIntents lines up.
+    expect(intents.onConfirmed).toHaveBeenCalledWith('tx-1', HASH);
+    expect(intents.onFailed).not.toHaveBeenCalled();
+    expect(state.rows[0]).toMatchObject({ status: 'confirmed', txHash: HASH });
+  });
+
+  it('fails the intent when the superseded original mines reverted', async () => {
+    const { state, store } = createMemoryServerTransactionStore(10);
+    await broadcastOne(store);
+    const intents = settlementSpies();
+
+    let lagging = true;
+    const getReceiptStatus = vi.fn(async (hash: string) => {
+      if (lagging) {
+        lagging = false;
+        return null;
+      }
+      return hash === HASH ? 'reverted' : null;
+    });
+    const reconcile = createServerTransactionReconciler({
+      getReceiptStatus: getReceiptStatus as never,
+      intents,
+      sendReplacement: replacementSender(),
+      store,
+      stuckAfterMs: STUCK_AFTER_MS,
+    });
+
+    await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 2));
+    await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 4));
+
+    expect(intents.onFailed).toHaveBeenCalledTimes(1);
+    expect(state.rows[0]).toMatchObject({ status: 'failed', txHash: HASH });
   });
 
   it('recovers without an operator restart when a replacement is itself rejected', async () => {

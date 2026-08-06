@@ -127,7 +127,10 @@ export const TaskCreateSchema = z
     taskVisibility: TaskVisibility.optional().default('public'),
     submissionVisibility: SubmissionVisibility.optional().default('public'),
     stakeRequired: z.boolean().optional().default(false),
-    stakeBps: z.number().min(0).max(10000).optional().default(0),
+    // Integral: this is client-supplied and lands in a `uint16` on chain, where a fraction is
+    // not representable at all. Without `.int()` a 12.5 was accepted here and silently became
+    // something else by the time it reached the contract (ADR-0069).
+    stakeBps: z.number().int().min(0).max(10000).optional().default(0),
     pitchDeadline: z.number().positive().optional(),
     bidDeadline: z.number().positive().optional(),
     maxPrice: PositiveUsdcBaseUnitsSchema.optional(),
@@ -145,7 +148,8 @@ export const TaskCreateSchema = z
       )
       .optional(),
     evaluator: z.string().optional(),
-    evaluatorFeeBps: z.number().min(0).max(10000).optional(),
+    // Integral for the same reason as `stakeBps` above: client-supplied, `uint16` on chain.
+    evaluatorFeeBps: z.number().int().min(0).max(10000).optional(),
     evaluationWindowHours: z.number().positive().optional(),
     appealWindowHours: z.number().positive().optional(),
     disputeResolver: z.string().optional(),
@@ -422,7 +426,9 @@ export const RejectSubmissionInputSchema = z.object({
 export const AssignEvaluatorInputSchema = z.object({
   taskId: z.string(),
   evaluator: z.string(),
-  evaluatorFeeBps: z.number().min(0).max(10000).optional(),
+  // Integral: same field, same `uint16`, and the two request-side schemas must not disagree
+  // about what a caller may send.
+  evaluatorFeeBps: z.number().int().min(0).max(10000).optional(),
   evaluationWindowHours: z.number().positive().optional(),
   appealWindowHours: z.number().positive().optional(),
   disputeResolver: z.string().optional(),

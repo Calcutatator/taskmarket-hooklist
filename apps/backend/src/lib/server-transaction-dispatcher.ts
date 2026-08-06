@@ -13,6 +13,26 @@ export type ServerTransactionRequest<Receipt> = {
    * so production callers should pass it (ADR-0051).
    */
   fees?: GasFees;
+  /**
+   * Called with the outbox row id the moment a nonce is allocated, before anything is sent.
+   *
+   * This is what makes "no outbox id and no hash means nothing was sent" a fact rather than an
+   * approximation (ADR-0069). Linking at send-success instead left exactly one gap, and it was
+   * the expensive one: a send whose answer never arrived produced no id, no hash, and an intent
+   * every sweep read as never-broadcast -- so it was refunded while its transaction mined.
+   *
+   * Must not throw meaningfully: a failure here is logged and the send proceeds, because the
+   * alternative is refusing to broadcast work that has already been paid for.
+   */
+  onNonceAllocated?: (transactionId: string) => Promise<void>;
+  /**
+   * Called when the nonce is returned to the pool, and only then.
+   *
+   * The exact inverse of `onNonceAllocated`, and it runs only on the branch that has positive
+   * evidence the nonce was never spent. Anything less certain keeps the link, because keeping
+   * it is what stops a refund.
+   */
+  onNonceReleased?: () => Promise<void>;
   simulate: () => Promise<unknown>;
   send: (nonce: number) => Promise<Hex>;
   confirm: (hash: Hex) => Promise<Receipt>;
@@ -49,10 +69,12 @@ export class ServerTransactionPendingError extends Error {
 }
 
 /**
- * A send failure normally means the provider rejected the transaction outright, so the nonce
- * was never consumed on chain and must return to the pool. The exceptions are failures that
- * prove the nonce is already spent or already sitting in the mempool -- reusing one of those
- * would collide with a transaction that can still be mined.
+ * Failures that prove the nonce is already spent or already sitting in the mempool.
+ *
+ * A `true` here is positive evidence, and it is the only thing this answers. A `false` is *not*
+ * the opposite: it says only that this particular error is not one of the recognised proofs, so
+ * the caller still has to establish that the nonce is free before returning it to the pool
+ * (ADR-0069). Reading a `false` as "never sent" is what refunded work that had landed.
  */
 export function nonceWasConsumed(error: unknown): boolean {
   const message =
@@ -64,6 +86,29 @@ export function nonceWasConsumed(error: unknown): boolean {
     message.includes('already imported') ||
     message.includes('replacement transaction underpriced')
   );
+}
+
+/**
+ * Whether the chain still shows this nonce as unspent and not sitting in a mempool.
+ *
+ * `eth_getTransactionCount(pending)` is the next nonce the node would hand out accounting for
+ * what it already holds, so a count at or below ours means nothing occupies our nonce. A count
+ * past it means something does -- mined or pending, and we cannot tell which, which is precisely
+ * why the nonce may not be reused.
+ *
+ * An unanswered read is not a "yes". It returns false, and the caller keeps the nonce reserved,
+ * for the same reason the reservation sweep leaves a row alone when the token contract does not
+ * answer: the cost of being wrong is asymmetric.
+ */
+async function nonceIsUnused(
+  getPendingNonce: () => Promise<number>,
+  nonce: number
+): Promise<boolean> {
+  try {
+    return (await getPendingNonce()) <= nonce;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -79,8 +124,10 @@ export function nonceWasConsumed(error: unknown): boolean {
  *   3. Broadcast and confirmation run entirely outside the database. Concurrent transactions
  *      may be in flight at different nonces; throughput is not serialized.
  *
- * A send that provably never reached the mempool returns its nonce to the pool so the next
- * allocation reuses it instead of leaving a permanent gap.
+ * A send that *provably* never reached the mempool returns its nonce to the pool so the next
+ * allocation reuses it instead of leaving a permanent gap. Provably is the whole word: an
+ * unrecognised send error is not evidence either way, and a nonce recycled on one is a nonce
+ * that may already be carrying a live transaction (ADR-0069).
  */
 export function createServerTransactionDispatcher(options: ServerTransactionDispatcherOptions) {
   const { getPendingNonce, store } = options;
@@ -95,6 +142,22 @@ export function createServerTransactionDispatcher(options: ServerTransactionDisp
     await store.seed(getPendingNonce);
     const { id, nonce } = await store.allocate(request.context);
 
+    // Before the send, never after. See `onNonceAllocated`.
+    if (request.onNonceAllocated) {
+      try {
+        await request.onNonceAllocated(id);
+      } catch (error) {
+        // console.error rather than lib/logger for the same reason as orphaned-payments.ts:
+        // the logger reads validated server config at import time, and this module is imported
+        // by every path that touches the chain.
+        console.error(
+          `Linking server wallet transaction ${id} (nonce ${nonce}) to its caller failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
+
     // Phase 3: everything below runs with no database transaction open.
     let hash: Hex;
     try {
@@ -103,8 +166,17 @@ export function createServerTransactionDispatcher(options: ServerTransactionDisp
       if (nonceWasConsumed(error)) {
         await store.setStatus(id, 'failed', { error });
         await store.resync(getPendingNonce);
-      } else {
+      } else if (await nonceIsUnused(getPendingNonce, nonce)) {
+        // Positive evidence: the chain's own pending count has not passed this nonce, so
+        // nothing occupies it and the next allocation may have it back.
         await store.setStatus(id, 'recycled', { error });
+        if (request.onNonceReleased) await request.onNonceReleased();
+      } else {
+        // Unknown. A send that never returned an answer is exactly the case in which the node
+        // may have taken the transaction, so the nonce is not evidence of anything and must not
+        // go back in the pool. The row stays `reserved` and the reconciler owns it from here
+        // via `listAbandonedReservations` (ADR-0069).
+        await store.setStatus(id, 'reserved', { error });
       }
       throw error;
     }

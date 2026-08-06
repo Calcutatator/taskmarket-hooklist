@@ -9,7 +9,7 @@ import { type ApiErrorEnvelope, IDEMPOTENCY_KEY_HEADER } from '@taskmarket/share
 import { relayedIntents, serverWalletTransactions, type RelayedIntent } from '../db/schema';
 import { apiError } from '../lib/api-error';
 import { logger } from '../lib/logger';
-import { newRelayEnvelope, type RelayEnvelope } from './relay-envelope';
+import { newRelayEnvelope, type RelayEnvelope, type RelayOutboxLink } from './relay-envelope';
 import { recordUnattachedPayment } from './orphaned-payments';
 
 type Db = typeof DbType;
@@ -439,6 +439,35 @@ export async function listExpiredReservations(input: {
 export async function deleteReservation(input: { db: Db; intentId: string }): Promise<void> {
   await input.db
     .delete(relayedIntents)
+    .where(and(eq(relayedIntents.id, input.intentId), eq(relayedIntents.status, 'reserved')));
+}
+
+/**
+ * Retire a reservation whose authorization the token contract says is still unused.
+ *
+ * Retained, not deleted, and that is the whole change (ADR-0069). `authorizationState` flips
+ * when the settlement *mines*, not when the facilitator broadcasts it, so `false` means one of
+ * two things -- never submitted, or submitted and sitting in a mempool -- and a hard DELETE
+ * treats it as the first. If it was the second, the authorization mines a block later, USDC has
+ * moved from the payer to the server wallet, and the `payment_auth_*` write-ahead record that
+ * ADR-0067 exists to keep is gone: there is then nothing anywhere saying what that payment was
+ * for. The RPC-failure branch of the same sweep already reasons this way ("unanswered is not
+ * no"); this holds a definite-looking answer to the same standard.
+ *
+ * Terminal rather than left `reserved`, so the sweep does not return it on every pass forever.
+ * The cost is that the idempotency key stays held: a payer who signed an authorization against
+ * that key and walked away cannot reuse it. That is the safe direction -- the key is held
+ * because money may yet move against it -- and it is the same trade the consumed branch already
+ * makes.
+ */
+export async function retireUnpaidReservation(input: {
+  db: Db;
+  intentId: string;
+  reason: string;
+}): Promise<void> {
+  await input.db
+    .update(relayedIntents)
+    .set({ lastError: input.reason.slice(0, 500), status: 'failed', updatedAt: new Date() })
     .where(and(eq(relayedIntents.id, input.intentId), eq(relayedIntents.status, 'reserved')));
 }
 
@@ -966,10 +995,16 @@ export async function claimIntentForBroadcast(input: {
  * Intents that provably never reached the chain and are still worth another attempt.
  *
  * "Provably" is the load-bearing word, and it is why this is safe to run for paid intents too.
- * The outbox row is written when a nonce is allocated, which happens before anything is
- * broadcast, so an intent with no `serverWalletTransactionId` and no `txHash` cannot have a
- * transaction live under it. That is positive evidence of nothing having happened, not an
- * inference from an absent receipt -- the distinction ADR-0045 turns on.
+ * The outbox row is written when a nonce is allocated *and linked to this intent in the same
+ * breath* (ADR-0069), so an intent with no `serverWalletTransactionId` and no `txHash` cannot
+ * have a transaction live under it. That is positive evidence of nothing having happened, not
+ * an inference from an absent receipt -- the distinction ADR-0045 turns on.
+ *
+ * The link used to be written when the send *returned*, which made this predicate ask "did a
+ * send answer" rather than "was a nonce allocated". The two differ on exactly one branch -- a
+ * send whose answer never arrived -- and that branch is the one where the transaction may be
+ * mining. The link is only ever taken back off when the dispatcher establishes the nonce is
+ * free again, so what remains here is the same claim, now true rather than nearly true.
  */
 export async function listUnbroadcastIntents(input: {
   db: Db;
@@ -1011,6 +1046,70 @@ export async function releaseIntentForRetry(input: { db: Db; intentId: string })
     .where(eq(relayedIntents.id, input.intentId));
 }
 
+/**
+ * Link an intent to the outbox row whose nonce it is about to spend.
+ *
+ * Called from the dispatcher's allocation hook, before anything is sent. Writes the id and
+ * nothing else: the intent is still `recorded` and still has no hash, because none of that has
+ * happened yet. What it buys is that every sweep asking "could a transaction be live under this
+ * intent" now has a row to find (ADR-0069).
+ */
+export async function linkIntentToOutboxRow(input: {
+  db: Db;
+  intentId: string;
+  serverWalletTransactionId: string;
+}): Promise<void> {
+  await input.db
+    .update(relayedIntents)
+    .set({ serverWalletTransactionId: input.serverWalletTransactionId, updatedAt: new Date() })
+    .where(eq(relayedIntents.id, input.intentId));
+}
+
+/**
+ * Take the link back off, for a nonce the dispatcher has established is free again.
+ *
+ * The inverse of the above and reachable from one branch only: the one holding positive
+ * evidence that nothing was sent. Scoped to the id it wrote, so a later attempt's link -- this
+ * intent may already have allocated another nonce -- is never cleared by a straggler.
+ */
+export async function unlinkIntentFromOutboxRow(input: {
+  db: Db;
+  intentId: string;
+  serverWalletTransactionId: string;
+}): Promise<void> {
+  await input.db
+    .update(relayedIntents)
+    .set({ serverWalletTransactionId: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(relayedIntents.id, input.intentId),
+        eq(relayedIntents.serverWalletTransactionId, input.serverWalletTransactionId)
+      )
+    );
+}
+
+/**
+ * The allocation hooks for one intent's broadcast, in the shape the relay path binds.
+ *
+ * The released half remembers which row the allocated half wrote, so a release can only ever
+ * clear its own link. `onReleased` takes no argument because the dispatcher calling it knows
+ * only that the nonce went back to the pool, not what was hung off it.
+ */
+export function intentOutboxLink(db: Db, intentId: string): RelayOutboxLink {
+  let allocated: string | null = null;
+  return {
+    onAllocated: async (serverWalletTransactionId: string) => {
+      allocated = serverWalletTransactionId;
+      await linkIntentToOutboxRow({ db, intentId, serverWalletTransactionId });
+    },
+    onReleased: async () => {
+      if (!allocated) return;
+      await unlinkIntentFromOutboxRow({ db, intentId, serverWalletTransactionId: allocated });
+      allocated = null;
+    },
+  };
+}
+
 /** Link the intent to its broadcast transaction. Only confirmed evidence moves it on from here. */
 export async function markIntentBroadcast(input: {
   db: Db;
@@ -1021,7 +1120,12 @@ export async function markIntentBroadcast(input: {
   await input.db
     .update(relayedIntents)
     .set({
-      serverWalletTransactionId: input.serverWalletTransactionId ?? null,
+      // Only ever written when we have one. Overwriting with null would undo the link the
+      // allocation hook wrote, which is the one thing standing between an unanswered send and
+      // a refund for work that landed (ADR-0069).
+      ...(input.serverWalletTransactionId
+        ? { serverWalletTransactionId: input.serverWalletTransactionId }
+        : {}),
       status: 'broadcast',
       txHash: input.txHash,
       updatedAt: new Date(),

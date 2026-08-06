@@ -5,7 +5,23 @@
 // Implements: ADR-0066
 import type { Hex } from 'viem';
 import { logger } from './logger';
+import { nonceWasConsumed } from './server-transaction-dispatcher';
 import type { GasFees, ServerTransactionStore } from './server-transaction-store';
+
+/**
+ * What `replacedTxHash` records when the row it replaced had never broadcast anything.
+ *
+ * A reservation whose nonce is filled by a replacement is the same fact as a mined replacement
+ * over a real transaction -- the nonce is spent by something that did none of the intent's work
+ * -- but there is no superseded hash to name. A non-hash marker says so, so the settlement
+ * branch that reads "this row is no longer carrying the work" fires for both, and the branch
+ * that re-reads a superseded receipt (which needs a real hash) does not (ADR-0069).
+ */
+export const UNBROADCAST_SUPERSEDED = 'unbroadcast';
+
+function isTransactionHash(value: string | null | undefined): value is string {
+  return typeof value === 'string' && /^0x[0-9a-fA-F]{64}$/.test(value);
+}
 
 /**
  * What the reconciler does with an intent once the chain has answered (ADR-0045).
@@ -162,7 +178,7 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
       await store.recordReplacement(id, hash, {
         clearing,
         fees,
-        replacedTxHash: row.replacedTxHash ?? row.txHash ?? null,
+        replacedTxHash: row.replacedTxHash ?? row.txHash ?? UNBROADCAST_SUPERSEDED,
       });
       // Deliberately no settlement here. A *broadcast* replacement is not evidence of anything:
       // it can be dropped in turn, and the original then mines after all. Only a mined
@@ -187,6 +203,22 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
         nonce,
         transactionId: id,
       });
+
+      // ...but only when there is an original to read a receipt for. A row with no hash is one
+      // whose send never returned an answer, or that died before sending at all; if the chain
+      // now says its nonce is spent, then something we cannot name occupies it, no receipt will
+      // ever arrive, and replacing it again on every pass forever accomplishes nothing. Make it
+      // terminal -- the nonce is genuinely spent, so this leaves no gap -- and say so once,
+      // loudly. The intent under it stays non-terminal on purpose: it is not refundable, since
+      // the transaction that spent this nonce may well have been its own (ADR-0069).
+      if (!row.txHash && nonceWasConsumed(error)) {
+        await store.setStatus(id, 'failed', { error });
+        logger.error('A server wallet nonce is spent by an unidentifiable transaction', {
+          error: error instanceof Error ? error.message : String(error),
+          nonce,
+          transactionId: id,
+        });
+      }
     }
   }
 
@@ -216,6 +248,48 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
           transactionId: row.id,
         });
         continue;
+      }
+
+      // The replacement has not answered, and it may never: if the original mined after we
+      // broadcast the replacement, the replacement is nonce-too-low forever and its receipt is
+      // null on every pass from here. The hash it superseded is the only remaining place the
+      // chain's answer can be read, and before this nothing read it -- the row escalated to the
+      // cap, sent its one clearing transfer, and then sat in `broadcast` permanently while the
+      // intent under it stayed invisible to every query there is (ADR-0069).
+      //
+      // Deliberately no new settlement path: a mined original is an ordinary confirmed
+      // transaction and settles through the ordinary confirmed branch, with the row's hash put
+      // back to the one that actually mined so the hash join in `listConfirmedUnsettledIntents`
+      // lines up again.
+      if (status === null && isTransactionHash(row.replacedTxHash)) {
+        let supersededStatus: 'success' | 'reverted' | null = null;
+        try {
+          supersededStatus = await getReceiptStatus(row.replacedTxHash as Hex);
+        } catch (error) {
+          logger.warn('Superseded transaction receipt lookup failed', {
+            error: error instanceof Error ? error.message : String(error),
+            transactionId: row.id,
+          });
+        }
+
+        if (supersededStatus === 'success' || supersededStatus === 'reverted') {
+          logger.warn('The transaction a replacement superseded mined after all', {
+            nonce: row.nonce,
+            receiptStatus: supersededStatus,
+            replacementHash: row.txHash,
+            supersededHash: row.replacedTxHash,
+            transactionId: row.id,
+          });
+          await store.setStatus(row.id, supersededStatus === 'success' ? 'confirmed' : 'failed', {
+            hash: row.replacedTxHash,
+          });
+          if (supersededStatus === 'success') {
+            await settleIntent('confirmed', row.id, row.replacedTxHash as Hex, '');
+          } else {
+            await settleIntent('failed', row.id, null, 'transaction reverted on chain');
+          }
+          continue;
+        }
       }
 
       if (status === 'success' || status === 'reverted') {

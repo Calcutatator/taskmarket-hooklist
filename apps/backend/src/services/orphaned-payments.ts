@@ -1,11 +1,11 @@
 // Implements: ADR-0048
 // Implements: ADR-0053
 import { randomUUID } from 'crypto';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 
 import type { db as DbType } from '../db/client';
-import { orphanedPayments } from '../db/schema';
+import { orphanedPayments, serverWalletTransactions } from '../db/schema';
 import { contractRefundOrphanedPayment } from './contract';
 import { STANDARD_X402_ACTION_AMOUNT } from '../config/payments';
 import { ServerTransactionPendingError } from '../lib/server-transaction-dispatcher';
@@ -24,11 +24,40 @@ type Db = typeof DbType;
  * it has a hash, and it will be mined or replaced by the reconciler like any other server-wallet
  * transaction. Callers that render this to a payer must not tell them the refund did not happen.
  */
-type RefundOutcome = {
+export type RefundOutcome = {
   pending: boolean;
   refunded: boolean;
   refundTxHash: `0x${string}` | null;
 };
+
+/**
+ * The error `handlePostPaymentFailure` throws, carrying what became of the refund.
+ *
+ * The outcome travels as a field rather than as prose in the message. Both settlement paths
+ * used to decide whether a refund had failed with `message.includes('refunded')`, run against
+ * a string that concatenates a decoded revert reason -- operator-controlled text. A revert named
+ * anything like `AlreadyRefunded` would make a genuinely failed refund read as a success and log
+ * nothing, and under ADR-0053 that log is the entire reporting surface (ADR-0069).
+ */
+export class PostPaymentFailureError extends TRPCError {
+  readonly refund: RefundOutcome;
+
+  constructor(options: { code: TRPCError['code']; message: string; refund: RefundOutcome }) {
+    super({ code: options.code, message: options.message });
+    this.name = 'PostPaymentFailureError';
+    this.refund = options.refund;
+  }
+}
+
+/** Whether an error from `handlePostPaymentFailure` left the payer's money unreturned. */
+export function refundDidNotComplete(error: unknown): boolean {
+  // Anything that is not this error never reached the refund at all -- a rethrown original,
+  // a pending-transaction error -- so it is not a refund failure to report either.
+  if (!(error instanceof PostPaymentFailureError)) return false;
+  // Sent and awaiting confirmation is not a failure: the transfer exists and the reconciler
+  // owns it, and `settlePendingOrphanedRefunds` finishes the ledger row.
+  return !error.refund.refunded && !error.refund.pending;
+}
 
 /**
  * Attempts the actual refund transfer for an already-recorded row and updates its
@@ -252,6 +281,92 @@ export async function retryFailedOrphanedRefunds(
 }
 
 /**
+ * Settle the ledger rows whose refund transfer was still in flight when it was recorded.
+ *
+ * `refunding` was documented as transient and was in fact terminal: `attemptRefund` writes it
+ * when the transfer comes back pending, and nothing selected it afterwards. So a refund that
+ * mined stayed `refunding` forever and the ledger permanently understated money returned, while
+ * a refund that was replaced and cleared (ADR-0066) left the payer's money in the server wallet
+ * with the row still claiming a refund was under way -- and `intents.get` reported that to the
+ * payer indefinitely (ADR-0069).
+ *
+ * This is the exit transition, and it asks the outbox rather than the chain. A refund transfer
+ * is an ordinary server-wallet transaction: the reconciler already establishes what became of
+ * every one of them, so the answer is a join, not a second receipt-watching mechanism. It lives
+ * here rather than in the reconciler's intent settlement because a refund transfer has no
+ * intent -- `findIntentByTransactionId` cannot reach it -- so there is nothing for that callback
+ * to resolve.
+ *
+ * Three outcomes, and the middle one is the reason this is not just "mark them refunded":
+ *
+ *   - the outbox row confirmed on the transfer's own hash -- the money moved, so `refunded`;
+ *   - the outbox row settled on some *other* hash, meaning this transfer was replaced or
+ *     cleared -- the money did not move, so `failed`, which is the status the retry sweep
+ *     selects and therefore the one that sends it again;
+ *   - the transfer reverted or its nonce was recycled -- also `failed`, same reason.
+ *
+ * Anything still `broadcast` or `reserved` is left exactly as it is; it is in flight, which is
+ * what the row already says.
+ */
+export async function settlePendingOrphanedRefunds(
+  db: Db
+): Promise<Array<{ id: string; refundStatus: 'refunded' | 'failed' }>> {
+  const rows = await db
+    .select({
+      id: orphanedPayments.id,
+      outboxStatus: serverWalletTransactions.status,
+      outboxTxHash: serverWalletTransactions.txHash,
+      refundTxHash: orphanedPayments.refundTxHash,
+    })
+    .from(orphanedPayments)
+    // Matched on the superseded hash as well as the current one, because a replaced transfer is
+    // precisely the case this has to get right: without the second arm the row would stop
+    // matching any outbox row the moment it was replaced, and stay `refunding` forever again.
+    .innerJoin(
+      serverWalletTransactions,
+      or(
+        eq(serverWalletTransactions.txHash, orphanedPayments.refundTxHash),
+        eq(serverWalletTransactions.replacedTxHash, orphanedPayments.refundTxHash)
+      )
+    )
+    .where(eq(orphanedPayments.refundStatus, 'refunding'));
+
+  const settled: Array<{ id: string; refundStatus: 'refunded' | 'failed' }> = [];
+  for (const row of rows) {
+    const stillOurTransfer =
+      typeof row.outboxTxHash === 'string' &&
+      typeof row.refundTxHash === 'string' &&
+      row.outboxTxHash.toLowerCase() === row.refundTxHash.toLowerCase();
+
+    let refundStatus: 'refunded' | 'failed' | null = null;
+    if (row.outboxStatus === 'confirmed') {
+      refundStatus = stillOurTransfer ? 'refunded' : 'failed';
+    } else if (row.outboxStatus === 'failed' || row.outboxStatus === 'recycled') {
+      refundStatus = 'failed';
+    }
+    if (!refundStatus) continue;
+
+    if (refundStatus === 'failed') {
+      console.error(
+        `Refund transfer ${row.refundTxHash} for orphaned payment ${row.id} did not move the money (outbox row is ${row.outboxStatus}${stillOurTransfer ? '' : ', under a different hash'}); flagged for retry`
+      );
+    }
+
+    await db
+      .update(orphanedPayments)
+      .set({
+        refundStatus,
+        // Only a refund that happened is resolved. A failed one is handed to the retry sweep,
+        // and a resolved timestamp on it would be a claim that it is over.
+        ...(refundStatus === 'refunded' ? { resolvedAt: new Date() } : {}),
+      })
+      .where(and(eq(orphanedPayments.id, row.id), eq(orphanedPayments.refundStatus, 'refunding')));
+    settled.push({ id: row.id, refundStatus });
+  }
+  return settled;
+}
+
+/**
  * Shared catch-block handler for any X402-gated mutation: call this with the error
  * from a failed post-payment on-chain call and it records + refunds the orphaned
  * payment (if one was settled) and throws a TRPCError describing what happened,
@@ -306,9 +421,10 @@ export async function handlePostPaymentFailure(input: {
       'Automatic refund could not be completed and has been flagged for manual review -- contact support with this attempt time and your wallet address.';
   }
 
-  throw new TRPCError({
+  throw new PostPaymentFailureError({
     code: input.error instanceof TRPCError ? input.error.code : 'INTERNAL_SERVER_ERROR',
     message: `${failureMessage}. ${refundNote}`,
+    refund: { pending, refunded, refundTxHash },
   });
 }
 

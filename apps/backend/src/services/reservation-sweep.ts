@@ -8,6 +8,7 @@ import {
   deleteReservation,
   holdReservationForReview,
   listExpiredReservations,
+  retireUnpaidReservation,
 } from './relayed-intents';
 
 /**
@@ -81,10 +82,20 @@ async function resolveExpiredReservation(intent: RelayedIntent): Promise<void> {
   }
 
   if (!consumed) {
-    // The token contract says this authorization was never used, so no money moved for it. That
-    // is positive evidence, not an absence, and it is the only basis on which this row is
-    // dropped.
-    await deleteReservation({ db, intentId: intent.id });
+    // The token contract says this authorization has not been used *yet*, and "yet" is the word
+    // the old code dropped. `authorizationState` flips when the settlement mines, not when the
+    // facilitator broadcasts it, so a `false` covers both "never submitted" and "in the
+    // mempool" -- and only the first is garbage. Deleting on the second discards the write-ahead
+    // record for a payment that lands a block later, which is the exact loss ADR-0067 was
+    // written to prevent, and the same reasoning the RPC-failure branch above already applies.
+    //
+    // So the row is retired rather than deleted: terminal, no longer swept, and still carrying
+    // the (payer, nonce) pair that keeps a late-mining authorization attributable (ADR-0069).
+    await retireUnpaidReservation({
+      db,
+      intentId: intent.id,
+      reason: `Payment authorization ${intent.paymentAuthNonce} for payer ${intent.paymentAuthPayer} was still unused when this reservation expired; retained so a late settlement stays attributable`,
+    });
     return;
   }
 

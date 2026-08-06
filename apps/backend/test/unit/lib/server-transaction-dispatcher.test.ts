@@ -75,6 +75,88 @@ describe('server transaction dispatcher', () => {
     expect(state.rows[0]).toMatchObject({ nonce: 41, status: 'recycled' });
   });
 
+  it('does not recycle a nonce whose send returned no answer at all', async () => {
+    const { state, store } = createMemoryServerTransactionStore(41);
+    // The chain says nonce 41 is taken: the node accepted the transaction and the socket died
+    // before we heard so. Recycling it here is what later reads as "nothing was ever sent".
+    const getPendingNonce = vi.fn().mockResolvedValue(42);
+    const dispatch = createServerTransactionDispatcher({ getPendingNonce, store });
+    const onNonceReleased = vi.fn();
+
+    await expect(
+      dispatch({
+        confirm: vi.fn(),
+        onNonceReleased,
+        send: vi.fn().mockRejectedValue(new Error('socket hang up')),
+        simulate: vi.fn().mockResolvedValue(undefined),
+      })
+    ).rejects.toThrow('socket hang up');
+
+    expect(state.rows[0]).toMatchObject({ nonce: 41, status: 'reserved' });
+    expect(onNonceReleased).not.toHaveBeenCalled();
+  });
+
+  it('leaves the nonce owned by the reconciler when the freeness read itself fails', async () => {
+    const { state, store } = createMemoryServerTransactionStore(41);
+    const getPendingNonce = vi.fn().mockRejectedValue(new Error('gateway 502'));
+    const dispatch = createServerTransactionDispatcher({ getPendingNonce, store });
+
+    await expect(
+      dispatch({
+        confirm: vi.fn(),
+        send: vi.fn().mockRejectedValue(new Error('socket hang up')),
+        simulate: vi.fn().mockResolvedValue(undefined),
+      })
+    ).rejects.toThrow('socket hang up');
+
+    expect(state.rows[0]).toMatchObject({ nonce: 41, status: 'reserved' });
+  });
+
+  it('links the outbox row at allocation, before anything is sent', async () => {
+    const { store } = createMemoryServerTransactionStore(41);
+    const dispatch = createServerTransactionDispatcher({
+      getPendingNonce: vi.fn().mockResolvedValue(41),
+      store,
+    });
+    const seen: string[] = [];
+    const onNonceAllocated = vi.fn(async (id: string) => {
+      seen.push(`allocated:${id}`);
+    });
+
+    await dispatch({
+      ...okRequest(),
+      onNonceAllocated,
+      send: vi.fn(async () => {
+        seen.push('send');
+        return HASH;
+      }),
+    });
+
+    expect(onNonceAllocated).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(['allocated:tx-1', 'send']);
+  });
+
+  it('releases the link when the nonce is provably free again', async () => {
+    const { state, store } = createMemoryServerTransactionStore(41);
+    const dispatch = createServerTransactionDispatcher({
+      getPendingNonce: vi.fn().mockResolvedValue(41),
+      store,
+    });
+    const onNonceReleased = vi.fn();
+
+    await expect(
+      dispatch({
+        confirm: vi.fn(),
+        onNonceReleased,
+        send: vi.fn().mockRejectedValue(new Error('connection reset by peer')),
+        simulate: vi.fn().mockResolvedValue(undefined),
+      })
+    ).rejects.toThrow();
+
+    expect(state.rows[0]).toMatchObject({ status: 'recycled' });
+    expect(onNonceReleased).toHaveBeenCalledTimes(1);
+  });
+
   it('reuses a recycled nonce before allocating a new one', async () => {
     const { state, store } = createMemoryServerTransactionStore(41);
     const dispatch = createServerTransactionDispatcher({

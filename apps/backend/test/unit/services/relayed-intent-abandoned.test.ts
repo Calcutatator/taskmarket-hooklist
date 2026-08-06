@@ -21,6 +21,9 @@ vi.mock('../../../src/services/relayed-intent-registry', () => ({
 
 vi.mock('../../../src/services/orphaned-payments', () => ({
   handlePostPaymentFailure: vi.fn().mockRejectedValue(new Error('automatically refunded')),
+  // The settlement paths now read the structured outcome rather than the message (ADR-0069).
+  // A plain Error never reached a refund at all, so it is not a refund failure.
+  refundDidNotComplete: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock('../../../src/lib/logger', () => ({

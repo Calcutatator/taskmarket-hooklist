@@ -16,7 +16,12 @@ import { ServerTransactionPendingError } from '../lib/server-transaction-dispatc
 import { getPublicClient, runWithRpcApplicationAttempt } from '../lib/rpc-gateway';
 import { getServerConfig } from '../config/env';
 import { SETTLEMENT_READ_ABI, TASK_COMPLETED_EVENT } from './settlement-contract';
-import { currentRelayEnvelope, newRelayEnvelope, RELAY_VALID_WINDOW_SECS } from './relay-envelope';
+import {
+  currentRelayEnvelope,
+  currentRelayOutboxLink,
+  newRelayEnvelope,
+  RELAY_VALID_WINDOW_SECS,
+} from './relay-envelope';
 import {
   projectSettlementLogs,
   toSettlementCompletionLogs,
@@ -542,6 +547,12 @@ async function relayThroughForwarderResult(
   // TaskMarketForwarder.relay's ReceiptExpired is what ends it rather than a tuned counter.
   const { receiptNonce, validBefore } = currentRelayEnvelope() ?? newRelayEnvelope();
 
+  // Read once, here, and applied only to the relay dispatch below. The approve above is the
+  // server wallet's own housekeeping and belongs to no intent; linking its outbox row to one
+  // would name the wrong transaction as the intent's (ADR-0069). Undefined outside the intent
+  // mechanism, where there is nothing durable to link to.
+  const outboxLink = currentRelayOutboxLink();
+
   // Retry loop to handle RPC read-after-write lag: the node may confirm a receipt
   // but simulation for the next call still sees the pre-tx state. Retrying after a
   // short delay allows the node's state to catch up.
@@ -564,6 +575,8 @@ async function relayThroughForwarderResult(
       const result = await dispatchServerWalletTransaction({
         // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).
         fees: gas,
+        onNonceAllocated: outboxLink?.onAllocated,
+        onNonceReleased: outboxLink?.onReleased,
         simulate: () =>
           runWithRpcApplicationAttempt(attempt + 1, () =>
             publicClient.simulateContract({ ...callArgs, account: account.address })

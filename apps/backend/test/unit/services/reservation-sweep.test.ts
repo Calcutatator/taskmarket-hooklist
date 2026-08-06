@@ -19,12 +19,16 @@ vi.mock('../../../src/services/relayed-intents', () => ({
   deleteReservation: vi.fn().mockResolvedValue(undefined),
   holdReservationForReview: vi.fn().mockResolvedValue(undefined),
   listExpiredReservations: vi.fn().mockResolvedValue([]),
+  retireUnpaidReservation: vi.fn().mockResolvedValue(undefined),
 }));
 
 const { expireStaleReservations } = await import('../../../src/services/reservation-sweep');
-const { deleteReservation, holdReservationForReview, listExpiredReservations } = await import(
-  '../../../src/services/relayed-intents'
-);
+const {
+  deleteReservation,
+  holdReservationForReview,
+  listExpiredReservations,
+  retireUnpaidReservation,
+} = await import('../../../src/services/relayed-intents');
 
 const PAYER = '0x1111111111111111111111111111111111111111';
 const NONCE = `0x${'ab'.repeat(32)}`;
@@ -47,6 +51,7 @@ describe('expiring a reservation nobody filled', () => {
   beforeEach(() => {
     vi.mocked(deleteReservation).mockClear();
     vi.mocked(holdReservationForReview).mockClear();
+    vi.mocked(retireUnpaidReservation).mockClear();
     readContract.mockReset();
   });
 
@@ -61,10 +66,17 @@ describe('expiring a reservation nobody filled', () => {
     await expireStaleReservations(10);
 
     expect(readContract).not.toHaveBeenCalled();
-    expect(deleteReservation).toHaveBeenCalledWith(expect.objectContaining({ intentId: 'intent-1' }));
+    expect(deleteReservation).toHaveBeenCalledWith(
+      expect.objectContaining({ intentId: 'intent-1' })
+    );
   });
 
-  it('drops a reservation whose authorization the token says was never consumed', async () => {
+  /**
+   * Verifies: ADR-0069. `authorizationState` is false while a settlement is still in the
+   * mempool, so an unconsumed authorization is not proof that none ever will be. The row --
+   * and with it the write-ahead (payer, nonce) record -- is retained rather than destroyed.
+   */
+  it('retains, rather than deletes, a reservation whose authorization is still unused', async () => {
     vi.mocked(listExpiredReservations).mockResolvedValue([
       reservation({ paymentAuthNonce: NONCE, paymentAuthPayer: PAYER }),
     ]);
@@ -75,7 +87,10 @@ describe('expiring a reservation nobody filled', () => {
     expect(readContract).toHaveBeenCalledWith(
       expect.objectContaining({ args: [PAYER, NONCE], functionName: 'authorizationState' })
     );
-    expect(deleteReservation).toHaveBeenCalled();
+    expect(deleteReservation).not.toHaveBeenCalled();
+    expect(retireUnpaidReservation).toHaveBeenCalledWith(
+      expect.objectContaining({ intentId: 'intent-1' })
+    );
   });
 
   /**
