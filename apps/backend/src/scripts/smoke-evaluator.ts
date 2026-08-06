@@ -13,6 +13,7 @@
  */
 import { createHash } from 'crypto';
 import { buildSubmitMessage } from '@taskmarket/shared';
+import { privateKeyToAccount } from 'viem/accounts';
 import {
   log,
   ok,
@@ -26,6 +27,41 @@ import {
   sleep,
   nudgeChainForward,
 } from './_x402';
+
+/**
+ * The evaluator must be a different address from the requester. rev018 moved that from a
+ * convention to a contract guard: LibTaskMarket._applyEvaluatorConfig reverts
+ * EvaluatorCannotBeRequester when `cfg.evaluator == requester`, and
+ * DisputeResolverCannotBeRequester when `cfg.disputeResolver == requester` -- so a task created
+ * with the requester in either slot never escrows at all.
+ *
+ * rev018 does NOT require the dispute resolver to differ from the evaluator; the only two
+ * identity checks are the ones against the requester. One account is therefore enough to satisfy
+ * the contract for both slots, and that is what this returns.
+ *
+ * EVALUATOR_PRIVATE_KEY is set by scripts/cloud-env-setup.sh's generated .env. There is
+ * deliberately no fallback to DEV_PRIVATE_KEY/REQUESTER_PRIVATE_KEY: every such fallback lands
+ * back on the requester's own address on a default sandbox, which is precisely the state the
+ * contract now rejects, and a confusing on-chain revert is a worse failure than an explicit one
+ * here.
+ */
+function getEvaluatorAccount(requesterAddress: string) {
+  const key = process.env.EVALUATOR_PRIVATE_KEY as `0x${string}` | undefined;
+  if (!key) {
+    throw new Error(
+      'EVALUATOR_PRIVATE_KEY is required: the evaluator and dispute resolver must differ from ' +
+        'the requester (rev018 EvaluatorCannotBeRequester / DisputeResolverCannotBeRequester).'
+    );
+  }
+  const account = privateKeyToAccount(key);
+  if (account.address.toLowerCase() === requesterAddress.toLowerCase()) {
+    throw new Error(
+      `EVALUATOR_PRIVATE_KEY resolves to the requester address (${account.address}); ` +
+        'the contract rejects an evaluator or dispute resolver equal to the requester.'
+    );
+  }
+  return account;
+}
 
 function contentHash(payload: string): string {
   return createHash('sha256').update(Buffer.from(payload)).digest('hex');
@@ -57,11 +93,12 @@ async function runScenario(label: string, fn: () => Promise<void>): Promise<bool
 async function setupReviewTask(opts: {
   requester: ReturnType<typeof getAccounts>['requester'];
   worker: ReturnType<typeof getAccounts>['worker'];
+  evaluator: ReturnType<typeof getEvaluatorAccount>;
   label: string;
   evaluationWindowHours: number;
   appealWindowHours: number;
 }): Promise<string> {
-  const { requester, worker, label, evaluationWindowHours, appealWindowHours } = opts;
+  const { requester, worker, evaluator, label, evaluationWindowHours, appealWindowHours } = opts;
 
   log('1/5', `[${label}] Creating claim task with evaluator...`);
   const { taskId } = (await x402Post(
@@ -72,8 +109,8 @@ async function setupReviewTask(opts: {
       duration: 300,
       mode: 'claim',
       tags: ['smoke-evaluator'],
-      evaluator: requester.address,
-      disputeResolver: requester.address,
+      evaluator: evaluator.address,
+      disputeResolver: evaluator.address,
       evaluationWindowHours,
       appealWindowHours,
     },
@@ -130,11 +167,13 @@ async function setupReviewTask(opts: {
 // --- Scenario A: APPROVE verdict, no appeal, finalize → completed ---
 async function scenarioA(
   requester: ReturnType<typeof getAccounts>['requester'],
-  worker: ReturnType<typeof getAccounts>['worker']
+  worker: ReturnType<typeof getAccounts>['worker'],
+  evaluator: ReturnType<typeof getEvaluatorAccount>
 ) {
   const taskId = await setupReviewTask({
     requester,
     worker,
+    evaluator,
     label: 'A',
     evaluationWindowHours: 0.00139, // ~5 seconds
     appealWindowHours: 0.00139, // ~5 seconds
@@ -149,7 +188,7 @@ async function scenarioA(
       score: 900,
       confidence: 950,
     },
-    requester
+    evaluator
   )) as { txHash: string };
   ok('evaluate txHash', evalTx);
 
@@ -175,11 +214,13 @@ async function scenarioA(
 // --- Scenario B: REJECT verdict, no appeal, finalize → cancelled ---
 async function scenarioB(
   requester: ReturnType<typeof getAccounts>['requester'],
-  worker: ReturnType<typeof getAccounts>['worker']
+  worker: ReturnType<typeof getAccounts>['worker'],
+  evaluator: ReturnType<typeof getEvaluatorAccount>
 ) {
   const taskId = await setupReviewTask({
     requester,
     worker,
+    evaluator,
     label: 'B',
     evaluationWindowHours: 0.00139, // ~5 seconds
     appealWindowHours: 0.00139, // ~5 seconds
@@ -194,7 +235,7 @@ async function scenarioB(
       score: 0,
       confidence: 900,
     },
-    requester
+    evaluator
   )) as { txHash: string };
   ok('evaluate txHash', evalTx);
 
@@ -220,11 +261,13 @@ async function scenarioB(
 // --- Scenario C: APPROVE verdict, worker appeals, dispute resolver settles → completed ---
 async function scenarioC(
   requester: ReturnType<typeof getAccounts>['requester'],
-  worker: ReturnType<typeof getAccounts>['worker']
+  worker: ReturnType<typeof getAccounts>['worker'],
+  evaluator: ReturnType<typeof getEvaluatorAccount>
 ) {
   const taskId = await setupReviewTask({
     requester,
     worker,
+    evaluator,
     label: 'C',
     evaluationWindowHours: 0.00139, // ~5 seconds
     appealWindowHours: 0.01, // ~36 seconds — long enough for worker to appeal
@@ -239,7 +282,7 @@ async function scenarioC(
       score: 700,
       confidence: 800,
     },
-    requester
+    evaluator
   )) as { txHash: string };
   ok('evaluate txHash', evalTx);
 
@@ -268,7 +311,7 @@ async function scenarioC(
       verdict: 'approve',
       awards: [{ worker: worker.address, amount: '900', rank: 1 }],
     },
-    requester
+    evaluator
   )) as { txHash: string };
   ok('resolve txHash', resolveTx);
 
@@ -297,7 +340,8 @@ async function scenarioC(
  */
 async function scenarioD(
   requester: ReturnType<typeof getAccounts>['requester'],
-  worker: ReturnType<typeof getAccounts>['worker']
+  worker: ReturnType<typeof getAccounts>['worker'],
+  evaluator: ReturnType<typeof getEvaluatorAccount>
 ): Promise<void> {
   const evaluationWindowHours = 0.5;
   const appealWindowHours = 0.25;
@@ -311,8 +355,8 @@ async function scenarioD(
       duration: 300,
       mode: 'claim',
       tags: ['smoke-evaluator'],
-      evaluator: requester.address,
-      disputeResolver: requester.address,
+      evaluator: evaluator.address,
+      disputeResolver: evaluator.address,
       evaluatorFeeBps: 250,
       evaluationWindowHours,
       appealWindowHours,
@@ -336,11 +380,11 @@ async function scenarioD(
     { label: `the evaluator on task ${taskId}`, timeoutMs: 120_000 }
   );
 
-  if (created.evaluator?.toLowerCase() !== requester.address.toLowerCase()) {
-    throw new Error(`evaluator is ${created.evaluator}, expected ${requester.address}`);
+  if (created.evaluator?.toLowerCase() !== evaluator.address.toLowerCase()) {
+    throw new Error(`evaluator is ${created.evaluator}, expected ${evaluator.address}`);
   }
-  if (created.disputeResolver?.toLowerCase() !== requester.address.toLowerCase()) {
-    throw new Error(`disputeResolver is ${created.disputeResolver}, expected ${requester.address}`);
+  if (created.disputeResolver?.toLowerCase() !== evaluator.address.toLowerCase()) {
+    throw new Error(`disputeResolver is ${created.disputeResolver}, expected ${evaluator.address}`);
   }
   if (created.evaluatorFeeBps !== 250) {
     throw new Error(`evaluatorFeeBps is ${created.evaluatorFeeBps}, expected 250`);
@@ -391,7 +435,7 @@ async function scenarioD(
   ok('status', status);
 
   const afterClaim = (await get(`/api/tasks/${taskId}`)) as { evaluator: string | null };
-  if (afterClaim.evaluator?.toLowerCase() !== requester.address.toLowerCase()) {
+  if (afterClaim.evaluator?.toLowerCase() !== evaluator.address.toLowerCase()) {
     throw new Error(`evaluator lost after claim: ${afterClaim.evaluator}`);
   }
   ok('evaluator survived the claim it used to race', afterClaim.evaluator);
@@ -409,7 +453,11 @@ async function scenarioD(
         duration: 300,
         mode: 'claim',
         tags: ['smoke-evaluator'],
-        evaluator: requester.address,
+        // Must be the distinct evaluator account, not the requester: under rev018 a
+        // requester-as-evaluator task reverts EvaluatorCannotBeRequester, which would satisfy
+        // "something threw" while never reaching the fee guard this step exists to check --
+        // and the /evaluatorFeeBps/ assertion below would then fail for the wrong reason.
+        evaluator: evaluator.address,
         evaluatorFeeBps: 10001,
       },
       requester
@@ -432,36 +480,38 @@ async function scenarioD(
 
 async function main() {
   const { requester, worker } = getAccounts();
+  const evaluator = getEvaluatorAccount(requester.address);
 
   console.log('=== Taskmarket Smoke Test — Evaluator Flow ===');
   console.log('requester:', requester.address);
   console.log('worker:   ', worker.address);
+  console.log('evaluator:', evaluator.address);
   console.log('api:      ', API_URL);
 
   const results: boolean[] = [];
 
   results.push(
     await runScenario('A — APPROVE verdict, no appeal, finalize → completed', () =>
-      scenarioA(requester, worker)
+      scenarioA(requester, worker, evaluator)
     )
   );
 
   results.push(
     await runScenario('B — REJECT verdict, no appeal, finalize → cancelled', () =>
-      scenarioB(requester, worker)
+      scenarioB(requester, worker, evaluator)
     )
   );
 
   results.push(
     await runScenario(
       'C — APPROVE verdict, worker appeals, dispute resolver settles → completed',
-      () => scenarioC(requester, worker)
+      () => scenarioC(requester, worker, evaluator)
     )
   );
 
   results.push(
     await runScenario('D — creation with an evaluator is a single transaction', () =>
-      scenarioD(requester, worker)
+      scenarioD(requester, worker, evaluator)
     )
   );
 
