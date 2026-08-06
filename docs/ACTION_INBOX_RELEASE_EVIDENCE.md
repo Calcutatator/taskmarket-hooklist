@@ -13,8 +13,9 @@ confirmation copy. Evaluations require a non-zero evidence hash in the web flow.
 resolver evidence access now follows accepted ADR-0042: a read-authenticated current evaluator or
 dispute resolver can directly read its private task and every submission visibility mode. Clearing
 the role revokes that role-derived grant, private tasks remain outside public discovery, and read
-access grants no unrelated mutation authority. The repeatable `refundExpired` path remains excluded
-under security issue #432.
+access grants no unrelated mutation authority. Private-auction bid and clock-accept routes enforce
+separate participation standing, so evaluator/resolver evidence access alone cannot bid on or claim
+a private auction. The repeatable `refundExpired` path remains excluded under security issue #432.
 
 ## Product evidence events
 
@@ -56,7 +57,7 @@ consent-aware durable analytics adapter subscribes to these events.
 The release candidate is gated through the repository Makefile:
 
 - `make test shared`
-- `make test backend` — 82 files and 1,150 tests passed after the ADR-0042 embodiment
+- `make test backend` — 82 files and 1,155 tests passed after the ADR-0042 embodiment
 - `make test web`
 - `make test storybook`
 - `make build web`
