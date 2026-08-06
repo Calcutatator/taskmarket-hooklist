@@ -72,7 +72,22 @@ import { log, ok, post, x402Post, getAccounts, API_URL, type Account } from './_
  * has to end the run rather than be silently ignored, and it is validated here, at the read,
  * so it cannot reach a guard at all.
  */
-function submissionBudget(name: string, fallback: number): number {
+/**
+ * The most either budget may be raised to.
+ *
+ * A budget's whole job is to make the run refuse a configuration it cannot afford, so a budget
+ * large enough that the refusal can never fire is the unbounded run wearing a number. These are
+ * the point past which raising the budget stops being "pay for a longer run" and becomes
+ * "remove the guard": a thousand plain POSTs is slow but survivable, whereas two hundred real
+ * X402 round-trips is minutes and USDC, one settled authorization at a time.
+ *
+ * Deliberately far above both defaults (150 and 20), because this is not a tuning knob -- an
+ * operator with a genuine reason to raise a budget should not hit it, and one who has typed a
+ * number by mistake should.
+ */
+const BUDGET_CEILINGS = { free: 1000, paid: 200 } as const;
+
+function submissionBudget(name: string, fallback: number, ceiling: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === '') return fallback;
   const parsed = Number(raw);
@@ -80,17 +95,29 @@ function submissionBudget(name: string, fallback: number): number {
   // caps a loop that settles one real USDC authorization per iteration. A value that large is
   // not a cap at all, and it is indistinguishable from the unbounded run this guard exists to
   // prevent.
-  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > ceiling) {
     console.error('\n=== Rate-limit smoke test ABORTED (nothing was checked) ===');
-    console.error(`reason: ${name}=${raw} is not a positive whole number of submissions`);
-    console.error(`fix:    unset ${name} to use the default (${fallback}), or set an integer >= 1`);
+    console.error(
+      `reason: ${name}=${raw} is not a whole number of submissions between 1 and ${ceiling}`
+    );
+    console.error(
+      `fix:    unset ${name} to use the default (${fallback}), or set an integer in 1..${ceiling}`
+    );
     process.exit(2);
   }
   return parsed;
 }
 
-const MAX_FREE_SUBMISSIONS = submissionBudget('SMOKE_RATE_LIMIT_MAX_FREE', 150);
-const MAX_PAID_SUBMISSIONS = submissionBudget('SMOKE_RATE_LIMIT_MAX_PAID', 20);
+const MAX_FREE_SUBMISSIONS = submissionBudget(
+  'SMOKE_RATE_LIMIT_MAX_FREE',
+  150,
+  BUDGET_CEILINGS.free
+);
+const MAX_PAID_SUBMISSIONS = submissionBudget(
+  'SMOKE_RATE_LIMIT_MAX_PAID',
+  20,
+  BUDGET_CEILINGS.paid
+);
 
 type BackendLimits = { freeSubmissionAllowance: number; hardSubmissionCeiling: number };
 
