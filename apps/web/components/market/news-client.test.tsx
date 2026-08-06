@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActivityFeedResponse } from '@taskmarket/shared';
 
@@ -56,9 +57,24 @@ describe('NewsClient market news', () => {
     });
   });
 
-  it('shows a retry-able error state when the feed query fails', () => {
+  it('opens the action workspace first and keeps market news as the secondary tab', async () => {
+    const user = userEvent.setup();
+    setQuery({ data: { pages: [emptyFeed], pageParams: [undefined] } });
+
+    render(<NewsClient initialFeed={emptyFeed} />);
+
+    expect(screen.getByTestId('inbox-client')).toBeVisible();
+    expect(screen.queryByText(/no activity yet/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: /market news/i }));
+    expect(screen.getByText(/no activity yet/i)).toBeVisible();
+  });
+
+  it('shows a retry-able error state when the feed query fails', async () => {
+    const user = userEvent.setup();
     setQuery({ isError: true });
     render(<NewsClient initialFeed={emptyFeed} />);
+    await user.click(screen.getByRole('tab', { name: /market news/i }));
 
     expect(screen.getByText(/could not load the news feed/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
@@ -66,15 +82,18 @@ describe('NewsClient market news', () => {
     expect(screen.queryByText(/no activity yet/i)).not.toBeInTheDocument();
   });
 
-  it('shows the empty state when there is no activity and no error', () => {
+  it('shows the empty state when there is no activity and no error', async () => {
+    const user = userEvent.setup();
     setQuery({ data: { pages: [emptyFeed], pageParams: [undefined] } });
     render(<NewsClient initialFeed={emptyFeed} />);
+    await user.click(screen.getByRole('tab', { name: /market news/i }));
 
     expect(screen.getByText(/no activity yet/i)).toBeInTheDocument();
     expect(screen.queryByText(/could not load the news feed/i)).not.toBeInTheDocument();
   });
 
-  it('renders feed rows when activity is returned', () => {
+  it('renders feed rows when activity is returned', async () => {
+    const user = userEvent.setup();
     setQuery({
       data: {
         pageParams: [undefined],
@@ -98,6 +117,7 @@ describe('NewsClient market news', () => {
       },
     });
     render(<NewsClient initialFeed={emptyFeed} />);
+    await user.click(screen.getByRole('tab', { name: /market news/i }));
 
     expect(screen.getByText('Ship a typed parser.')).toBeInTheDocument();
     expect(screen.getByTestId('market-news-list')).toBeInTheDocument();

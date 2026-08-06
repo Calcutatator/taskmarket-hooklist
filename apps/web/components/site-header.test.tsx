@@ -7,21 +7,31 @@ vi.mock('@/components/ui/sidebar', () => ({
   SidebarTrigger: () => <button>Toggle Sidebar</button>,
 }));
 
-const { connectOrCreateWallet, login, logout, routeState, walletState } = vi.hoisted(() => ({
-  connectOrCreateWallet: vi.fn(),
-  login: vi.fn(),
-  logout: vi.fn(),
-  routeState: {
-    pathname: '/dashboard',
-  },
-  walletState: {
-    address: undefined as `0x${string}` | undefined,
-    authenticated: undefined as boolean | undefined,
-    isConnected: false,
-    privyAddress: undefined as `0x${string}` | undefined,
-    ready: true,
-    walletsReady: true,
-  },
+const { actionQueueState, connectOrCreateWallet, login, logout, routeState, walletState } =
+  vi.hoisted(() => ({
+    actionQueueState: {
+      total: 0,
+    },
+    connectOrCreateWallet: vi.fn(),
+    login: vi.fn(),
+    logout: vi.fn(),
+    routeState: {
+      pathname: '/dashboard',
+    },
+    walletState: {
+      address: undefined as `0x${string}` | undefined,
+      authenticated: undefined as boolean | undefined,
+      isConnected: false,
+      privyAddress: undefined as `0x${string}` | undefined,
+      ready: true,
+      walletsReady: true,
+    },
+  }));
+
+vi.mock('@/lib/use-action-queue', () => ({
+  useActionQueue: () => ({
+    data: { items: [], total: actionQueueState.total, urgentTotal: 0, waiting: [] },
+  }),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -80,6 +90,7 @@ describe('SiteHeader', () => {
     walletState.privyAddress = undefined;
     walletState.ready = true;
     walletState.walletsReady = true;
+    actionQueueState.total = 0;
     vi.useRealTimers();
     window.localStorage.clear();
     window.sessionStorage.clear();
@@ -200,6 +211,34 @@ describe('SiteHeader', () => {
     routeState.pathname = '/dashboard/drops/drop-1';
     rerender(<SiteHeader />);
     expect(screen.getByRole('heading', { name: /^Task Drop detail$/i })).toBeInTheDocument();
+  });
+
+  it('names the action workspace Inbox and links its unresolved action count', () => {
+    walletState.address = '0x1234567890abcdef1234567890abcdef12345678';
+    walletState.isConnected = true;
+    actionQueueState.total = 3;
+    routeState.pathname = '/dashboard/inbox';
+
+    render(<SiteHeader />);
+
+    expect(screen.getByRole('heading', { name: /^inbox$/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /inbox, 3 actions to do/i })).toHaveAttribute(
+      'href',
+      '/dashboard/inbox'
+    );
+    expect(screen.getByText('3 to do')).toBeVisible();
+  });
+
+  it('keeps Inbox available without a false count when no wallet is connected', () => {
+    actionQueueState.total = 8;
+
+    render(<SiteHeader />);
+
+    expect(screen.getByRole('link', { name: /^inbox$/i })).toHaveAttribute(
+      'href',
+      '/dashboard/inbox'
+    );
+    expect(screen.queryByText('8 to do')).not.toBeInTheDocument();
   });
 
   it('lets users sign in and log out with Privy from the header', async () => {

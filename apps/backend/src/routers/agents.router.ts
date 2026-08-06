@@ -5,6 +5,9 @@ import {
   LeaderboardInputSchema,
   TaskInboxInputSchema,
   TaskInboxResponseSchema,
+  TaskActionQueueInputSchema,
+  TaskActionQueueResponseSchema,
+  type TaskResponse,
   type TaskStatusType,
   type TaskModeType,
   type TaskVisibilityType,
@@ -20,6 +23,7 @@ import {
   taskAwards,
   submissions,
   proposals,
+  bids,
   devices,
   taskAllowedViewers,
 } from '../db/schema';
@@ -34,6 +38,12 @@ import {
 import { sha256Hex } from '../lib/hash';
 import { lowerAddressEq } from '../lib/agents';
 import { taskDiscoverable } from '../lib/task-visibility';
+import { computeClockPrice } from '../lib/auction';
+import {
+  projectActionQueueTask,
+  sortActionQueueItems,
+  type ActionQueueTask,
+} from '../lib/action-queue';
 
 // Implements: ADR-0023 (inbox self-auth converged onto ctx.caller)
 // inbox's `selfAuthed` check below now derives from ctx.caller (the general
@@ -300,6 +310,229 @@ export const agentsRouter = router({
         asRequester: requesterRows.map(mapTask),
         asWorker: workerRows.map(mapTask),
         invitedPrivateTasks: dedupedInvitedRows.map(mapTask),
+      };
+    }),
+
+  actionQueue: optionalAuthProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/agents/action-queue',
+        tags: ['Agents'],
+        summary: 'Get lifecycle actions requiring attention for an address',
+      },
+    })
+    .input(TaskActionQueueInputSchema)
+    .output(TaskActionQueueResponseSchema)
+    .query(async ({ input, ctx }) => {
+      const { address } = input;
+      const normalizedAddress = address.toLowerCase();
+      const selfAuthed = ctx.caller?.address.toLowerCase() === normalizedAddress;
+      const roleMembership = or(
+        sql`lower(${tasks.requester}) = lower(${address})`,
+        sql`lower(${tasks.claimedBy}) = lower(${address})`,
+        sql`lower(${tasks.evaluator}) = lower(${address})`,
+        sql`lower(${tasks.disputeResolver}) = lower(${address})`,
+        sql`exists (
+          select 1 from ${taskAwards}
+          where ${taskAwards.taskId} = "tasks"."id"
+            and lower(${taskAwards.workerAddress}) = lower(${address})
+        )`,
+        sql`exists (
+          select 1 from ${submissions}
+          where ${submissions.taskId} = "tasks"."id"
+            and lower(${submissions.workerAddress}) = lower(${address})
+            and (${submissions.rejectedAt} is null or "tasks"."status" = 'appealing')
+        )`
+      )!;
+
+      const candidateRows = await ctx.db
+        .select({ ...getTableColumns(tasks) })
+        .from(tasks)
+        .where(selfAuthed ? roleMembership : and(roleMembership, taskDiscoverable))
+        .orderBy(desc(tasks.createdAt));
+
+      if (candidateRows.length === 0) {
+        return { items: [], total: 0, urgentTotal: 0, waiting: [] };
+      }
+
+      const taskIds = candidateRows.map((task) => task.id);
+      const [submissionRows, pitchRows, bidRows, awardRows] = await Promise.all([
+        ctx.db
+          .select({
+            taskId: submissions.taskId,
+            count: sql<number>`count(*) filter (where ${submissions.rejectedAt} is null)::int`,
+            distinctSubmitterCount: sql<number>`count(distinct lower(${submissions.workerAddress})) filter (where ${submissions.rejectedAt} is null)::int`,
+            onlySubmitter: sql<string | null>`case
+              when count(distinct lower(${submissions.workerAddress})) filter (where ${submissions.rejectedAt} is null) = 1
+                then min(${submissions.workerAddress}) filter (where ${submissions.rejectedAt} is null)
+              else null
+            end`,
+            submitters: sql<
+              string[]
+            >`coalesce(array_agg(distinct lower(${submissions.workerAddress})) filter (where ${submissions.rejectedAt} is null), '{}')`,
+            allSubmitters: sql<string[]>`array_agg(distinct lower(${submissions.workerAddress}))`,
+          })
+          .from(submissions)
+          .where(inArray(submissions.taskId, taskIds))
+          .groupBy(submissions.taskId),
+        ctx.db
+          .select({ taskId: proposals.taskId, count: sql<number>`count(*)::int` })
+          .from(proposals)
+          .where(inArray(proposals.taskId, taskIds))
+          .groupBy(proposals.taskId),
+        ctx.db
+          .select({
+            taskId: bids.taskId,
+            count: sql<number>`count(*)::int`,
+            lowestPrice: sql<string | null>`min(${bids.price})::text`,
+          })
+          .from(bids)
+          .where(inArray(bids.taskId, taskIds))
+          .groupBy(bids.taskId),
+        ctx.db
+          .select({
+            taskId: taskAwards.taskId,
+            workerAddress: taskAwards.workerAddress,
+            rank: taskAwards.rank,
+            rating: taskAwards.rating,
+          })
+          .from(taskAwards)
+          .where(inArray(taskAwards.taskId, taskIds)),
+      ]);
+
+      const submissionsByTask = new Map(submissionRows.map((row) => [row.taskId, row]));
+      const pitchesByTask = new Map(pitchRows.map((row) => [row.taskId, Number(row.count)]));
+      const bidsByTask = new Map(bidRows.map((row) => [row.taskId, row]));
+      const awardsByTask = new Map<
+        string,
+        Array<{ workerAddress: string; rank: number; rating: number | null }>
+      >();
+      for (const award of awardRows) {
+        const awards = awardsByTask.get(award.taskId) ?? [];
+        awards.push(award);
+        awardsByTask.set(award.taskId, awards);
+      }
+
+      const now = new Date();
+      const queueTasks: ActionQueueTask[] = candidateRows.map((task) => {
+        const submission = submissionsByTask.get(task.id);
+        const taskBids = bidsByTask.get(task.id);
+        const taskAwardsForTask = awardsByTask.get(task.id) ?? [];
+        const submissionCount = Number(submission?.count ?? 0);
+        const pitchCount = pitchesByTask.get(task.id) ?? 0;
+        const bidCount = Number(taskBids?.count ?? 0);
+        const currentClockPrice =
+          task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch'
+            ? computeClockPrice(task, now)
+            : null;
+        const primaryAward = [...taskAwardsForTask].sort(
+          (left, right) => left.rank - right.rank
+        )[0];
+        const responseTask: TaskResponse = {
+          id: task.id,
+          requester: task.requester,
+          requesterPubkey: normalizeRequesterPublicKey(undefined, task.requesterPubkey),
+          description: task.description,
+          reward: task.reward,
+          escrowTxHash: task.escrowTxHash,
+          createdAt: task.createdAt.toISOString(),
+          expiryTime: task.expiryTime.toISOString(),
+          status: task.status as TaskStatusType,
+          tags: task.tags,
+          primaryAward: primaryAward
+            ? { workerAddress: primaryAward.workerAddress, rating: primaryAward.rating }
+            : null,
+          mode: task.mode as TaskModeType,
+          taskVisibility: task.taskVisibility as TaskVisibilityType,
+          submissionVisibility: task.submissionVisibility as SubmissionVisibilityType,
+          hasAccessPassword: task.privateAccessPasswordHash != null,
+          stakeRequired: task.stakeRequired === 1,
+          stakeBps: task.stakeBps,
+          pitchDeadline: task.pitchDeadline?.toISOString() ?? null,
+          bidDeadline: task.bidDeadline?.toISOString() ?? null,
+          maxPrice: task.maxPrice ?? null,
+          metricDescription: task.metricDescription,
+          metricTarget: task.metricTarget,
+          claimedBy: task.claimedBy,
+          claimedAt: task.claimedAt?.toISOString() ?? null,
+          platformFeeBps: task.platformFeeBps,
+          submissionCount,
+          awardCount: taskAwardsForTask.length,
+          pitchCount,
+          auctionType: task.auctionType as TaskResponse['auctionType'],
+          auctionStartPrice: task.auctionStartPrice ?? null,
+          auctionFloorPrice: task.auctionFloorPrice ?? null,
+          currentAuctionPrice: currentClockPrice?.toString() ?? null,
+          auctionBidCount: bidCount,
+          currentLowestBid: taskBids?.lowestPrice ?? null,
+          evaluator: task.evaluator ?? null,
+          evaluatorStake: task.evaluatorStake ?? null,
+          evaluatorFeeBps: task.evaluatorFeeBps ?? null,
+          evaluationWindow: task.evaluationWindow ?? null,
+          appealWindow: task.appealWindow ?? null,
+          disputeResolver: task.disputeResolver ?? null,
+          appealDeadline: task.appealDeadline?.toISOString() ?? null,
+          evaluatorDeadline: task.evaluatorDeadline?.toISOString() ?? null,
+          verdictType: task.verdictType as TaskResponse['verdictType'],
+          verdictScore: task.verdictScore ?? null,
+          verdictConfidence: task.verdictConfidence ?? null,
+          verdictEvidenceHash: task.verdictEvidenceHash ?? null,
+          selfAward: task.selfAward,
+          taskDropId: task.taskDropId ?? null,
+          hookContract: task.hookContract ?? null,
+          submissionWindowOpen: computeSubmissionWindowOpen(task, now),
+          phase: computeTaskPhase(task, now),
+        };
+
+        return {
+          task: responseTask,
+          submitterAddresses: submission?.submitters ?? [],
+          pendingActionTask: {
+            id: task.id,
+            requester: task.requester,
+            status: task.status,
+            mode: task.mode,
+            pitchCount,
+            bidCount,
+            submissionCount,
+            expiryTime: task.expiryTime,
+            pitchDeadline: task.pitchDeadline,
+            bidDeadline: task.bidDeadline,
+            claimedBy: task.claimedBy,
+            auctionType: task.auctionType,
+            currentClockPrice,
+            currentLowestBid: taskBids?.lowestPrice ?? null,
+            latestSubmissionWorker:
+              Number(submission?.distinctSubmitterCount ?? 0) === 1
+                ? (submission?.onlySubmitter ?? null)
+                : null,
+            appealEligibleWorker: (submission?.allSubmitters ?? []).some(
+              (submitter) => submitter.toLowerCase() === address.toLowerCase()
+            )
+              ? address
+              : null,
+            evaluator: task.evaluator,
+            disputeResolver: task.disputeResolver,
+            evaluatorDeadline: task.evaluatorDeadline,
+            appealDeadline: task.appealDeadline,
+            awardWorkers: taskAwardsForTask.map((award) => ({
+              workerAddress: award.workerAddress,
+              rating: award.rating,
+            })),
+          },
+        };
+      });
+
+      const projections = queueTasks.map((task) => projectActionQueueTask(task, address, now));
+      const items = sortActionQueueItems(projections.flatMap((projection) => projection.items));
+      const waiting = projections.flatMap((projection) => projection.waiting);
+
+      return {
+        items,
+        total: items.length,
+        urgentTotal: items.filter((item) => item.priority === 'urgent').length,
+        waiting,
       };
     }),
 

@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start storybook storybook-ci storybook-image storybook-image-smoke storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check contract ci-quality-js ui-ci ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli dither-kit
+.PHONY: help init install build dev start storybook storybook-ci storybook-image storybook-image-smoke storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning adr-audit lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check contract ci-quality-js ui-ci ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli dither-kit
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -33,6 +33,7 @@ help:
 	@echo "  make skill-conformance    - Check shipped skill against platform contracts"
 	@echo "  make skill-export SKILLS_MARKET_OUTPUT=<dir> - Export the canonical skills.sh package"
 	@echo "  make docs-og-check        - Check docs pages have required og/twitter meta tags"
+	@echo "  make adr-audit            - Refresh ADR/RFC indexes and embodiment audit artifacts"
 	@echo "  make lint-check adr       - Check docs/adr/ ADRs follow numbering/status rules"
 	@echo "  make lint-check specs     - Check docs/specs/ follow the Spec-lite structural template"
 	@echo "  make test adr             - Run the adr package's own unit test suite (also covers spec-lint)"
@@ -58,6 +59,9 @@ init:
 	git submodule update --init --recursive
 
 install: init
+
+adr-audit:
+	$(ENV_LOADER) && cd packages/adr && pnpm adr-audit
 
 deploy:
 	@$(ENV_LOADER) && \

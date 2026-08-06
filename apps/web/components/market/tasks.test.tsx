@@ -18,8 +18,9 @@ function compactAddressLabel(value: string) {
   return compactAddress(value);
 }
 
-const { refreshSpy, stubQuery } = vi.hoisted(() => ({
+const { refreshSpy, routeState, stubQuery } = vi.hoisted(() => ({
   refreshSpy: vi.fn(),
+  routeState: { searchParams: new URLSearchParams() },
   stubQuery: (_input: unknown, options?: { initialData?: unknown }) => ({
     data: options?.initialData,
   }),
@@ -32,7 +33,7 @@ vi.mock('next/navigation', () => ({
     replace: vi.fn(),
     refresh: refreshSpy,
   }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => routeState.searchParams,
 }));
 
 // The live activity feed seeds its per-mode queries from the SSR mode data and
@@ -146,6 +147,7 @@ vi.mock('@privy-io/react-auth', () => ({
 
 beforeEach(() => {
   vi.stubEnv('NEXT_PUBLIC_PRIVY_APP_ID', '0000000000000000000000000');
+  routeState.searchParams = new URLSearchParams();
 });
 
 afterEach(() => {
@@ -990,6 +992,40 @@ describe('Task marketplace components', () => {
     expect(rail).not.toHaveClass('pl-5');
     expect(rail).toHaveClass('lg:border-l');
     expect(rail).toHaveClass('lg:pl-5');
+  });
+
+  it('announces a valid Inbox focus intent and exposes stable section anchors', () => {
+    render(
+      <TaskDetailPanel
+        focusIntent="rate_workers"
+        modeData={{}}
+        task={{
+          ...taskDetail,
+          awardCount: 1,
+          awards: [
+            {
+              grossAmount: '25000000',
+              isPrimary: true,
+              platformFee: '1250000',
+              rank: 1,
+              rating: null,
+              settledAt: '2026-07-14T00:00:00.000Z',
+              settlementTxHash: '0xsettlement',
+              workerActorType: 'agent',
+              workerAddress: '0x2222222222222222222222222222222222222222',
+              workerAgentId: '101',
+              workerPayment: '23750000',
+            },
+          ],
+        }}
+      />
+    );
+
+    expect(screen.getByText('Inbox action').closest('[role="status"]')).toHaveTextContent(
+      'Rate settlement recipients'
+    );
+    expect(document.getElementById('settlement-payouts')).toHaveAttribute('tabindex', '-1');
+    expect(document.getElementById('task-activity')).toHaveAttribute('tabindex', '-1');
   });
 
   it.each(['/dashboard/tasks', '/tasks'])(
@@ -2832,5 +2868,28 @@ describe('Task marketplace components', () => {
     const heading = screen.getByRole('heading', { level: 1, name: capped });
     expect(heading).toHaveAttribute('title', full);
     expect(heading.className).toContain('break-words');
+  });
+
+  it('keeps published next-step guidance in the task-detail route composition', () => {
+    routeState.searchParams = new URLSearchParams('published=1');
+    mockAccount.address = task.requester;
+
+    render(
+      <TaskDetailPanel
+        modeData={{ submissions: [] }}
+        task={{
+          ...taskDetail,
+          auctionBidCount: null,
+          auctionType: null,
+          mode: 'bounty',
+          submissionWindowOpen: true,
+        }}
+      />
+    );
+
+    expect(screen.getByText('No action is needed right now')).toBeInTheDocument();
+    expect(screen.getAllByText(/workers can submit work until the deadline/i)).toHaveLength(2);
+    expect(screen.getAllByRole('link', { name: /open inbox/i }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /view activity/i })).toBeInTheDocument();
   });
 });

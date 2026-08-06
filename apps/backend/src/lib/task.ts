@@ -33,6 +33,10 @@ export type PendingActionTask = SubmissionWindowTask & {
   // resubmission spam from a non-winning submitter can no longer capture the
   // suggested `--worker` slot in the accept/reject_submission commands below.
   latestSubmissionWorker?: string | null;
+  // Per-caller projection used for contest appeals when a verdict has no lead
+  // award and therefore no claimedBy worker. Never populate this with another
+  // submitter's address in a response visible to the current caller.
+  appealEligibleWorker?: string | null;
   evaluator?: string | null;
   disputeResolver?: string | null;
   evaluatorDeadline?: Date | null;
@@ -129,7 +133,8 @@ export function computePendingActions(task: PendingActionTask, now: Date): Pendi
   const id = task.id;
   const expired = task.expiryTime <= now;
   const submissionWindowOpen = computeSubmissionWindowOpen(task, now);
-  const workerAddress = task.claimedBy ?? task.latestSubmissionWorker ?? null;
+  const workerAddress =
+    task.claimedBy ?? task.appealEligibleWorker ?? task.latestSubmissionWorker ?? null;
 
   if (task.status === 'open') {
     const auctionHasBids = task.mode === 'auction' && task.bidCount > 0;

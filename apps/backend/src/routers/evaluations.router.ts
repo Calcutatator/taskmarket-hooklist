@@ -7,8 +7,9 @@ import {
   FinalizeVerdictInputSchema,
   ResolveDisputeInputSchema,
 } from '@taskmarket/shared';
-import { tasks } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { submissions, tasks } from '../db/schema';
+import { and, eq } from 'drizzle-orm';
+import { lowerColumnEq } from '../lib/agents';
 import {
   contractEvaluate,
   contractAppeal,
@@ -137,7 +138,25 @@ export const evaluationsRouter = router({
       if (taskResult.length === 0) throw new Error('Task not found');
       const task = taskResult[0];
 
-      if (!task.claimedBy || task.claimedBy.toLowerCase() !== payer.toLowerCase()) {
+      if (task.claimedBy) {
+        if (task.claimedBy.toLowerCase() !== payer.toLowerCase()) {
+          throw new Error('Only the task worker can appeal');
+        }
+      } else if (task.mode === 'bounty' || task.mode === 'benchmark') {
+        const matchingSubmissions = await ctx.db
+          .select({ id: submissions.id })
+          .from(submissions)
+          .where(
+            and(
+              eq(submissions.taskId, input.taskId),
+              lowerColumnEq(submissions.workerAddress, payer)
+            )
+          )
+          .limit(1);
+        if (matchingSubmissions.length === 0) {
+          throw new Error('Only a task submitter can appeal');
+        }
+      } else {
         throw new Error('Only the task worker can appeal');
       }
       if (task.status !== 'appealing') throw new Error('Task is not in Appealing state');

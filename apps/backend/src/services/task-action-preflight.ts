@@ -3,6 +3,7 @@ import type { PaidPendingActionNameValue } from '@taskmarket/shared';
 import { bids, proposals, submissions, taskAwards, tasks } from '../db/schema';
 import type { db } from '../db/client';
 import { computeClockPrice } from '../lib/auction';
+import { lowerColumnEq } from '../lib/agents';
 
 export type PaidTaskAction = PaidPendingActionNameValue;
 
@@ -343,7 +344,22 @@ export async function validatePaidTaskAction(
       }
       return;
     case 'appeal':
-      requirePayer(payer, task.claimedBy, 'task worker');
+      if (task.claimedBy) {
+        requirePayer(payer, task.claimedBy, 'task worker');
+      } else if (task.mode === 'bounty' || task.mode === 'benchmark') {
+        const matchingSubmissions = await database
+          .select({ id: submissions.id })
+          .from(submissions)
+          .where(
+            and(eq(submissions.taskId, taskId), lowerColumnEq(submissions.workerAddress, payer))
+          )
+          .limit(1);
+        if (matchingSubmissions.length === 0) {
+          fail('Payment payer must be a task submitter', 403);
+        }
+      } else {
+        fail('Payment payer must be the task worker', 403);
+      }
       if (task.status !== 'appealing') fail('Task is not appealable');
       if (task.appealDeadline && now >= task.appealDeadline) fail('Appeal deadline has passed');
       return;

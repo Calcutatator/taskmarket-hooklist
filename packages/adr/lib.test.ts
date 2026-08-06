@@ -1443,7 +1443,7 @@ describe('checkProposedAdrImplementation', () => {
   test('reports each Proposed ADR a file claims, once', () => {
     const { cleanup, root } = withSourceFile(
       SOURCE,
-      '// Implements: ADR-0040\n// Implements: ADR-0040\n// Implements: ADR-0041\n'
+      '// Implements: ADR-0040 // adr-scan:ignore-line\n// Implements: ADR-0040 // adr-scan:ignore-line\n// Implements: ADR-0041 // adr-scan:ignore-line\n'
     );
     try {
       const issues = checkProposedAdrImplementation(

@@ -35,6 +35,10 @@ vi.mock('@/lib/x402-client', () => ({
   payX402Post: (...args: unknown[]) => payX402Post(...args),
 }));
 
+vi.mock('@/lib/use-action-queue', () => ({
+  useInvalidateActionQueue: () => vi.fn().mockResolvedValue(undefined),
+}));
+
 const requester = '0x1111111111111111111111111111111111111111';
 const selectedWorker = '0x2222222222222222222222222222222222222222';
 const suggestedWorker = '0x3333333333333333333333333333333333333333';

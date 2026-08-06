@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
 import { compactAddress, formatUsdcUnits } from '@/lib/format';
+import { useInvalidateActionQueue } from '@/lib/use-action-queue';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
 
 import { ConfirmDialog } from './confirm-dialog';
@@ -35,6 +36,7 @@ export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionCo
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
+  const invalidateActionQueue = useInvalidateActionQueue();
   const [step, setStep] = useState<X402Step | 'done' | 'idle'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
@@ -65,6 +67,7 @@ export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionCo
       setStep('done');
       setTxHash(result.txHash ?? null);
       onSuccess?.();
+      void invalidateActionQueue();
       const url = result.txHash ? explorerTxUrl(result.txHash) : null;
       toast.success(
         'Payout released',

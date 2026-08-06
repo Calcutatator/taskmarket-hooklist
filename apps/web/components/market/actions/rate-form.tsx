@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
 import { compactAddress } from '@/lib/format';
+import { useInvalidateActionQueue } from '@/lib/use-action-queue';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
 
 import { ConnectPrompt } from './connect-prompt';
@@ -21,6 +22,7 @@ export function RateForm({ action, disabled, onSuccess, task }: TaskActionCompon
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
+  const invalidateActionQueue = useInvalidateActionQueue();
   const [rating, setRating] = useState<number>(85);
   const [feedback, setFeedback] = useState<string>('');
   const [step, setStep] = useState<X402Step | 'done' | 'idle'>('idle');
@@ -67,6 +69,7 @@ export function RateForm({ action, disabled, onSuccess, task }: TaskActionCompon
       setStep('done');
       setTxHash(result.txHash ?? null);
       onSuccess?.();
+      void invalidateActionQueue();
       const url = result.txHash ? explorerTxUrl(result.txHash) : null;
       toast.success(
         'Rating recorded',

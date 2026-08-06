@@ -8,6 +8,7 @@ vi.mock('../../../src/services/contract', () => ({
     txHash: '0xevaluatetx',
     evaluatedAt: 1_800_000_000,
   }),
+  contractAppeal: vi.fn().mockResolvedValue('0xappealtx'),
   contractEvaluatorTimeout: vi.fn().mockResolvedValue('0xevaluatortimeout'),
   contractFinalizeVerdict: vi.fn().mockResolvedValue({
     txHash: '0xfinalizetx',
@@ -31,6 +32,7 @@ vi.mock('../../../src/config/env', () => ({
 
 import { evaluationsRouter } from '../../../src/routers/evaluations.router';
 import {
+  contractAppeal,
   contractEvaluate,
   contractEvaluatorTimeout,
   contractFinalizeVerdict,
@@ -207,6 +209,50 @@ describe('evaluations router', () => {
       await expect(evaluationsRouter.createCaller(ctx).evaluate(evalInput)).rejects.toThrow(
         'Task not found'
       );
+    });
+  });
+
+  describe('appeal', () => {
+    it('allows a contest submitter to appeal when no single worker is claimed', async () => {
+      const ctx = createMockCtx(WORKER);
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            makeTask({
+              mode: 'bounty',
+              status: 'appealing',
+              claimedBy: null,
+              appealDeadline: new Date(Date.now() + 60_000),
+            }),
+          ])
+        )
+        .mockReturnValueOnce(makeChain([{ id: 'submission' }]));
+      ctx.db.update.mockReturnValueOnce(makeChain());
+
+      const result = await evaluationsRouter.createCaller(ctx).appeal({ taskId: TASK_ID });
+
+      expect(contractAppeal).toHaveBeenCalledWith(TASK_ID, WORKER);
+      expect(result).toEqual({ txHash: '0xappealtx' });
+    });
+
+    it('rejects a wallet that did not submit to the contest', async () => {
+      const ctx = createMockCtx(WORKER);
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            makeTask({
+              mode: 'benchmark',
+              status: 'appealing',
+              claimedBy: null,
+              appealDeadline: new Date(Date.now() + 60_000),
+            }),
+          ])
+        )
+        .mockReturnValueOnce(makeChain([]));
+
+      await expect(
+        evaluationsRouter.createCaller(ctx).appeal({ taskId: TASK_ID })
+      ).rejects.toThrow('Only a task submitter can appeal');
     });
   });
 

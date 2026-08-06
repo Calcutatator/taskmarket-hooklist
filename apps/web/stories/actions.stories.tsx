@@ -5,6 +5,7 @@
 // storybook-coverage: components/market/actions/claim-button.tsx
 // storybook-coverage: components/market/actions/confirm-dialog.tsx
 // storybook-coverage: components/market/actions/connect-prompt.tsx
+// storybook-coverage: components/market/actions/evaluator-actions.tsx
 // storybook-coverage: components/market/actions/forfeit-button.tsx
 // storybook-coverage: components/market/actions/pitch-form.tsx
 // storybook-coverage: components/market/actions/proof-form.tsx
@@ -23,7 +24,7 @@
 
 import type { PendingAction } from '@taskmarket/shared';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { expect, within } from 'storybook/test';
 import { base, baseSepolia } from 'viem/chains';
 import { createConfig, http, useAccount, useConnect, WagmiProvider } from 'wagmi';
@@ -36,6 +37,13 @@ import { CancelButton } from '@/components/market/actions/cancel-button';
 import { ClaimButton } from '@/components/market/actions/claim-button';
 import { ConfirmDialog } from '@/components/market/actions/confirm-dialog';
 import { ConnectPrompt } from '@/components/market/actions/connect-prompt';
+import {
+  AppealButton,
+  EvaluateButton,
+  EvaluatorTimeoutButton,
+  FinalizeVerdictButton,
+  ResolveDisputeButton,
+} from '@/components/market/actions/evaluator-actions';
 import { ForfeitButton } from '@/components/market/actions/forfeit-button';
 import { PitchForm } from '@/components/market/actions/pitch-form';
 import { ProofForm } from '@/components/market/actions/proof-form';
@@ -45,7 +53,10 @@ import { RejectSubmissionButton } from '@/components/market/actions/reject-submi
 import { SelectWinnerButton } from '@/components/market/actions/select-winner-button';
 import { SelectWorkerPicker } from '@/components/market/actions/select-worker-picker';
 import { SplitAcceptanceGuide } from '@/components/market/actions/split-acceptance-guide';
-import { SubmissionPayoutAction } from '@/components/market/actions/submission-payout-action';
+import {
+  SettlementConfirmation,
+  SubmissionPayoutAction,
+} from '@/components/market/actions/submission-payout-action';
 import { SubmitArtifactsForm } from '@/components/market/actions/submit-artifacts-form';
 import { UpdateForm } from '@/components/market/actions/update-form';
 import { FundWalletButton } from '@/components/market/fund-wallet-button';
@@ -118,6 +129,18 @@ const connectedConfig = createConfig({
   },
 });
 
+// This story exercises several wallet-bound controls at once. A dedicated
+// config prevents another concurrently rendered story from disconnecting its
+// shared mock connector during the interaction test.
+const evaluationConfig = createConfig({
+  chains: [base, baseSepolia],
+  connectors: [mock({ accounts: [addresses.requester] })],
+  transports: {
+    [base.id]: http(),
+    [baseSepolia.id]: http(),
+  },
+});
+
 function ConnectStoryWallet({ children }: Readonly<{ children: ReactNode }>) {
   const { isConnected } = useAccount();
   const { connect, connectors } = useConnect();
@@ -138,6 +161,14 @@ function ConnectStoryWallet({ children }: Readonly<{ children: ReactNode }>) {
 function ConnectedRequester({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <WagmiProvider config={connectedConfig} reconnectOnMount={false}>
+      <ConnectStoryWallet>{children}</ConnectStoryWallet>
+    </WagmiProvider>
+  );
+}
+
+function ConnectedEvaluationWallet({ children }: Readonly<{ children: ReactNode }>) {
+  return (
+    <WagmiProvider config={evaluationConfig} reconnectOnMount={false}>
       <ConnectStoryWallet>{children}</ConnectStoryWallet>
     </WagmiProvider>
   );
@@ -251,6 +282,35 @@ export const RequesterActionVariants: Story = {
   },
 };
 
+function SettlementConfirmationReview() {
+  const [delayed, setDelayed] = useState(true);
+
+  return (
+    <div className="grid max-w-3xl gap-5 md:grid-cols-2">
+      <ActionSurface title="Indexing payout">
+        <SettlementConfirmation />
+      </ActionSurface>
+      <ActionSurface title="Delayed settlement">
+        <SettlementConfirmation delayed={delayed} onRetry={() => setDelayed(false)} />
+      </ActionSurface>
+    </div>
+  );
+}
+
+export const SettlementConfirmationStates: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => <SettlementConfirmationReview />,
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+
+    await expect(
+      canvas.getByText('Settlement confirmation is taking longer than expected')
+    ).toBeVisible();
+    await userEvent.click(canvas.getByRole('button', { name: 'Check again' }));
+    await expect(canvas.getAllByRole('status', { name: 'Confirming settlement' })).toHaveLength(2);
+  },
+};
+
 export const WorkerActionVariants: Story = {
   render: () => (
     <ConnectedRequester>
@@ -313,6 +373,86 @@ export const WorkerActionVariants: Story = {
       </div>
     </ConnectedRequester>
   ),
+};
+
+export const EvaluationAndDisputeActions: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <ConnectedEvaluationWallet>
+      <div className="grid max-w-6xl gap-5 md:grid-cols-2">
+        <ActionSurface title="Evaluate submitted work">
+          <EvaluateButton
+            action={pendingAction('evaluate', 'evaluator', 'taskmarket task evaluate task-1')}
+            disabled={false}
+            task={taskDetailFixture({
+              ...sharedTask,
+              evaluator: addresses.requester,
+              evaluatorFeeBps: 500,
+              status: 'review',
+            })}
+          />
+        </ActionSurface>
+        <ActionSurface title="Resolve a dispute">
+          <ResolveDisputeButton
+            action={pendingAction(
+              'resolve_dispute',
+              'dispute_resolver',
+              'taskmarket task resolve-dispute task-1'
+            )}
+            disabled
+            task={taskDetailFixture({
+              ...sharedTask,
+              disputeResolver: addresses.requester,
+              evaluatorFeeBps: 500,
+              status: 'disputed',
+            })}
+          />
+        </ActionSurface>
+        <ActionSurface title="Appeal verdict">
+          <AppealButton
+            action={pendingAction('appeal', 'worker', 'taskmarket task appeal task-1')}
+            disabled
+            task={sharedTask}
+          />
+        </ActionSurface>
+        <ActionSurface title="Evaluator timeout">
+          <EvaluatorTimeoutButton
+            action={pendingAction(
+              'evaluator_timeout',
+              'requester',
+              'taskmarket task evaluator-timeout task-1'
+            )}
+            disabled
+            task={sharedTask}
+          />
+        </ActionSurface>
+        <ActionSurface title="Finalize verdict">
+          <FinalizeVerdictButton
+            action={pendingAction(
+              'finalize_verdict',
+              'anyone',
+              'taskmarket task finalize-verdict task-1'
+            )}
+            disabled
+            task={sharedTask}
+          />
+        </ActionSurface>
+      </div>
+    </ConnectedEvaluationWallet>
+  ),
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
+    await expect(await canvas.findByLabelText('Evidence hash')).toBeVisible();
+    await userEvent.selectOptions(canvas.getAllByLabelText('Verdict')[0]!, 'partial');
+    await expect(canvas.getAllByText('Payout recipients')).toHaveLength(2);
+    await userEvent.click(canvas.getByRole('button', { name: 'Submit evaluation' }));
+    await expect(page.getByRole('heading', { name: 'Submit this evaluation?' })).toBeVisible();
+    await expect(page.getByText(/costs 0.001 USDC and is irreversible/i)).toBeVisible();
+    await userEvent.click(page.getAllByRole('button', { name: 'Submit evaluation' }).at(-1)!);
+    await expect(await canvas.findByText(/evidence hash is required/i)).toBeVisible();
+    await expect(canvas.getByRole('button', { name: 'Finalize verdict' })).toBeDisabled();
+  },
 };
 
 export const AuctionAndExpiryActions: Story = {

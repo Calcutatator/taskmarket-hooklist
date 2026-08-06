@@ -2,6 +2,7 @@
 
 import { CircleCheckIcon } from 'lucide-react';
 import { motion } from 'motion/react';
+import type { TaskResponse } from '@taskmarket/shared';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -10,6 +11,9 @@ import { toast } from 'sonner';
 
 import { useMotionDisabled } from '@/components/market/motion/use-motion-disabled';
 import { Button } from '@/components/ui/button';
+import { emitActionInboxEvent } from '@/lib/market/action-inbox-events';
+
+import { requesterWaitingCopy } from './requester-task-guidance';
 
 const easeOut = [0.16, 1, 0.3, 1] as const;
 
@@ -23,9 +27,7 @@ const groupVariants = {
   show: { opacity: 1, transition: { delayChildren: 0.1, staggerChildren: 0.1 } },
 };
 
-const REVEAL_DURATION_MS = 2_200;
-
-export function PublishedCelebration() {
+export function PublishedCelebration({ task }: { task: TaskResponse }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -56,34 +58,16 @@ export function PublishedCelebration() {
       return;
     }
     handledRef.current = true;
+    emitActionInboxEvent({ event: 'post_publication_guidance_seen', taskId: task.id });
 
     toast.success('Task published', {
       description: 'Your task is live - reaching workers now',
     });
 
-    // Under reduced motion we never mount the visual reveal, so strip the param
-    // immediately (the toast still fires) and skip the smooth scroll.
-    if (motionDisabled) {
-      setVisible(false);
-      if (pathname) {
-        router.replace(pathname as Route, { scroll: false });
-      }
-      return;
-    }
+    // Run once on mount for a published reveal; handledRef guards re-entry.
+  }, [published, task.id]);
 
-    if (taskDropId) {
-      return;
-    }
-
-    const timer = setTimeout(dismiss, REVEAL_DURATION_MS);
-    return () => {
-      clearTimeout(timer);
-    };
-    // Run once on mount for a published reveal; handledRef guards re-entry and the
-    // router/pathname/dismiss closures are stable across this component's life.
-  }, [published]);
-
-  if (!published || !visible || motionDisabled) {
+  if (!published || !visible) {
     return null;
   }
 
@@ -91,7 +75,7 @@ export function PublishedCelebration() {
     <motion.div
       animate="show"
       className="rounded-xl border border-border/68 bg-surface/42 p-6 shadow-[var(--shadow-soft)] lg:col-span-2"
-      initial="hidden"
+      initial={motionDisabled ? false : 'hidden'}
       style={{ boxShadow: '0 0 0 1px color-mix(in oklab, var(--success) 28%, transparent)' }}
       variants={groupVariants}
     >
@@ -100,7 +84,7 @@ export function PublishedCelebration() {
           <motion.span
             animate={{ opacity: 1, scale: 1 }}
             className="flex size-11 shrink-0 items-center justify-center rounded-full text-[var(--success)]"
-            initial={{ opacity: 0, scale: 0.6 }}
+            initial={motionDisabled ? false : { opacity: 0, scale: 0.6 }}
             style={{
               backgroundColor: 'color-mix(in oklab, var(--success) 16%, transparent)',
             }}
@@ -116,7 +100,13 @@ export function PublishedCelebration() {
               Task published
             </motion.p>
             <motion.p className="text-sm leading-5 text-muted-foreground" variants={itemVariants}>
-              Your task is live - reaching workers now.
+              No action is needed right now
+            </motion.p>
+            <motion.p
+              className="max-w-2xl text-sm leading-5 text-muted-foreground"
+              variants={itemVariants}
+            >
+              {requesterWaitingCopy(task)}
             </motion.p>
           </div>
         </div>
@@ -126,6 +116,9 @@ export function PublishedCelebration() {
               <Link href={`/drops/${taskDropId}` as Route}>View drop</Link>
             </Button>
           ) : null}
+          <Button asChild type="button" variant="outline">
+            <Link href={'/dashboard/inbox' as Route}>Open Inbox</Link>
+          </Button>
           <Button onClick={dismiss} type="button" variant="outline">
             View activity
           </Button>

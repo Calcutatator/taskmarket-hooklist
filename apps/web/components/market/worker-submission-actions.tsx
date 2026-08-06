@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 
 import { RejectSubmissionButton } from '@/components/market/actions/reject-submission-button';
 import { SubmissionPayoutAction } from '@/components/market/actions/submission-payout-action';
+import { emitActionInboxEvent } from '@/lib/market/action-inbox-events';
 import { commandForTaskWorker } from '@/lib/market/task-action-command';
 import type { WorkerSubmissionGroup } from '@/lib/market/submission-review';
 
@@ -39,17 +40,20 @@ export function WorkerSubmissionActions({
   return (
     <div className="grid min-w-0 gap-3" role="group" aria-label="Submitter decisions">
       {targetedAcceptAction ? (
-        <SubmissionPayoutAction
-          action={targetedAcceptAction}
-          onSuccess={() => router.refresh()}
-          task={task}
-        />
+        <SubmissionPayoutAction action={targetedAcceptAction} task={task} />
       ) : null}
       {rejectAction ? (
         <RejectSubmissionButton
           action={rejectAction}
           disabled={false}
-          onRejectSuccess={onRejectSuccess}
+          onRejectSuccess={(workerKey) => {
+            emitActionInboxEvent({
+              action: 'reject_submission',
+              event: 'lifecycle_action_completed',
+              taskId: task.id,
+            });
+            onRejectSuccess(workerKey);
+          }}
           onSuccess={() => router.refresh()}
           target={{
             activeSubmissionCount: group.submissions.length,

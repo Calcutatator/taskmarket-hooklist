@@ -227,6 +227,58 @@ describe('paid task action preflight', () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
+  it('allows a contest submitter to appeal when no single worker is claimed', async () => {
+    const ctx = createMockCtx();
+    ctx.db.select
+      .mockReturnValueOnce(
+        makeChain([
+          task({
+            mode: 'bounty',
+            status: 'appealing',
+            claimedBy: null,
+            appealDeadline: new Date('2026-07-11T01:00:00.000Z'),
+          }),
+        ])
+      )
+      .mockReturnValueOnce(makeChain([{ id: 'submission' }]));
+
+    await expect(
+      validatePaidTaskAction(
+        ctx.db,
+        'appeal',
+        { params: { taskId: '0xtask' }, body: { taskId: '0xtask' } } as never,
+        WORKER,
+        NOW
+      )
+    ).resolves.toBeUndefined();
+  });
+
+  it('rejects an unrelated wallet appealing a contest verdict', async () => {
+    const ctx = createMockCtx();
+    ctx.db.select
+      .mockReturnValueOnce(
+        makeChain([
+          task({
+            mode: 'benchmark',
+            status: 'appealing',
+            claimedBy: null,
+            appealDeadline: new Date('2026-07-11T01:00:00.000Z'),
+          }),
+        ])
+      )
+      .mockReturnValueOnce(makeChain([]));
+
+    await expect(
+      validatePaidTaskAction(
+        ctx.db,
+        'appeal',
+        { params: { taskId: '0xtask' }, body: { taskId: '0xtask' } } as never,
+        WORKER,
+        NOW
+      )
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
   it('allows a non-requester payer to call refund_expired (ADR-0026, permissionless)', async () => {
     const ctx = createMockCtx();
     ctx.db.select.mockReturnValueOnce(

@@ -18,6 +18,8 @@
 // storybook-coverage: components/ui/sonner.tsx
 
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
+import { IconInbox } from '@tabler/icons-react';
+import { expect, userEvent, within } from 'storybook/test';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
@@ -38,11 +40,13 @@ import {
   TaskListLoading,
 } from '@/components/dashboard-loading';
 import { LegalDocumentPage } from '@/components/legal-document-page';
+import { NavMain } from '@/components/nav-main';
 import { PublicSiteFooter } from '@/components/public-site-footer';
 import { PublicSiteHeader } from '@/components/public-site-header';
 import { SectionCards } from '@/components/section-cards';
-import { SiteHeader } from '@/components/site-header';
+import { HeaderInboxLink, SiteHeader } from '@/components/site-header';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import {
   Form,
   FormControl,
@@ -103,6 +107,83 @@ export const DashboardShell: Story = {
     layout: 'fullscreen',
     nextjs: { navigation: { pathname: '/dashboard/tasks/0xabc123' } },
     viewport: { defaultViewport: 'desktop' },
+  },
+};
+
+function LifecycleActionCountState({ count }: { count: number }) {
+  return (
+    <section className="grid gap-4 rounded-lg border border-border/58 bg-card/44 p-5">
+      <h2 className="font-display text-lg font-semibold">
+        {count === 0 ? 'All caught up' : `${count} unresolved action groups`}
+      </h2>
+      <div className="flex flex-wrap items-start gap-8">
+        <ButtonGroup aria-label={`Header actions with ${count} unresolved`}>
+          <HeaderInboxLink actionTotal={count} />
+        </ButtonGroup>
+        <div className="w-64 rounded-lg border border-sidebar-border/58 bg-sidebar p-2 text-sidebar-foreground">
+          <NavMain
+            items={[
+              {
+                actionCount: count,
+                icon: IconInbox,
+                title: 'Inbox',
+                url: '/dashboard/inbox',
+              },
+            ]}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export const LifecycleActionCounts: Story = {
+  render: () => (
+    <SidebarProvider defaultOpen>
+      <div className="grid w-full gap-6 p-6">
+        <LifecycleActionCountState count={0} />
+        <LifecycleActionCountState count={1} />
+        <LifecycleActionCountState count={142} />
+      </div>
+    </SidebarProvider>
+  ),
+  parameters: {
+    a11y: { test: 'error' },
+    nextjs: { navigation: { pathname: '/dashboard/inbox' } },
+    viewport: { defaultViewport: 'desktop' },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getAllByRole('link', { name: 'Inbox, no actions to do' })).toHaveLength(2);
+    await expect(canvas.getAllByRole('link', { name: 'Inbox, 1 action to do' })).toHaveLength(2);
+    await expect(canvas.getAllByRole('link', { name: 'Inbox, 142 actions to do' })).toHaveLength(2);
+    await expect(canvas.getAllByText('99+')).toHaveLength(2);
+
+    await userEvent.tab();
+    await expect(canvas.getAllByRole('link', { name: 'Inbox, no actions to do' })[0]).toHaveFocus();
+  },
+};
+
+export const MobileLifecycleActionCount: Story = {
+  render: () => (
+    <div className="flex justify-end p-2">
+      <ButtonGroup aria-label="Mobile header actions">
+        <HeaderInboxLink actionTotal={12} />
+      </ButtonGroup>
+    </div>
+  ),
+  parameters: {
+    a11y: { test: 'error' },
+    nextjs: { navigation: { pathname: '/dashboard' } },
+    viewport: { defaultViewport: 'mobile' },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const inboxLink = canvas.getByRole('link', { name: 'Inbox, 12 actions to do' });
+
+    await expect(inboxLink).toBeVisible();
+    await expect(canvas.getByText('12')).toBeVisible();
   },
 };
 

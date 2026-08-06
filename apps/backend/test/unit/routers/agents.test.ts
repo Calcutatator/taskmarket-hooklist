@@ -7,6 +7,55 @@ import { agentsRouter } from '../../../src/routers/agents.router';
 const ADDR = '0xAgent00000000000000000000000000000000001';
 const AGENT_ID = 'agent-001';
 
+function makeActionQueueTask(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'task-action-1',
+    requester: ADDR,
+    requesterPubkey: null,
+    description: 'Review submitted work',
+    reward: '1000000',
+    escrowTxHash: '0xescrow',
+    createdAt: new Date('2026-08-01T00:00:00.000Z'),
+    expiryTime: new Date('2026-08-10T00:00:00.000Z'),
+    status: 'open',
+    tags: [],
+    mode: 'bounty',
+    taskVisibility: 'public',
+    submissionVisibility: 'public',
+    privateAccessPasswordHash: null,
+    stakeRequired: 0,
+    stakeBps: 0,
+    pitchDeadline: null,
+    bidDeadline: null,
+    maxPrice: null,
+    auctionType: null,
+    auctionStartPrice: null,
+    auctionFloorPrice: null,
+    metricDescription: null,
+    metricTarget: null,
+    claimedBy: null,
+    claimedAt: null,
+    platformFeeBps: 500,
+    requesterAgentId: null,
+    selfAward: false,
+    hookContract: null,
+    evaluator: null,
+    evaluatorStake: null,
+    evaluatorFeeBps: null,
+    evaluationWindow: null,
+    appealWindow: null,
+    disputeResolver: null,
+    appealDeadline: null,
+    verdictType: null,
+    verdictScore: null,
+    verdictConfidence: null,
+    verdictEvidenceHash: null,
+    evaluatorDeadline: null,
+    taskDropId: null,
+    ...overrides,
+  };
+}
+
 function makeAgent(overrides: Record<string, unknown> = {}) {
   return {
     address: ADDR,
@@ -26,6 +75,7 @@ function makeAgent(overrides: Record<string, unknown> = {}) {
 describe('agents router', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
   });
 
   describe('stats', () => {
@@ -310,6 +360,265 @@ describe('agents router', () => {
         expect(result.asWorker).toHaveLength(1);
         expect(result.invitedPrivateTasks).toHaveLength(0);
       });
+    });
+  });
+
+  // Verifies: ADR-0041 (public queue grouping, role discovery, visibility, and batching)
+  describe('actionQueue', () => {
+    it('groups alternative review actions into one requester intent without task fan-out', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-06T00:00:00.000Z'));
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeActionQueueTask()]))
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              taskId: 'task-action-1',
+              count: 2,
+              distinctSubmitterCount: 2,
+              onlySubmitter: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+      expect(result.total).toBe(1);
+      expect(result.urgentTotal).toBe(0);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({
+        id: 'task-action-1:review_work',
+        intent: 'review_work',
+        role: 'requester',
+        priority: 'required',
+        progress: { completed: 0, total: 2 },
+      });
+      expect(result.items[0]?.actions.map((item) => item.action)).toEqual([
+        'accept',
+        'accept_submissions',
+        'reject_submission',
+      ]);
+      expect(ctx.db.select).toHaveBeenCalledTimes(5);
+    });
+
+    it('discovers every participant role while keeping anonymous results discoverable-only', async () => {
+      const candidateChain = makeChain([]);
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(candidateChain);
+
+      await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+      const where = candidateChain.where.mock.calls[0]?.[0];
+      const query = new PgDialect().sqlToQuery(where);
+      expect(query.sql).toContain('"tasks"."requester"');
+      expect(query.sql).toContain('"tasks"."claimed_by"');
+      expect(query.sql).toContain('"tasks"."evaluator"');
+      expect(query.sql).toContain('"tasks"."dispute_resolver"');
+      expect(query.sql).toContain('from "task_awards"');
+      expect(query.sql).toContain('from "submissions"');
+      expect(query.sql).toContain('"tasks"."task_visibility" not in');
+    });
+
+    it('adds private and unlisted role tasks only after read-auth verifies the same address', async () => {
+      const candidateChain = makeChain([]);
+      const ctx = createMockCtx(undefined, { address: ADDR.toLowerCase() });
+      ctx.db.select.mockReturnValueOnce(candidateChain);
+
+      await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+      const where = candidateChain.where.mock.calls[0]?.[0];
+      const query = new PgDialect().sqlToQuery(where);
+      expect(query.sql).not.toContain('task_visibility');
+    });
+
+    it('prioritizes an assigned worker submission when its deadline is within 24 hours', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-06T00:00:00.000Z'));
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            makeActionQueueTask({
+              id: 'task-worker',
+              requester: '0xRequester',
+              mode: 'claim',
+              status: 'claimed',
+              claimedBy: ADDR,
+              expiryTime: new Date('2026-08-06T20:00:00.000Z'),
+            }),
+          ])
+        )
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+      expect(result).toMatchObject({ total: 1, urgentTotal: 1 });
+      expect(result.items[0]).toMatchObject({
+        id: 'task-worker:submit_work',
+        role: 'worker',
+        intent: 'submit_work',
+        priority: 'urgent',
+        dueAt: '2026-08-06T20:00:00.000Z',
+      });
+    });
+
+    it('groups unrated recipients into one follow-up intent with aggregate progress', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-06T00:00:00.000Z'));
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([makeActionQueueTask({ id: 'task-rating', status: 'completed' })])
+        )
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(
+          makeChain([
+            { taskId: 'task-rating', workerAddress: '0xWorkerA', rank: 1, rating: 90 },
+            { taskId: 'task-rating', workerAddress: '0xWorkerB', rank: 2, rating: null },
+          ])
+        );
+
+      const result = await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+      expect(result.total).toBe(1);
+      expect(result.items[0]).toMatchObject({
+        id: 'task-rating:rate_workers',
+        intent: 'rate_workers',
+        priority: 'follow_up',
+        progress: { completed: 1, total: 2 },
+      });
+      expect(result.items[0]?.actions).toHaveLength(1);
+      expect(result.items[0]?.actions[0]?.targetWorker).toBe('0xWorkerB');
+    });
+
+    it('does not duplicate a task when the same wallet holds requester and worker roles', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-06T00:00:00.000Z'));
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            makeActionQueueTask({
+              id: 'task-self-role',
+              mode: 'claim',
+              status: 'claimed',
+              claimedBy: ADDR,
+            }),
+          ])
+        )
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+      expect(result.total).toBe(1);
+      expect(result.items).toEqual([
+        expect.objectContaining({ id: 'task-self-role:submit_work', role: 'worker' }),
+      ]);
+    });
+
+    it('queues a contest appeal only for a wallet that actually submitted', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-06T00:00:00.000Z'));
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            makeActionQueueTask({
+              id: 'task-appeal',
+              requester: '0xRequester',
+              status: 'appealing',
+              appealDeadline: new Date('2026-08-07T00:00:00.000Z'),
+            }),
+          ])
+        )
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              taskId: 'task-appeal',
+              count: 2,
+              distinctSubmitterCount: 2,
+              onlySubmitter: null,
+              submitters: [ADDR.toLowerCase(), '0xanother'],
+              allSubmitters: [ADDR.toLowerCase(), '0xanother'],
+            },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+      expect(result.items).toEqual([
+        expect.objectContaining({
+          id: 'task-appeal:appeal_verdict',
+          intent: 'appeal_verdict',
+          role: 'worker',
+          priority: 'urgent',
+        }),
+      ]);
+      expect(result.items[0]?.actions[0]).toMatchObject({
+        action: 'appeal',
+        eligibleAddress: ADDR,
+      });
+    });
+
+    it('suppresses unsupported evaluator controls and unsafe expired refunds from totals', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-06T00:00:00.000Z'));
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            makeActionQueueTask({
+              id: 'task-evaluate',
+              requester: '0xRequester',
+              status: 'review',
+              evaluator: ADDR,
+            }),
+            makeActionQueueTask({
+              id: 'task-refund',
+              expiryTime: new Date('2026-08-05T00:00:00.000Z'),
+            }),
+          ])
+        )
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+      expect(result.total).toBe(0);
+      expect(result.items).toEqual([]);
+      expect(result.waiting).toEqual([
+        expect.objectContaining({
+          id: 'task-refund:waiting_for_settlement',
+          reason: 'waiting_for_settlement',
+        }),
+      ]);
+    });
+
+    it('returns an empty queue without aggregate queries when no role tasks exist', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([]));
+
+      const result = await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+      expect(result).toEqual({ items: [], total: 0, urgentTotal: 0, waiting: [] });
+      expect(ctx.db.select).toHaveBeenCalledTimes(1);
     });
   });
 });

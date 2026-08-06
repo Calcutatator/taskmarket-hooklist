@@ -22,6 +22,8 @@ import {
   usePaidActionFundingPrompt,
 } from '@/components/market/fund-wallet-button';
 import { formatUsdcUnits } from '@/lib/format';
+import { emitActionInboxEvent } from '@/lib/market/action-inbox-events';
+import { taskRatingProgress } from '@/lib/market/task-badges';
 
 type TaskActionPanelProps = {
   claimedBy?: string | null;
@@ -35,22 +37,6 @@ type TaskActionPanelProps = {
 };
 
 const PAID_ACTIONS = new Set<PendingAction['action']>(PAID_PENDING_ACTION_NAMES);
-
-// Evaluator and dispute controls are not built yet (their components only render
-// "coming soon" copy), so we do not surface them. The components stay wired in
-// COMPONENT_BY_ACTION to keep the dispatcher exhaustive; this set just hides the
-// dead controls from users until the flows ship.
-const UNRELEASED_ACTIONS = new Set([
-  'appeal',
-  'evaluate',
-  'evaluator_timeout',
-  'finalize_verdict',
-  'resolve_dispute',
-]);
-
-function isReleasedAction(action: PendingAction) {
-  return !UNRELEASED_ACTIONS.has(action.action);
-}
 
 function isPaidAction(action: PendingAction) {
   return action.requiresPayment ?? PAID_ACTIONS.has(action.action);
@@ -74,11 +60,12 @@ export function TaskActionsPanel({
 }: TaskActionPanelProps) {
   const { address } = useAccount();
   const router = useRouter();
-  const visibleActions = pendingActions.filter(
-    (action) =>
-      isReleasedAction(action) && canViewAction({ action, address, claimedBy, requester, worker })
+  const visibleActions = pendingActions.filter((action) =>
+    canViewAction({ action, address, claimedBy, requester, worker })
   );
   const hasPaidAction = visibleActions.some(isPaidAction);
+  const visibleRatingActions = visibleActions.filter((action) => action.action === 'rate');
+  const ratingProgress = visibleRatingActions.length > 0 ? taskRatingProgress(task) : null;
   const { actionFundingPrompt, recheckActionFunding } = usePaidActionFundingPrompt({
     address,
     enabled: hasPaidAction,
@@ -100,6 +87,22 @@ export function TaskActionsPanel({
         {title}
       </h2>
       <div className="grid gap-3">
+        {ratingProgress ? (
+          <div
+            aria-label="Rating progress"
+            className="grid gap-1 rounded-lg border border-border/60 bg-background/42 p-3"
+            role="status"
+          >
+            <p className="text-sm font-semibold tracking-tight text-foreground">
+              {ratingProgress.rated} of {ratingProgress.total} ratings recorded
+            </p>
+            <p className="text-xs leading-5 text-muted-foreground">
+              {ratingProgress.remaining}{' '}
+              {ratingProgress.remaining === 1 ? 'rating remains' : 'ratings remaining'} before every
+              payout recipient has feedback.
+            </p>
+          </div>
+        ) : null}
         {actionFundingPrompt ? (
           <FundingGuard
             address={address}
@@ -133,7 +136,14 @@ export function TaskActionsPanel({
                   <Component
                     action={action}
                     disabled={blockedByFunding || (!canRun && Boolean(address))}
-                    onSuccess={() => router.refresh()}
+                    onSuccess={() => {
+                      emitActionInboxEvent({
+                        action: action.action,
+                        event: 'lifecycle_action_completed',
+                        taskId: task.id,
+                      });
+                      router.refresh();
+                    }}
                     task={task}
                   />
                 </div>

@@ -34,6 +34,9 @@ vi.mock('@/components/market/actions', () => ({
       </button>
     ),
     submit: () => <button type="button">Choose files</button>,
+    rate: ({ action }: TaskActionComponentProps) => (
+      <button type="button">Rate {action.targetWorker}</button>
+    ),
   },
 }));
 
@@ -86,5 +89,82 @@ describe('TaskActionsPanel', () => {
         requester: task.requester,
       })
     ).toBe(true);
+  });
+
+  it('hides an appeal that has no eligible worker projection', () => {
+    const appeal = {
+      action: 'appeal',
+      role: 'worker',
+      command: 'taskmarket task appeal task-1',
+      eligibleAddress: null,
+    } as PendingAction;
+
+    expect(
+      canViewAction({
+        action: appeal,
+        address: '0x2222222222222222222222222222222222222222',
+        requester: task.requester,
+      })
+    ).toBe(false);
+  });
+
+  it('groups split-payout rating actions under recipient progress', () => {
+    const primary = '0x2222222222222222222222222222222222222222';
+    const secondary = '0x3333333333333333333333333333333333333333';
+    const third = '0x4444444444444444444444444444444444444444';
+    const rateActions = [secondary, third].map(
+      (targetWorker) =>
+        ({
+          action: 'rate',
+          command: `tm rate --worker ${targetWorker}`,
+          role: 'requester',
+          targetWorker,
+        }) as PendingAction
+    );
+
+    render(
+      <TaskActionsPanel
+        emptyReason="none"
+        pendingActions={rateActions}
+        requester={task.requester}
+        task={{
+          ...task,
+          awards: [
+            {
+              workerAddress: primary,
+              workerAgentId: null,
+              workerActorType: 'agent',
+              rank: 1,
+              isPrimary: true,
+              grossAmount: '2000000',
+              workerPayment: '1900000',
+              platformFee: '100000',
+              settlementTxHash: '0xsettlement',
+              settledAt: '2026-08-01T00:00:00.000Z',
+              rating: 95,
+            },
+            ...[secondary, third].map((workerAddress, index) => ({
+              workerAddress,
+              workerAgentId: null,
+              workerActorType: 'agent' as const,
+              rank: index + 2,
+              isPrimary: false,
+              grossAmount: '1000000',
+              workerPayment: '950000',
+              platformFee: '50000',
+              settlementTxHash: '0xsettlement',
+              settledAt: '2026-08-01T00:00:00.000Z',
+              rating: null,
+            })),
+          ],
+        }}
+      />
+    );
+
+    expect(screen.getByText('1 of 3 ratings recorded')).toBeInTheDocument();
+    expect(
+      screen.getByText(/2 ratings remaining before every payout recipient/i)
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^rate 0x/i })).toHaveLength(2);
   });
 });

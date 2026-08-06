@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { cache } from 'react';
+import { TaskActionIntent } from '@taskmarket/shared';
 
 import { TaskDetailPanel } from '@/components/market/tasks';
 import { PrivateTaskAccessGate } from '@/components/market/private-task-access-gate';
@@ -14,6 +15,9 @@ import {
 type TaskDetailPageProps = {
   params: Promise<{
     taskId: string;
+  }>;
+  searchParams?: Promise<{
+    focus?: string | string[];
   }>;
 };
 
@@ -54,8 +58,12 @@ export async function generateMetadata({ params }: TaskDetailPageProps): Promise
   });
 }
 
-export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
+export default async function TaskDetailPage({ params, searchParams }: TaskDetailPageProps) {
   const { taskId } = await params;
+  const focusParam = (await searchParams)?.focus;
+  const focusIntent = TaskActionIntent.safeParse(
+    Array.isArray(focusParam) ? focusParam[0] : focusParam
+  ).data;
   const decodedTaskId = decodeRouteParam(taskId);
   const task = await getTask(decodedTaskId);
 
@@ -76,7 +84,12 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
 
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
-      <TaskDetailPanel marketStats={marketStats} modeData={modeData} task={task} />
+      <TaskDetailPanel
+        focusIntent={focusIntent}
+        marketStats={marketStats}
+        modeData={modeData}
+        task={task}
+      />
     </div>
   );
 }

@@ -35,6 +35,12 @@ export function canViewAction({
     return false;
   }
 
+  // Contest appeals without a lead award are projected per authenticated
+  // submitter. An unscoped appeal must never become visible to every wallet.
+  if (action.action === 'appeal') {
+    return false;
+  }
+
   const assignedWorker = worker ?? claimedBy;
   if (assignedWorker) {
     return sameAddress(address, assignedWorker);

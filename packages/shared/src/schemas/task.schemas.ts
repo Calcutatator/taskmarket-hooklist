@@ -390,6 +390,68 @@ export const TaskInboxResponseSchema = z.object({
   invitedPrivateTasks: z.array(TaskResponseSchema).optional().default([]),
 });
 
+export const TaskActionIntent = z.enum([
+  'review_work',
+  'select_worker',
+  'submit_work',
+  'settle_expired',
+  'evaluate_work',
+  'appeal_verdict',
+  'resolve_dispute',
+  'finalize_verdict',
+  'rate_workers',
+  'select_auction_winner',
+]);
+
+export const TaskActionPriority = z.enum(['urgent', 'required', 'follow_up']);
+
+export const TaskActionProgressSchema = z
+  .object({
+    completed: z.number().int().nonnegative(),
+    total: z.number().int().positive(),
+  })
+  .refine(({ completed, total }) => completed <= total, {
+    message: 'Completed progress cannot exceed the target total',
+    path: ['completed'],
+  });
+
+export const TaskActionQueueItemSchema = z.object({
+  id: z.string(),
+  task: TaskResponseSchema,
+  role: PendingActionSchema.shape.role,
+  intent: TaskActionIntent,
+  actions: PendingActionSchema.array().min(1),
+  priority: TaskActionPriority,
+  dueAt: z.string().nullable(),
+  progress: TaskActionProgressSchema.nullable().optional(),
+});
+
+export const TaskActionWaitingReason = z.enum([
+  'waiting_for_submissions',
+  'waiting_for_worker',
+  'waiting_for_review',
+  'waiting_for_evaluator',
+  'waiting_for_appeal_window',
+  'waiting_for_settlement',
+]);
+
+export const TaskActionWaitingItemSchema = z.object({
+  id: z.string(),
+  task: TaskResponseSchema,
+  role: PendingActionSchema.shape.role,
+  reason: TaskActionWaitingReason,
+  dueAt: z.string().nullable(),
+});
+
+export const TaskActionQueueInputSchema = TaskInboxInputSchema;
+
+export const TaskActionQueueResponseSchema = z.object({
+  items: TaskActionQueueItemSchema.array(),
+  total: z.number().int().nonnegative(),
+  urgentTotal: z.number().int().nonnegative(),
+  waiting: TaskActionWaitingItemSchema.array(),
+});
+
 export const TaskDetailResponseSchema = TaskResponseSchema.extend({
   pendingActions: PendingActionSchema.array(),
   awards: TaskAwardSchema.array().optional(),
@@ -456,4 +518,12 @@ export type SubmissionVisibilityType = z.infer<typeof SubmissionVisibility>;
 export type AuctionTypeValue = z.infer<typeof AuctionType>;
 export type TaskInboxInput = z.infer<typeof TaskInboxInputSchema>;
 export type TaskInboxResponse = z.infer<typeof TaskInboxResponseSchema>;
+export type TaskActionIntentValue = z.infer<typeof TaskActionIntent>;
+export type TaskActionPriorityValue = z.infer<typeof TaskActionPriority>;
+export type TaskActionProgress = z.infer<typeof TaskActionProgressSchema>;
+export type TaskActionQueueItem = z.infer<typeof TaskActionQueueItemSchema>;
+export type TaskActionWaitingReasonValue = z.infer<typeof TaskActionWaitingReason>;
+export type TaskActionWaitingItem = z.infer<typeof TaskActionWaitingItemSchema>;
+export type TaskActionQueueInput = z.infer<typeof TaskActionQueueInputSchema>;
+export type TaskActionQueueResponse = z.infer<typeof TaskActionQueueResponseSchema>;
 export type RequesterStats = z.infer<typeof RequesterStatsSchema>;

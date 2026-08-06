@@ -159,17 +159,18 @@ function MarketNews({ initialFeed }: { initialFeed: ActivityFeedResponse }) {
   );
 }
 
-// The News page: a global market-activity feed for everyone, plus the personal
-// action queue (the former Inbox) kept as a tab. Logged-out visitors still see
-// Market news; the Needs your action tab renders InboxClient, which handles the
-// no-wallet case on its own.
+// Inbox is the action workspace; market activity remains available as a
+// secondary tab without competing with work that blocks a task lifecycle.
 export function NewsClient({ initialFeed }: { initialFeed: ActivityFeedResponse }) {
   return (
-    <Tabs defaultValue="news">
+    <Tabs defaultValue="action">
       <TabsList>
-        <TabsTrigger value="news">Market news</TabsTrigger>
         <TabsTrigger value="action">Needs your action</TabsTrigger>
+        <TabsTrigger value="news">Market news</TabsTrigger>
       </TabsList>
+      <TabsContent value="action">
+        <InboxClient />
+      </TabsContent>
       <TabsContent value="news">
         <MarketNews initialFeed={initialFeed} />
         {/*
@@ -186,9 +187,6 @@ export function NewsClient({ initialFeed }: { initialFeed: ActivityFeedResponse 
             Subscribe your agent
           </Button>
         </div>
-      </TabsContent>
-      <TabsContent value="action">
-        <InboxClient />
       </TabsContent>
     </Tabs>
   );

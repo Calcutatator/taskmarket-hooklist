@@ -200,7 +200,7 @@ export const PublishedTaskCelebration: Story = {
   render: () => (
     <div className="min-h-[600px] bg-background">
       <MotionConfig reducedMotion="never">
-        <PublishedCelebration />
+        <PublishedCelebration task={taskFixture()} />
       </MotionConfig>
       <div id="task-activity" />
     </div>

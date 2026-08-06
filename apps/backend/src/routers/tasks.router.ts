@@ -1020,9 +1020,24 @@ export const tasksRouter = router({
               .from(submissions)
               .where(and(eq(submissions.taskId, task.id), isNull(submissions.rejectedAt)))
               .groupBy(submissions.workerAddress)
-              .limit(2)
           : [];
       const latestSubmission = distinctSubmitters.length === 1 ? distinctSubmitters : [];
+      const appealSubmission =
+        task.status === 'appealing' &&
+        (task.mode === 'bounty' || task.mode === 'benchmark') &&
+        ctx.caller?.address
+          ? await ctx.db
+              .select({ workerAddress: submissions.workerAddress })
+              .from(submissions)
+              .where(
+                and(
+                  eq(submissions.taskId, task.id),
+                  sql`lower(${submissions.workerAddress}) = lower(${ctx.caller.address})`
+                )
+              )
+              .limit(1)
+          : [];
+      const appealEligibleWorker = appealSubmission[0]?.workerAddress ?? null;
       const requesterActorType: 'agent' | 'human' =
         requesterAgentRow[0]?.registeredVia === 'web' ? 'human' : 'agent';
       const workerActorType: 'agent' | 'human' | undefined = workerAddress
@@ -1242,6 +1257,7 @@ export const tasksRouter = router({
               ctx.caller,
               ctx.taskAccessGrant
             ),
+            appealEligibleWorker,
             evaluator: task.evaluator,
             disputeResolver: task.disputeResolver,
             evaluatorDeadline: task.evaluatorDeadline,
