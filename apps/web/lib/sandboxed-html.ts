@@ -8,7 +8,7 @@ export const INTERACTIVE_HTML_ESCAPE_MESSAGE = 'taskmarket:interactive-html-esca
 
 const INTERACTIVE_HTML_CSP = [
   "default-src 'none'",
-  "script-src 'unsafe-inline'",
+  "script-src 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com",
   "style-src 'unsafe-inline'",
   'img-src data: blob:',
   'font-src data: blob:',
