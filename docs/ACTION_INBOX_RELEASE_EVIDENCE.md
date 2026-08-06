@@ -10,8 +10,11 @@ in a confirmation state until settlement is indexed, and multi-recipient rating 
 
 Evaluator, appeal, timeout, finalization, and dispute controls include payment and settlement
 confirmation copy. Evaluations require a non-zero evidence hash in the web flow. Evaluator and
-resolver actions for restricted submissions remain excluded until ADR-0042 is explicitly accepted.
-The repeatable `refundExpired` path remains excluded under security issue #432.
+resolver evidence access now follows accepted ADR-0042: a read-authenticated current evaluator or
+dispute resolver can directly read its private task and every submission visibility mode. Clearing
+the role revokes that role-derived grant, private tasks remain outside public discovery, and read
+access grants no unrelated mutation authority. The repeatable `refundExpired` path remains excluded
+under security issue #432.
 
 ## Product evidence events
 
@@ -53,7 +56,7 @@ consent-aware durable analytics adapter subscribes to these events.
 The release candidate is gated through the repository Makefile:
 
 - `make test shared`
-- `make test backend`
+- `make test backend` — 82 files and 1,150 tests passed after the ADR-0042 embodiment
 - `make test web`
 - `make test storybook`
 - `make build web`
@@ -68,15 +71,22 @@ The release candidate is gated through the repository Makefile:
 - `make adr-audit`
 - isolated-port `make ui-ci`
 
+The evaluator, evaluator-timeout, and visibility smoke scenarios now require distinct decision
+actors, assert role-specific Action Inbox transitions, exercise rejected and stale attempts, and
+cover assigned evaluator/resolver reads of a private task with `never` submissions. These live smoke
+changes have not been executed in this workspace: its process on `localhost:3000` is an unrelated
+application rather than the matching Taskmarket backend. They remain a release gate against a
+fresh matching stack or the updated PR preview.
+
 ## Known release exclusions
 
 - Production Playwright runs without Privy configuration, so real wallet signing and X402 payment
   are covered by component tests and Storybook interaction tests rather than synthetic injected
   browser wallets. Route-level Playwright covers publication, focused settlement/rating, disconnected
   count safety, and News preservation.
-- Restricted evaluator and dispute-resolver evidence access is proposed in ADR-0042 and must not ship
-  until a human accepts that visibility expansion. Public-submission evaluator controls and all
-  permissionless or requester-owned evaluator transitions are covered now.
+- The accepted evaluator and dispute-resolver evidence policy is covered by predicate, router, and
+  migrated-database integration tests, but its new live visibility and distinct-actor lifecycle
+  smoke scenarios still need the matching-stack run described above.
 - Cross-wallet and cross-session submission-to-review timing is not measurable with the current
   memory-only event stream. Shipping a durable analytics sink requires separate consent and retention
   approval; release claims are limited to same-session interaction timing.

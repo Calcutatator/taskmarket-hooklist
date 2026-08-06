@@ -149,6 +149,8 @@ function visibleLatestSubmissionWorker(
     id: string;
     requester: string;
     claimedBy: string | null;
+    evaluator: string | null;
+    disputeResolver: string | null;
     taskVisibility: string;
     status: string;
     verdictType: string | null;

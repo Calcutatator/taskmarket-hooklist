@@ -1,10 +1,10 @@
 'use client';
 
-import type { TaskDetailResponse } from '@taskmarket/shared';
+import type { SubmissionResponse, TaskDetailResponse } from '@taskmarket/shared';
 import { useEffect, useState, type ComponentProps } from 'react';
 import { useAccount } from 'wagmi';
 
-import { TaskDetailPanel } from '@/components/market/tasks';
+import { TaskDetailPanel, type TaskModeData } from '@/components/market/tasks';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { getCachedReadAuthAddress, getCachedReadAuthHeaders } from '@/lib/read-auth';
 import { useReadAuthSignatureState } from '@/lib/use-read-auth-signature';
@@ -13,6 +13,7 @@ type TaskDetailPanelProps = ComponentProps<typeof TaskDetailPanel>;
 
 type CallerProjection = {
   address: string;
+  modeData: TaskModeData | undefined;
   sourceTask: TaskDetailPanelProps['task'];
   task: TaskDetailResponse;
 };
@@ -37,6 +38,13 @@ export function CallerScopedTaskDetail(props: TaskDetailPanelProps) {
     callerProjection.sourceTask === props.task
       ? callerProjection.task
       : props.task;
+  const visibleModeData =
+    readAuth.ready &&
+    callerProjection !== null &&
+    callerProjection.address === normalizedAddress &&
+    callerProjection.sourceTask === props.task
+      ? callerProjection.modeData
+      : props.modeData;
 
   useEffect(() => {
     if (!isConnected || !address || !readAuth.ready) return;
@@ -50,10 +58,11 @@ export function CallerScopedTaskDetail(props: TaskDetailPanelProps) {
 
     async function hydrateCallerProjection() {
       try {
+        const headers = { accept: 'application/json', ...getCachedReadAuthHeaders() };
         const response = await fetch(
           `${getBrowserApiBaseUrl()}/api/tasks/${encodeURIComponent(sourceTask.id)}`,
           {
-            headers: { accept: 'application/json', ...getCachedReadAuthHeaders() },
+            headers,
             signal: controller.signal,
           }
         );
@@ -61,7 +70,28 @@ export function CallerScopedTaskDetail(props: TaskDetailPanelProps) {
 
         const task = (await response.json()) as TaskDetailResponse | null;
         if (!active || !task) return;
-        setCallerProjection({ address: requestedAddress, sourceTask, task });
+
+        let modeData = props.modeData;
+        const needsDecisionEvidence = task.pendingActions?.some(
+          (action) => action.action === 'evaluate' || action.action === 'resolve_dispute'
+        );
+        if (needsDecisionEvidence) {
+          const evidenceResponse = await fetch(
+            `${getBrowserApiBaseUrl()}/api/tasks/${encodeURIComponent(
+              sourceTask.id
+            )}/submissions?includePreviewUrls=media`,
+            { headers, signal: controller.signal }
+          );
+          if (evidenceResponse.ok) {
+            const submissions = (await evidenceResponse.json()) as SubmissionResponse[];
+            if (Array.isArray(submissions)) {
+              modeData = { ...modeData, submissions };
+            }
+          }
+        }
+
+        if (!active) return;
+        setCallerProjection({ address: requestedAddress, modeData, sourceTask, task });
       } catch {
         // Caller enrichment is optional. The anonymous SSR task remains usable.
       }
@@ -72,7 +102,7 @@ export function CallerScopedTaskDetail(props: TaskDetailPanelProps) {
       active = false;
       controller.abort();
     };
-  }, [address, isConnected, props.task, readAuth.ready]);
+  }, [address, isConnected, props.modeData, props.task, readAuth.ready]);
 
-  return <TaskDetailPanel {...props} task={visibleTask} />;
+  return <TaskDetailPanel {...props} modeData={visibleModeData} task={visibleTask} />;
 }

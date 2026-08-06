@@ -44,8 +44,8 @@ vi.mock('@/lib/use-read-auth-signature', () => ({
   }),
 }));
 
-vi.mock('@/components/market/tasks', () => ({
-  TaskDetailPanel: () => <div>Task detail</div>,
+vi.mock('@/components/market/caller-scoped-task-detail', () => ({
+  CallerScopedTaskDetail: () => <div>Task detail</div>,
 }));
 
 import { PrivateTaskAccessGate } from './private-task-access-gate';

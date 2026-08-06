@@ -201,5 +201,5 @@ adrs:
   - number: "0042"
     file: "0042-assigned-evaluators-and-resolvers-can-view-evidence.md"
     title: Assigned evaluators and dispute resolvers can view task evidence
-    status: Proposed
-    date: "2026-08-06"
+    status: Accepted
+    date: "2026-08-07"

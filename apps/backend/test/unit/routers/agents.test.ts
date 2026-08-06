@@ -682,7 +682,7 @@ describe('agents router', () => {
       expect(contractGetContestAppealState).toHaveBeenCalledOnce();
     });
 
-    it('suppresses unsupported evaluator controls and unsafe expired refunds from totals', async () => {
+    it('queues public evaluator work while suppressing unsafe expired refunds', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-08-06T00:00:00.000Z'));
       const ctx = createMockCtx();
@@ -708,12 +708,118 @@ describe('agents router', () => {
 
       const result = await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
 
-      expect(result.total).toBe(0);
-      expect(result.items).toEqual([]);
+      expect(result.total).toBe(1);
+      expect(result.items).toEqual([
+        expect.objectContaining({
+          id: 'task-evaluate:evaluate_work',
+          intent: 'evaluate_work',
+          role: 'evaluator',
+          priority: 'required',
+        }),
+      ]);
       expect(result.waiting).toEqual([
         expect.objectContaining({
           id: 'task-refund:waiting_for_settlement',
           reason: 'waiting_for_settlement',
+        }),
+      ]);
+    });
+
+    it('queues private restricted-evidence work only for the authenticated assigned resolver', async () => {
+      const ctx = createMockCtx(undefined, { address: ADDR.toLowerCase() });
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            makeActionQueueTask({
+              id: 'task-private-dispute',
+              requester: '0xRequester',
+              status: 'disputed',
+              taskVisibility: 'private',
+              submissionVisibility: 'never',
+              disputeResolver: ADDR,
+            }),
+          ])
+        )
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+      expect(result).toMatchObject({ total: 1, urgentTotal: 0, waiting: [] });
+      expect(result.items).toEqual([
+        expect.objectContaining({
+          id: 'task-private-dispute:resolve_dispute',
+          intent: 'resolve_dispute',
+          role: 'dispute_resolver',
+          priority: 'required',
+        }),
+      ]);
+    });
+
+    it('marks an elapsed availableAfter action urgent without inventing a dueAt cutoff', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-06T00:00:00.000Z'));
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            makeActionQueueTask({
+              id: 'task-evaluator-timeout',
+              status: 'review',
+              requester: ADDR,
+              evaluator: '0xEvaluator',
+              evaluatorDeadline: new Date('2026-08-05T23:59:00.000Z'),
+            }),
+          ])
+        )
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+      expect(result).toMatchObject({ total: 1, urgentTotal: 1 });
+      expect(result.items[0]).toMatchObject({
+        id: 'task-evaluator-timeout:evaluate_work',
+        intent: 'evaluate_work',
+        priority: 'urgent',
+        dueAt: null,
+      });
+    });
+
+    it('keeps a future availableAfter action out of totals and urgency', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-06T00:00:00.000Z'));
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            makeActionQueueTask({
+              id: 'task-future-timeout',
+              status: 'review',
+              requester: ADDR,
+              evaluator: '0xEvaluator',
+              evaluatorDeadline: new Date('2026-08-07T00:00:00.000Z'),
+            }),
+          ])
+        )
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+      expect(result).toMatchObject({ total: 0, urgentTotal: 0 });
+      expect(result.items).toEqual([]);
+      expect(result.waiting).toEqual([
+        expect.objectContaining({
+          id: 'task-future-timeout:waiting_for_evaluator',
+          dueAt: '2026-08-07T00:00:00.000Z',
         }),
       ]);
     });

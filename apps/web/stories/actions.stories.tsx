@@ -159,6 +159,24 @@ const restrictedEvaluatorConfig = createConfig({
   },
 });
 
+const restrictedAuthorizedEvaluatorConfig = createConfig({
+  chains: [base, baseSepolia],
+  connectors: [mock({ accounts: [addresses.requester] })],
+  transports: {
+    [base.id]: http(),
+    [baseSepolia.id]: http(),
+  },
+});
+
+const privateTaskEvaluatorConfig = createConfig({
+  chains: [base, baseSepolia],
+  connectors: [mock({ accounts: [addresses.requester] })],
+  transports: {
+    [base.id]: http(),
+    [baseSepolia.id]: http(),
+  },
+});
+
 const wrongEvaluatorConfig = createConfig({
   chains: [base, baseSepolia],
   connectors: [mock({ accounts: [addresses.requester] })],
@@ -587,7 +605,7 @@ export const SuccessfulLifecycleCompletion: Story = {
   },
 };
 
-export const RestrictedDecisionActionsBlocked: Story = {
+export const RestrictedDecisionEvidenceUnavailable: Story = {
   parameters: { a11y: { test: 'error' } },
   render: () => (
     <ConnectedEvaluationWallet config={restrictedEvaluatorConfig}>
@@ -611,6 +629,55 @@ export const RestrictedDecisionActionsBlocked: Story = {
     await expect(canvas.getByText(/until the submitted evidence is visible/i)).toBeVisible();
     await expect(canvas.queryByRole('button', { name: 'Submit evaluation' })).toBeNull();
     await expect(canvas.queryByRole('button', { name: 'Resolve dispute' })).toBeNull();
+  },
+};
+
+export const RestrictedDecisionEvidenceAuthorized: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <ConnectedEvaluationWallet config={restrictedAuthorizedEvaluatorConfig}>
+      <div className="max-w-2xl">
+        <TaskActionsPanel
+          emptyReason="No evaluator actions are available."
+          evidenceReady
+          pendingActions={[evaluateAction]}
+          requester={publicEvaluationTask.requester}
+          task={{ ...publicEvaluationTask, submissionVisibility: 'never' }}
+        />
+      </div>
+    </ConnectedEvaluationWallet>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByRole('status', { name: 'Confidential evidence access' })
+    ).toHaveTextContent(/current evaluator assignment grants access to every submitted item/i);
+    await expect(canvas.getByText(/does not publish the task or submissions/i)).toBeVisible();
+    await expect(canvas.getByRole('button', { name: 'Submit evaluation' })).toBeVisible();
+  },
+};
+
+export const PrivateTaskDecisionEvidenceAuthorized: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <ConnectedEvaluationWallet config={privateTaskEvaluatorConfig}>
+      <div className="max-w-2xl">
+        <TaskActionsPanel
+          emptyReason="No evaluator actions are available."
+          evidenceReady
+          pendingActions={[evaluateAction]}
+          requester={publicEvaluationTask.requester}
+          task={{ ...publicEvaluationTask, taskVisibility: 'private' }}
+        />
+      </div>
+    </ConnectedEvaluationWallet>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByRole('status', { name: 'Confidential evidence access' })
+    ).toHaveTextContent(/current evaluator assignment grants access to every submitted item/i);
+    await expect(canvas.getByRole('button', { name: 'Submit evaluation' })).toBeVisible();
   },
 };
 

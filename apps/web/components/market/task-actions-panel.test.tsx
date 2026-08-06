@@ -267,7 +267,7 @@ describe('TaskActionsPanel', () => {
   });
 
   it.each(['evaluate', 'resolve_dispute'] as const)(
-    'fails closed for %s when submission evidence is restricted',
+    'shows restricted %s only to its assigned role after evidence is ready',
     (actionName) => {
       const restrictedAction = {
         action: actionName,
@@ -277,7 +277,7 @@ describe('TaskActionsPanel', () => {
       account.address =
         (actionName === 'evaluate' ? task.evaluator : task.disputeResolver) ?? undefined;
 
-      render(
+      const { rerender } = render(
         <TaskActionsPanel
           emptyReason="none"
           pendingActions={[restrictedAction]}
@@ -290,8 +290,52 @@ describe('TaskActionsPanel', () => {
         screen.queryByRole('button', { name: /run evaluate|run resolve dispute/i })
       ).not.toBeInTheDocument();
       expect(screen.getByText('Decision evidence unavailable')).toBeInTheDocument();
+
+      rerender(
+        <TaskActionsPanel
+          emptyReason="none"
+          evidenceReady
+          pendingActions={[restrictedAction]}
+          requester={task.requester}
+          task={{ ...task, submissionVisibility: 'never' }}
+        />
+      );
+
+      expect(
+        screen.getByRole('button', { name: /run evaluate|run resolve dispute/i })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('status', { name: 'Confidential evidence access' })
+      ).toHaveTextContent(/current (evaluator|dispute resolver) assignment/i);
+      expect(
+        screen.getByRole('status', { name: 'Confidential evidence access' })
+      ).toHaveTextContent(/does not publish the task or submissions/i);
     }
   );
+
+  it('discloses evaluator role access when the task is private and submissions are public', () => {
+    const evaluateAction = {
+      action: 'evaluate',
+      role: 'evaluator',
+      command: 'tm evaluate',
+    } as PendingAction;
+    account.address = task.evaluator ?? undefined;
+
+    render(
+      <TaskActionsPanel
+        emptyReason="none"
+        evidenceReady
+        pendingActions={[evaluateAction]}
+        requester={task.requester}
+        task={{ ...task, taskVisibility: 'private' }}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /run evaluate/i })).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Confidential evidence access' })).toHaveTextContent(
+      /does not publish the task or submissions/i
+    );
+  });
 
   it('fails closed while public evidence has not loaded', () => {
     const evaluateAction = {

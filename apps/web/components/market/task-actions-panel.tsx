@@ -82,7 +82,6 @@ export function TaskActionsPanel({
       evidenceReady,
       evaluator: task.evaluator,
       requester,
-      submissionVisibility: task.submissionVisibility,
       worker,
     })
   );
@@ -96,6 +95,12 @@ export function TaskActionsPanel({
   const hasEvidenceAction = pendingActions.some(
     (action) => action.action === 'evaluate' || action.action === 'resolve_dispute'
   );
+  const restrictedEvidenceRole =
+    task.taskVisibility === 'private' || task.submissionVisibility !== 'public'
+      ? visibleActions.find(
+          (action) => action.action === 'evaluate' || action.action === 'resolve_dispute'
+        )?.role
+      : undefined;
   const evidenceUnavailable = hasEvidenceAction && evidenceReady !== true;
   const emptyTitle = evidenceUnavailable
     ? 'Decision evidence unavailable'
@@ -116,6 +121,24 @@ export function TaskActionsPanel({
         {title}
       </h2>
       <div className="grid gap-3">
+        {restrictedEvidenceRole ? (
+          <div
+            aria-label="Confidential evidence access"
+            className="grid gap-1 rounded-lg border border-primary/35 bg-primary/8 p-3"
+            role="status"
+          >
+            <p className="text-sm font-semibold tracking-tight text-foreground">
+              Confidential evidence access
+            </p>
+            <p className="text-xs leading-5 text-muted-foreground">
+              Your current{' '}
+              {restrictedEvidenceRole === 'dispute_resolver' ? 'dispute resolver' : 'evaluator'}{' '}
+              assignment grants access to every submitted item for this decision. Access ends if the
+              role is cleared. It does not publish the task or submissions, and it grants no task
+              actions beyond those assigned to you.
+            </p>
+          </div>
+        ) : null}
         {ratingProgress ? (
           <div
             aria-label="Rating progress"
@@ -161,7 +184,6 @@ export function TaskActionsPanel({
               evidenceReady,
               evaluator: task.evaluator,
               requester,
-              submissionVisibility: task.submissionVisibility,
               worker,
             });
             const blockedByFunding = Boolean(actionFundingPrompt && isPaidAction(action));

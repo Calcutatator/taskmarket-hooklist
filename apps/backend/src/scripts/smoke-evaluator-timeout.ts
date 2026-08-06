@@ -5,22 +5,37 @@
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
+ *     EVALUATOR_PRIVATE_KEY=0x... WORKER_B_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-evaluator-timeout.ts
  */
 import { createHash } from 'crypto';
 import { buildSubmitMessage } from '@taskmarket/shared';
-import { log, ok, get, post, x402Post, getAccounts, API_URL, pollTaskStatus, sleep } from './_x402';
+import {
+  log,
+  ok,
+  get,
+  post,
+  x402Post,
+  API_URL,
+  pollTaskStatus,
+  sleep,
+  nudgeChainForward,
+  expectActionQueueIntent,
+  expectRejected,
+  getEvaluatorAccounts,
+} from './_x402';
 
 function contentHash(payload: string): string {
   return createHash('sha256').update(Buffer.from(payload)).digest('hex');
 }
 
 async function main() {
-  const { requester, worker } = getAccounts();
+  const { requester, worker, evaluator } = getEvaluatorAccounts();
 
   console.log('=== Taskmarket Smoke Test — Evaluator Timeout ===');
   console.log('requester:', requester.address);
   console.log('worker:   ', worker.address);
+  console.log('evaluator:', evaluator.address);
   console.log('api:      ', API_URL);
 
   // 1. Create claim task with evaluator assigned and a 5-second evaluation window.
@@ -33,7 +48,7 @@ async function main() {
       duration: 300,
       mode: 'claim',
       tags: ['smoke-evaluator-timeout'],
-      evaluator: requester.address,
+      evaluator: evaluator.address,
       evaluationWindowHours: 0.00139, // ~5 seconds
       appealWindowHours: 1,
     },
@@ -81,10 +96,20 @@ async function main() {
     timeoutMs: 45_000,
   });
   ok('status after submit', reviewTask.status);
+  await expectActionQueueIntent(taskId, evaluator, 'evaluate_work', true);
+  await expectRejected('early evaluator timeout', () =>
+    x402Post(`/api/tasks/${taskId}/evaluator-timeout`, { taskId }, requester)
+  );
 
   // 5. Wait for evaluation window to expire (~5 seconds).
   log('5/7', 'Waiting 7s for evaluation window to expire...');
   await sleep(7000);
+  await nudgeChainForward();
+
+  await expectActionQueueIntent(taskId, requester, 'evaluate_work', true);
+  await expectRejected('wrong requester timeout', () =>
+    x402Post(`/api/tasks/${taskId}/evaluator-timeout`, { taskId }, evaluator)
+  );
 
   // 6. Trigger evaluator timeout.
   log('6/7', 'Triggering evaluator timeout...');
@@ -97,12 +122,19 @@ async function main() {
 
   // 7. Verify task is back in pending_approval.
   log('7/7', 'Verifying task status...');
-  await sleep(2000);
-  const finalTask = (await get(`/api/tasks/${taskId}`)) as { status: string };
-  if (finalTask.status !== 'pending_approval') {
-    throw new Error(`Expected pending_approval, got ${finalTask.status}`);
-  }
+  const finalTask = await pollTaskStatus<{ status: string }>(taskId, ['pending_approval'], {
+    timeoutMs: 45_000,
+  });
   ok('final status', finalTask.status);
+  await expectActionQueueIntent(taskId, requester, 'evaluate_work', false);
+  await expectActionQueueIntent(taskId, evaluator, 'evaluate_work', false);
+  await expectRejected('stale evaluator verdict', () =>
+    x402Post(
+      `/api/tasks/${taskId}/evaluate`,
+      { taskId, verdict: 'approve', score: 900, confidence: 900 },
+      evaluator
+    )
+  );
 
   console.log('\nSmoke test passed.');
 }

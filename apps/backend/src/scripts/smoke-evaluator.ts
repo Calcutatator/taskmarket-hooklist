@@ -1,5 +1,5 @@
 /**
- * Evaluator flow smoke test — three scenarios:
+ * Evaluator flow smoke test — three scenarios with four distinct actors:
  *   A. APPROVE verdict, no appeal, finalize → completed
  *   B. REJECT verdict, no appeal, finalize → cancelled (refund + terminate,
  *      not reopened — see EvaluatorFacet.finalizeVerdict's REJECT branch)
@@ -7,6 +7,7 @@
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
+ *     EVALUATOR_PRIVATE_KEY=0x... WORKER_B_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-evaluator.ts
  */
 import { createHash } from 'crypto';
@@ -22,7 +23,12 @@ import {
   pollTaskStatus,
   sleep,
   nudgeChainForward,
+  expectActionQueueIntent,
+  expectRejected,
+  getEvaluatorAccounts,
 } from './_x402';
+
+type SmokeAccount = ReturnType<typeof getAccounts>['requester'];
 
 function contentHash(payload: string): string {
   return createHash('sha256').update(Buffer.from(payload)).digest('hex');
@@ -54,11 +60,21 @@ async function runScenario(label: string, fn: () => Promise<void>): Promise<bool
 async function setupReviewTask(opts: {
   requester: ReturnType<typeof getAccounts>['requester'];
   worker: ReturnType<typeof getAccounts>['worker'];
+  evaluator: SmokeAccount;
+  resolver: SmokeAccount;
   label: string;
   evaluationWindowHours: number;
   appealWindowHours: number;
 }): Promise<string> {
-  const { requester, worker, label, evaluationWindowHours, appealWindowHours } = opts;
+  const {
+    requester,
+    worker,
+    evaluator,
+    resolver,
+    label,
+    evaluationWindowHours,
+    appealWindowHours,
+  } = opts;
 
   log('1/5', `[${label}] Creating claim task with evaluator...`);
   const { taskId } = (await x402Post(
@@ -69,8 +85,8 @@ async function setupReviewTask(opts: {
       duration: 300,
       mode: 'claim',
       tags: ['smoke-evaluator'],
-      evaluator: requester.address,
-      disputeResolver: requester.address,
+      evaluator: evaluator.address,
+      disputeResolver: resolver.address,
       evaluationWindowHours,
       appealWindowHours,
     },
@@ -126,16 +142,29 @@ async function setupReviewTask(opts: {
 
 // --- Scenario A: APPROVE verdict, no appeal, finalize → completed ---
 async function scenarioA(
-  requester: ReturnType<typeof getAccounts>['requester'],
-  worker: ReturnType<typeof getAccounts>['worker']
+  requester: SmokeAccount,
+  worker: SmokeAccount,
+  evaluator: SmokeAccount,
+  resolver: SmokeAccount
 ) {
   const taskId = await setupReviewTask({
     requester,
     worker,
+    evaluator,
+    resolver,
     label: 'A',
     evaluationWindowHours: 0.00139, // ~5 seconds
     appealWindowHours: 0.00139, // ~5 seconds
   });
+
+  await expectActionQueueIntent(taskId, evaluator, 'evaluate_work', true);
+  await expectRejected('wrong evaluator', () =>
+    x402Post(
+      `/api/tasks/${taskId}/evaluate`,
+      { taskId, verdict: 'approve', score: 900, confidence: 950 },
+      requester
+    )
+  );
 
   log('5/8', '[A] Evaluator submitting APPROVE verdict...');
   const { txHash: evalTx } = (await x402Post(
@@ -146,17 +175,25 @@ async function scenarioA(
       score: 900,
       confidence: 950,
     },
-    requester
+    evaluator
   )) as { txHash: string };
   ok('evaluate txHash', evalTx);
 
   const afterEval = await pollStatus(taskId, ['appealing']);
   ok('status after evaluate', afterEval);
+  await expectActionQueueIntent(taskId, evaluator, 'evaluate_work', false);
+  await expectActionQueueIntent(taskId, worker, 'appeal_verdict', true);
+  await expectRejected('early finalize', () =>
+    post(`/api/tasks/${taskId}/finalize-verdict`, { taskId })
+  );
 
   log('6/8', '[A] Waiting 8s for appeal window to expire...');
   await sleep(8000);
   // Syncs Anvil's frozen block.timestamp forward -- see nudgeChainForward in _x402.ts.
   await nudgeChainForward();
+  await expectRejected('appeal after its deadline', () =>
+    x402Post(`/api/tasks/${taskId}/appeal`, { taskId }, worker)
+  );
 
   log('7/8', '[A] Calling finalizeVerdict (permissionless)...');
   const { txHash: finalizeTx } = (await post(`/api/tasks/${taskId}/finalize-verdict`, {
@@ -167,16 +204,24 @@ async function scenarioA(
   log('8/8', '[A] Polling for completed status...');
   const finalStatus = await pollStatus(taskId, ['completed', 'accepted']);
   ok('final status', finalStatus);
+  await expectActionQueueIntent(taskId, worker, 'appeal_verdict', false);
+  await expectRejected('duplicate finalize', () =>
+    post(`/api/tasks/${taskId}/finalize-verdict`, { taskId })
+  );
 }
 
 // --- Scenario B: REJECT verdict, no appeal, finalize → cancelled ---
 async function scenarioB(
-  requester: ReturnType<typeof getAccounts>['requester'],
-  worker: ReturnType<typeof getAccounts>['worker']
+  requester: SmokeAccount,
+  worker: SmokeAccount,
+  evaluator: SmokeAccount,
+  resolver: SmokeAccount
 ) {
   const taskId = await setupReviewTask({
     requester,
     worker,
+    evaluator,
+    resolver,
     label: 'B',
     evaluationWindowHours: 0.00139, // ~5 seconds
     appealWindowHours: 0.00139, // ~5 seconds
@@ -191,7 +236,7 @@ async function scenarioB(
       score: 0,
       confidence: 900,
     },
-    requester
+    evaluator
   )) as { txHash: string };
   ok('evaluate txHash', evalTx);
 
@@ -212,16 +257,21 @@ async function scenarioB(
   log('8/8', '[B] Polling for cancelled status (task terminates after REJECT)...');
   const finalStatus = await pollStatus(taskId, ['cancelled']);
   ok('final status', finalStatus);
+  await expectActionQueueIntent(taskId, evaluator, 'evaluate_work', false);
 }
 
 // --- Scenario C: APPROVE verdict, worker appeals, dispute resolver settles → completed ---
 async function scenarioC(
-  requester: ReturnType<typeof getAccounts>['requester'],
-  worker: ReturnType<typeof getAccounts>['worker']
+  requester: SmokeAccount,
+  worker: SmokeAccount,
+  evaluator: SmokeAccount,
+  resolver: SmokeAccount
 ) {
   const taskId = await setupReviewTask({
     requester,
     worker,
+    evaluator,
+    resolver,
     label: 'C',
     evaluationWindowHours: 0.00139, // ~5 seconds
     appealWindowHours: 0.01, // ~36 seconds — long enough for worker to appeal
@@ -236,12 +286,16 @@ async function scenarioC(
       score: 700,
       confidence: 800,
     },
-    requester
+    evaluator
   )) as { txHash: string };
   ok('evaluate txHash', evalTx);
 
   const afterEval = await pollStatus(taskId, ['appealing']);
   ok('status after evaluate', afterEval);
+
+  await expectRejected('wrong appellant', () =>
+    x402Post(`/api/tasks/${taskId}/appeal`, { taskId }, requester)
+  );
 
   log('6/9', '[C] Waiting 7s for evaluation window to expire (appeal window still open)...');
   await sleep(7000);
@@ -256,6 +310,18 @@ async function scenarioC(
 
   const afterAppeal = await pollStatus(taskId, ['disputed']);
   ok('status after appeal', afterAppeal);
+  await expectActionQueueIntent(taskId, resolver, 'resolve_dispute', true);
+  await expectRejected('wrong dispute resolver', () =>
+    x402Post(
+      `/api/tasks/${taskId}/resolve-dispute`,
+      {
+        taskId,
+        verdict: 'approve',
+        awards: [{ worker: worker.address, amount: '900', rank: 1 }],
+      },
+      evaluator
+    )
+  );
 
   log('8/9', '[C] Dispute resolver settling dispute (APPROVE, partial award)...');
   const { txHash: resolveTx } = (await x402Post(
@@ -265,41 +331,55 @@ async function scenarioC(
       verdict: 'approve',
       awards: [{ worker: worker.address, amount: '900', rank: 1 }],
     },
-    requester
+    resolver
   )) as { txHash: string };
   ok('resolve txHash', resolveTx);
 
   log('9/9', '[C] Polling for completed status...');
   const finalStatus = await pollStatus(taskId, ['completed', 'accepted']);
   ok('final status', finalStatus);
+  await expectActionQueueIntent(taskId, resolver, 'resolve_dispute', false);
+  await expectRejected('duplicate dispute resolution', () =>
+    x402Post(
+      `/api/tasks/${taskId}/resolve-dispute`,
+      {
+        taskId,
+        verdict: 'approve',
+        awards: [{ worker: worker.address, amount: '900', rank: 1 }],
+      },
+      resolver
+    )
+  );
 }
 
 async function main() {
-  const { requester, worker } = getAccounts();
+  const { requester, worker, evaluator, resolver } = getEvaluatorAccounts();
 
   console.log('=== Taskmarket Smoke Test — Evaluator Flow ===');
   console.log('requester:', requester.address);
   console.log('worker:   ', worker.address);
+  console.log('evaluator:', evaluator.address);
+  console.log('resolver: ', resolver.address);
   console.log('api:      ', API_URL);
 
   const results: boolean[] = [];
 
   results.push(
     await runScenario('A — APPROVE verdict, no appeal, finalize → completed', () =>
-      scenarioA(requester, worker)
+      scenarioA(requester, worker, evaluator, resolver)
     )
   );
 
   results.push(
     await runScenario('B — REJECT verdict, no appeal, finalize → cancelled', () =>
-      scenarioB(requester, worker)
+      scenarioB(requester, worker, evaluator, resolver)
     )
   );
 
   results.push(
     await runScenario(
       'C — APPROVE verdict, worker appeals, dispute resolver settles → completed',
-      () => scenarioC(requester, worker)
+      () => scenarioC(requester, worker, evaluator, resolver)
     )
   );
 

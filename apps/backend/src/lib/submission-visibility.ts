@@ -1,6 +1,12 @@
 // Implements: ADR-0021 (cancelled+REJECT verdict counts as ended)
+// Implements: ADR-0042 (assigned evaluators/resolvers can read all task evidence)
 import type { Caller } from '../context';
-import { canView, type CanViewTask, type TaskViewabilityContext } from './task-visibility';
+import {
+  canView,
+  isAssignedEvidenceViewer,
+  type CanViewTask,
+  type TaskViewabilityContext,
+} from './task-visibility';
 
 export type SubmissionVisibilityMode = 'public' | 'reveal_all' | 'winner_only' | 'never';
 
@@ -62,6 +68,8 @@ export function isSubmittingWorker(
  * Truth table (see the RFC's "Time + role gated reveal" section):
  *   - Requester or the submission's own submitting worker: always visible, regardless
  *     of task visibility or submission-visibility mode.
+ *   - Current evaluator or dispute resolver: every submission is visible, regardless of
+ *     submission-visibility mode, provided the role assignment still exists.
  *   - Anyone else on a task not viewable by caller (per canView): never visible.
  *   - public (once the task itself is viewable): always visible.
  *   - Active task (not yet ended): nobody else sees it, regardless of mode.
@@ -92,6 +100,8 @@ export function canViewSubmission(params: {
 
   if (isRequester(caller, task)) return true;
   if (isSubmittingWorker(caller, submission)) return true;
+
+  if (isAssignedEvidenceViewer(task, caller)) return true;
 
   if (!canView(task, caller, taskViewability)) return false;
 

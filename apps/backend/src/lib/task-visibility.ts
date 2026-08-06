@@ -1,4 +1,5 @@
 // Implements: ADR-0014 (public-by-default task visibility, unlisted/private opt-in)
+// Implements: ADR-0042 (assigned evaluators/resolvers are scoped evidence viewers)
 import { eq, inArray, notInArray, sql } from 'drizzle-orm';
 import type { db as DbType } from '../db/client';
 import { taskAllowedViewers, taskAwards, tasks, type Task } from '../db/schema';
@@ -28,6 +29,8 @@ export type CanViewTask = {
   taskVisibility: string;
   requester: string;
   claimedBy: string | null;
+  evaluator: string | null;
+  disputeResolver: string | null;
 };
 
 export type TaskViewabilityContext = {
@@ -35,6 +38,18 @@ export type TaskViewabilityContext = {
   allowedViewerAddresses?: ReadonlySet<string>;
   awardedWorkerAddresses?: ReadonlySet<string>;
 };
+
+export function isAssignedEvidenceViewer(
+  task: Pick<CanViewTask, 'evaluator' | 'disputeResolver'>,
+  caller: Caller | undefined
+): boolean {
+  if (!caller) return false;
+  const address = caller.address.toLowerCase();
+  return (
+    (!!task.evaluator && address === task.evaluator.toLowerCase()) ||
+    (!!task.disputeResolver && address === task.disputeResolver.toLowerCase())
+  );
+}
 
 /**
  * Can `caller` (or a presented password-access grant) view this task at all? This is
@@ -55,6 +70,7 @@ export type TaskViewabilityContext = {
  *     - true if caller's address is in a `task_awards` row for this task (post-completion
  *       worker; a task can have more than one row under ranked-payout settlement)
  *     - true if caller's address is in the task's wallet allowlist
+ *     - true if caller is the currently assigned evaluator or dispute resolver
  *     - else false
  */
 // Implements: ADR-0030 (private task allowlist + password + grant predicate)
@@ -71,6 +87,7 @@ export function canView(
   const address = caller.address.toLowerCase();
   if (address === task.requester.toLowerCase()) return true;
   if (task.claimedBy && address === task.claimedBy.toLowerCase()) return true;
+  if (isAssignedEvidenceViewer(task, caller)) return true;
   if (context?.awardedWorkerAddresses?.has(address)) return true;
   if (context?.allowedViewerAddresses?.has(address)) return true;
   return false;

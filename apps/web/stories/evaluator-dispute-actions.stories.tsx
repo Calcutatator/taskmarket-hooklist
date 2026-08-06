@@ -18,6 +18,7 @@ import {
   ResolveDisputeButton,
 } from '@/components/market/actions/evaluator-actions';
 import { SubmissionCard } from '@/components/market/tasks';
+import { TaskActionsPanel } from '@/components/market/task-actions-panel';
 import { VerdictEvidencePanel } from '@/components/market/verdict-evidence-panel';
 
 import { addresses, artifactFixture, submissionFixture, taskDetailFixture } from './fixtures';
@@ -307,6 +308,38 @@ export const EvaluatorVerdictValidationAndConfirmation: Story = {
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Submit evaluation' }));
     await expect(await canvas.findByText(/evidence hash is required/i)).toBeVisible();
+  },
+};
+
+export const RestrictedEvaluatorEvidenceAccess: Story = {
+  render: () => {
+    const task = evaluationTask({ submissionVisibility: 'never' });
+    return (
+      <StoryWallet address={addresses.evaluator}>
+        <DecisionSurface
+          actionControl={
+            <TaskActionsPanel
+              emptyReason="No evaluator actions are available."
+              evidenceReady
+              pendingActions={[action('evaluate', 'evaluator', task.id)]}
+              requester={task.requester}
+              task={task}
+            />
+          }
+          task={task}
+        />
+      </StoryWallet>
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('region', { name: 'Submitted evidence' })).toHaveTextContent(
+      'evaluator-deliverable.pdf'
+    );
+    await expect(
+      canvas.getByRole('status', { name: 'Confidential evidence access' })
+    ).toHaveTextContent(/access ends if the role is cleared/i);
+    await expect(canvas.getByRole('button', { name: 'Submit evaluation' })).toBeVisible();
   },
 };
 

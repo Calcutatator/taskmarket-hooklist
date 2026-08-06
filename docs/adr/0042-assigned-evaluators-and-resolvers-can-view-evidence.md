@@ -7,17 +7,17 @@
 > evidence-aware verdict flow without requiring requesters to duplicate role assignment in an
 > allowlist, accepting that these roles receive confidential task content solely by being assigned.
 
-- **Status:** Proposed
-- **Date:** 2026-08-06
-- **Embodiment:** Not started
-- **Last audited:** 2026-08-06
+- **Status:** Accepted
+- **Date:** 2026-08-07
+- **Embodiment:** Verified
+- **Last audited:** 2026-08-07
 - **Author:** Codex
 - **Reviewers:** Codex — self-attested; no independent reviewer recorded
-- **Deciders:** —
+- **Deciders:** ponderingdemocritus — human approval in Conductor on 2026-08-07
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Amends ADR-0016 and ADR-0030
+- **Amends / Amended-by:** Amends ADR-0016 and ADR-0030
+- **Pending Amends / Amended-by:** —
 
 ## Context
 
@@ -40,14 +40,19 @@ which preserves the existing visibility model.
 
 | Option | Pros | Cons |
 |---|---|---|
-| Treat configured evaluator and resolver as scoped evidence viewers (proposed) | Role assignment and evidence access agree; works for private tasks and every submission mode; no duplicate requester configuration | Assigning either role grants confidential content access; authorization predicates and tests gain two roles |
+| Treat configured evaluator and resolver as scoped evidence viewers (chosen) | Role assignment and evidence access agree; works for private tasks and every submission mode; no duplicate requester configuration | Assigning either role grants confidential content access; authorization predicates and tests gain two roles |
 | Require requesters to allowlist evaluator and resolver separately (rejected) | No change to existing visibility predicates | Easy to misconfigure; valid mutation authority can still exist without evidence access; password-only access does not bind to the decision wallet |
 | Support evaluator/dispute UI only for public evidence (rejected) | Small implementation | Creates mode-dependent dead ends after task creation and leaves existing backend roles incomplete |
 | Copy evidence into a separate evaluator endpoint (rejected) | Avoids changing general task reads | Duplicates storage and visibility rules, creates a new leak-prone source of truth, and still needs resolver authorization |
 
 ## Decision
 
-If accepted, direct task reads will treat the address currently recorded as `task.evaluator` or
+On 2026-08-07, ponderingdemocritus explicitly accepted this boundary: the currently assigned
+evaluator or dispute resolver may read private task content and every restricted submission; the
+grant is revoked when the role is cleared, does not enable public discovery, and conveys no
+additional mutation authority.
+
+Direct task reads treat the address currently recorded as `task.evaluator` or
 `task.disputeResolver` as a scoped participant, alongside the existing requester, assigned worker,
 award recipient, allowlist, and password-grant paths. This does not make the task discoverable in
 public browse/search surfaces and does not grant any unrelated wallet access.

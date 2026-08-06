@@ -163,6 +163,54 @@ describe('CallerScopedTaskDetail', () => {
     expect(signMessageAsync).not.toHaveBeenCalled();
   });
 
+  it('hydrates restricted submissions with the same caller proof as the assigned action', async () => {
+    const restrictedTask = {
+      ...callerTask,
+      evaluator: address,
+      mode: 'bounty',
+      pendingActions: [
+        {
+          action: 'evaluate',
+          command: 'taskmarket task evaluate contest-task',
+          role: 'evaluator',
+        },
+      ],
+      submissionCount: 2,
+      submissionVisibility: 'never',
+    } as TaskDetailResponse;
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ json: async () => restrictedTask, ok: true } as Response)
+      .mockResolvedValueOnce({
+        json: async () => [{ id: 'submission-1' }, { id: 'submission-2' }],
+        ok: true,
+      } as Response);
+
+    render(<CallerScopedTaskDetail modeData={{ submissions: [] }} task={publicTask} />);
+
+    expect(await screen.findByText('2 submissions')).toBeInTheDocument();
+    expect(fetch).toHaveBeenNthCalledWith(1, '/api/tasks/contest-task', {
+      headers: {
+        accept: 'application/json',
+        'X-Taskmarket-Caller-Address': address,
+        'X-Taskmarket-Caller-Signature': '0xinbox-signature',
+      },
+      signal: expect.any(AbortSignal),
+    });
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/tasks/contest-task/submissions?includePreviewUrls=media',
+      {
+        headers: {
+          accept: 'application/json',
+          'X-Taskmarket-Caller-Address': address,
+          'X-Taskmarket-Caller-Signature': '0xinbox-signature',
+        },
+        signal: expect.any(AbortSignal),
+      }
+    );
+    expect(signMessageAsync).not.toHaveBeenCalled();
+  });
+
   it('never renders a late projection from the previous wallet', async () => {
     let resolveFirstFetch: ((response: Response) => void) | undefined;
     vi.mocked(fetch)

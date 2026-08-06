@@ -218,6 +218,27 @@ describe('CreateTaskWizard', () => {
     expect(screen.getByText('0 / 10000')).toBeInTheDocument();
   });
 
+  it('discloses confidential evidence access before reviewer roles are assigned', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await gotoBriefFromCustom(user);
+
+    const disclosure = screen.getByText(/grants that address confidential access/i);
+    expect(disclosure).toHaveTextContent(/private task details and every submission/i);
+    expect(disclosure).toHaveTextContent(/until the role is cleared/i);
+    expect(disclosure).toHaveTextContent(/does not make the task discoverable/i);
+    expect(disclosure).toHaveTextContent(/grant other task actions/i);
+    expect(screen.getByLabelText('Evaluator address')).toHaveAttribute(
+      'aria-describedby',
+      disclosure.id
+    );
+    expect(screen.getByLabelText('Dispute resolver address')).toHaveAttribute(
+      'aria-describedby',
+      disclosure.id
+    );
+  });
+
   it('restores an unfinished task draft after the page is reloaded', async () => {
     const user = userEvent.setup();
     const firstRender = render(<CreateTaskWizard initialMarketStats={null} />);

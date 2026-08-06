@@ -10,15 +10,7 @@ import type {
 import { computePendingActions, type PendingActionTask } from './task';
 
 // Implements: ADR-0041 (the action queue derives from canonical pending actions)
-const BLOCKED_BY_EVIDENCE_VISIBILITY = new Set<PendingAction['action']>([
-  // Assigned evaluators and resolvers cannot yet read restricted evidence.
-  // ADR-0042 must be accepted and implemented before these queue links are safe.
-  'evaluate',
-  'resolve_dispute',
-]);
-
 const SUPPRESSED_ACTIONS = new Set<PendingAction['action']>([
-  ...BLOCKED_BY_EVIDENCE_VISIBILITY,
   // Suppressed until the pooled-escrow vulnerability tracked in issue #432 is fixed.
   'refund_expired',
 ]);
@@ -90,9 +82,18 @@ function earliestDueAt(actions: PendingAction[]): string | null {
 function priorityFor(
   intent: TaskActionIntentValue,
   dueAt: string | null,
+  actions: PendingAction[],
   now: Date
 ): TaskActionPriorityValue {
   if (intent === 'rate_workers') return 'follow_up';
+  if (
+    actions.some(
+      (action) =>
+        action.availableAfter && new Date(action.availableAfter).getTime() <= now.getTime()
+    )
+  ) {
+    return 'urgent';
+  }
   if (dueAt && new Date(dueAt).getTime() <= now.getTime() + 24 * 60 * 60 * 1000) return 'urgent';
   return 'required';
 }
@@ -209,7 +210,7 @@ export function projectActionQueueTask(
       role: actionRole(actions[0]!, item.pendingActionTask, address),
       intent,
       actions,
-      priority: priorityFor(intent, dueAt, now),
+      priority: priorityFor(intent, dueAt, actions, now),
       dueAt,
       progress: progressFor(intent, item.pendingActionTask, actions),
     };

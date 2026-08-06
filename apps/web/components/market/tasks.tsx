@@ -2836,7 +2836,10 @@ export function TaskDetailPanel({
   // loaded submissions), so stripping it here too made the control disappear from the
   // page entirely for that window, not just move surfaces.
   const submissionsLoaded = (modeData?.submissions?.length ?? 0) > 0;
-  const decisionEvidenceReady = submissionsLoaded && task.submissionVisibility === 'public';
+  const decisionEvidenceReady =
+    submissionsLoaded &&
+    (task.submissionCount ?? 0) > 0 &&
+    (modeData?.submissions?.length ?? 0) >= (task.submissionCount ?? 0);
   // Benchmark's optional `task submit` channel (alongside its primary `task proof`
   // flow) already gets real accept/reject_submission pending actions from the
   // backend (contestHasSubmissions), but had no frontend review surface at all.

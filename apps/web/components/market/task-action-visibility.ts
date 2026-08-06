@@ -12,7 +12,6 @@ export type ActionVisibilityParams = {
   evidenceReady?: boolean;
   evaluator?: string | null;
   requester: string;
-  submissionVisibility?: string | null;
   worker?: string | null;
 };
 
@@ -24,15 +23,14 @@ export function canViewAction({
   evidenceReady,
   evaluator,
   requester,
-  submissionVisibility,
   worker,
 }: ActionVisibilityParams) {
   // Evaluation and dispute resolution require inspecting the complete evidence
-  // set. Until role-derived restricted evidence access is approved and shipped,
-  // only explicitly public submissions are safe to act on.
+  // set. `evidenceReady` is established only after the caller-scoped evidence
+  // request succeeds; visibility mode alone must never imply that evidence loaded.
   if (
     (action.action === 'evaluate' || action.action === 'resolve_dispute') &&
-    (submissionVisibility !== 'public' || evidenceReady !== true)
+    evidenceReady !== true
   ) {
     return false;
   }

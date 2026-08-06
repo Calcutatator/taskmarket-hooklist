@@ -819,6 +819,8 @@ export const submissionsRouter = router({
           id: tasks.id,
           requester: tasks.requester,
           claimedBy: tasks.claimedBy,
+          evaluator: tasks.evaluator,
+          disputeResolver: tasks.disputeResolver,
           taskVisibility: tasks.taskVisibility,
           status: tasks.status,
           verdictType: tasks.verdictType,
@@ -986,6 +988,8 @@ export const submissionsRouter = router({
           taskVisibility: tasks.taskVisibility,
           claimedBy: tasks.claimedBy,
           requester: tasks.requester,
+          evaluator: tasks.evaluator,
+          disputeResolver: tasks.disputeResolver,
           status: tasks.status,
           verdictType: tasks.verdictType,
         })
@@ -999,6 +1003,8 @@ export const submissionsRouter = router({
           tasks.taskVisibility,
           tasks.claimedBy,
           tasks.requester,
+          tasks.evaluator,
+          tasks.disputeResolver,
           tasks.status,
           tasks.verdictType
         )
@@ -1266,6 +1272,8 @@ export const submissionsRouter = router({
           id: tasks.id,
           requester: tasks.requester,
           claimedBy: tasks.claimedBy,
+          evaluator: tasks.evaluator,
+          disputeResolver: tasks.disputeResolver,
           taskVisibility: tasks.taskVisibility,
           status: tasks.status,
           verdictType: tasks.verdictType,
@@ -1343,6 +1351,8 @@ export const submissionsRouter = router({
           taskReward: tasks.reward,
           taskRequester: tasks.requester,
           taskClaimedBy: tasks.claimedBy,
+          taskEvaluator: tasks.evaluator,
+          taskDisputeResolver: tasks.disputeResolver,
           taskVisibility: tasks.taskVisibility,
           submissionVisibility: tasks.submissionVisibility,
         })
@@ -1390,6 +1400,8 @@ export const submissionsRouter = router({
             id: row.taskId,
             requester: row.taskRequester,
             claimedBy: row.taskClaimedBy,
+            evaluator: row.taskEvaluator,
+            disputeResolver: row.taskDisputeResolver,
             taskVisibility: row.taskVisibility,
           },
           submission: { workerAddress: row.workerAddress },

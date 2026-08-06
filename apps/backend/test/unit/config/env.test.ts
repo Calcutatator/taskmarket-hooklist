@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getOptionalDatabaseUrl, getServerConfig } from '../../../src/config/env';
+import {
+  getEvaluatorSmokePrivateKeys,
+  getOptionalDatabaseUrl,
+  getServerConfig,
+} from '../../../src/config/env';
 
 const REQUIRED_ENV = {
   DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/taskmarket',
@@ -37,6 +41,58 @@ describe('getOptionalDatabaseUrl', () => {
     expect(() => getOptionalDatabaseUrl()).toThrow(
       'DATABASE_URL must use the postgres or postgresql protocol'
     );
+  });
+});
+
+describe('getEvaluatorSmokePrivateKeys', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      ...REQUIRED_ENV,
+    };
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  it('returns the distinct evaluator smoke actor keys', () => {
+    process.env.EVALUATOR_PRIVATE_KEY =
+      '0x1111111111111111111111111111111111111111111111111111111111111111';
+    process.env.WORKER_B_PRIVATE_KEY =
+      '0x2222222222222222222222222222222222222222222222222222222222222222';
+
+    expect(getEvaluatorSmokePrivateKeys()).toEqual({
+      evaluatorPrivateKey:
+        '0x1111111111111111111111111111111111111111111111111111111111111111',
+      resolverPrivateKey:
+        '0x2222222222222222222222222222222222222222222222222222222222222222',
+    });
+  });
+
+  it('requires both evaluator smoke actor keys', () => {
+    process.env.EVALUATOR_PRIVATE_KEY =
+      '0x1111111111111111111111111111111111111111111111111111111111111111';
+    delete process.env.WORKER_B_PRIVATE_KEY;
+
+    expect(() => getEvaluatorSmokePrivateKeys()).toThrow(
+      'EVALUATOR_PRIVATE_KEY and WORKER_B_PRIVATE_KEY are required'
+    );
+  });
+
+  it('rejects malformed evaluator smoke actor keys', () => {
+    process.env.EVALUATOR_PRIVATE_KEY = 'not-a-private-key';
+    process.env.WORKER_B_PRIVATE_KEY =
+      '0x2222222222222222222222222222222222222222222222222222222222222222';
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new Error(`process exited with ${code}`);
+    });
+
+    expect(() => getEvaluatorSmokePrivateKeys()).toThrow('process exited with 1');
   });
 });
 

@@ -23,7 +23,8 @@
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
-- **Pending Amends / Amended-by:** Amended by ADR-0042
+- **Amends / Amended-by:** Amended by ADR-0042
+- **Pending Amends / Amended-by:** —
 
 ## Context
 

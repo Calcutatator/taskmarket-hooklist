@@ -82,6 +82,7 @@ const flushAsync = () => new Promise((resolve) => setImmediate(resolve));
 
 const PAYER = '0x1111111111111111111111111111111111111111';
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+const EVALUATOR = '0x00000000000000000000000000000000000000e1';
 const DROP_ID = 'drop-1';
 
 const baseTaskInput = {
@@ -532,6 +533,54 @@ describe('tasks router', () => {
       expect(result!.pitchCount).toBe(1);
       // Regression: get() must return the stored visibility, not silently drop it.
       expect(result!.taskVisibility).toBe('unlisted');
+    });
+
+    it('allows the assigned evaluator to directly read a private task', async () => {
+      const ctx = createMockCtx(undefined, { address: EVALUATOR });
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              ...mockTaskRow,
+              taskVisibility: 'private',
+              evaluator: EVALUATOR,
+              disputeResolver: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([])) // allowed viewers
+        .mockReturnValueOnce(makeChain([])) // awarded workers
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await tasksRouter.createCaller(ctx).get({ taskId: '0xabc' });
+
+      expect(result?.id).toBe('0xabc');
+      expect(result?.taskVisibility).toBe('private');
+    });
+
+    it('hides a private task after evaluator assignment is cleared', async () => {
+      const ctx = createMockCtx(undefined, { address: EVALUATOR });
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              ...mockTaskRow,
+              taskVisibility: 'private',
+              evaluator: null,
+              disputeResolver: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await tasksRouter.createCaller(ctx).get({ taskId: '0xabc' });
+
+      expect(result).toBeNull();
+      expect(ctx.db.select).toHaveBeenCalledTimes(3);
     });
 
     it('does not offer a contest appeal to an anonymous caller', async () => {
