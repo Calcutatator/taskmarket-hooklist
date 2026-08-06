@@ -49,6 +49,17 @@ function hashWithSalt(password: string, salt: Buffer): string {
  * caller's own per-operation idempotency key keeps that property -- the seed is unique per
  * creation -- while making the derivation reproducible. The seed is never the password and
  * never derived from it, so nothing about the password leaks into the salt.
+ *
+ * The one property this gives up against a random salt: the salt is predictable to anyone who
+ * learns the idempotency key, and that key is not a secret -- it travels in a header, is stored,
+ * and may turn up in logs. Someone holding it can start precomputing candidates against this one
+ * salt before the password is even chosen. That was weighed and accepted: uniqueness, the thing a
+ * salt is actually for, still holds; scrypt at this cost factor makes each precomputed candidate
+ * expensive rather than free; and the work buys the attacker one task's password and nothing else,
+ * so it never amortises the way a shared or absent salt would. Closing it would mean drawing the
+ * salt at random and carrying it in the intent payload so retries reproduce it -- a payload field
+ * and a migration path for hashes already stored, for a narrowing of an attack that is per-task
+ * and still has to pay scrypt for every guess.
  */
 export function hashTaskAccessPasswordWithDerivedSalt(password: string, saltSeed: string): string {
   const salt = createHash('sha256').update(`task-access-password-salt:${saltSeed}`).digest();
