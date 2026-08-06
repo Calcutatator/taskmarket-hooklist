@@ -178,7 +178,13 @@ function DetailHeader({ message }: { message: InboxMailPrototypeMessage }) {
   );
 }
 
-function ReviewDetail() {
+function ReviewDetail({
+  onSelectWorker,
+  selectedWorker,
+}: {
+  onSelectWorker: (worker: string) => void;
+  selectedWorker: string | null;
+}) {
   return (
     <div className="grid gap-4">
       <div className="grid gap-1.5">
@@ -194,36 +200,63 @@ function ReviewDetail() {
         <h3 className="sr-only" id="submission-evidence-heading">
           Submission evidence
         </h3>
-        {REVIEW_SUBMISSIONS.map((submission) => (
-          <article
-            className="grid gap-3 rounded-md border border-border/58 bg-background/32 p-3 sm:grid-cols-[minmax(8rem,0.75fr)_minmax(9rem,0.9fr)_minmax(12rem,1.35fr)_auto] sm:items-center"
-            key={submission.worker}
-          >
-            <div className="min-w-0">
-              <p className="font-mono text-xs font-semibold text-foreground">{submission.worker}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Worker submission</p>
-            </div>
-            <div>
-              <p className="font-mono text-[0.65rem] uppercase tracking-wide text-primary">
-                Submitted
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">{submission.submitted}</p>
-            </div>
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="grid size-11 shrink-0 place-items-center rounded-md border border-border/58 bg-surface/58 text-primary">
-                <FileTextIcon aria-hidden="true" className="size-5" />
-              </span>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-foreground">{submission.file}</p>
-                <p className="text-xs text-muted-foreground">{submission.meta}</p>
-              </div>
-            </div>
-            <Button size="xs" type="button" variant="ghost">
-              View evidence
-              <ArrowRightIcon aria-hidden="true" />
-            </Button>
-          </article>
-        ))}
+        {REVIEW_SUBMISSIONS.map((submission) => {
+          const selected = selectedWorker === submission.worker;
+
+          return (
+            <article
+              className={cn(
+                'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border p-2 transition-[background-color,border-color] motion-reduce:transition-none',
+                selected
+                  ? 'border-primary/64 bg-primary/8'
+                  : 'border-border/58 bg-background/32 hover:border-primary/36'
+              )}
+              key={submission.worker}
+            >
+              <button
+                aria-label={`Select submission from ${submission.worker}: ${submission.file}`}
+                aria-pressed={selected}
+                className="grid min-h-14 min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-sm px-2 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => onSelectWorker(submission.worker)}
+                type="button"
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'grid size-5 place-items-center rounded-full border',
+                    selected ? 'border-primary bg-primary text-primary-foreground' : 'border-border'
+                  )}
+                >
+                  {selected ? <CircleCheckIcon className="size-4" /> : null}
+                </span>
+                <span className="grid min-w-0 gap-2 lg:grid-cols-[minmax(7rem,0.65fr)_minmax(8rem,0.75fr)_minmax(10rem,1.35fr)] lg:items-center">
+                  <span className="min-w-0">
+                    <span className="block font-mono text-xs font-semibold text-foreground">
+                      {submission.worker}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      Worker submission
+                    </span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">{submission.submitted}</span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <FileTextIcon aria-hidden="true" className="size-4 shrink-0 text-primary" />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-foreground">
+                        {submission.file}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">{submission.meta}</span>
+                    </span>
+                  </span>
+                </span>
+              </button>
+              <Button className="min-h-11" type="button" variant="ghost">
+                View evidence
+                <ArrowRightIcon aria-hidden="true" />
+              </Button>
+            </article>
+          );
+        })}
       </section>
     </div>
   );
@@ -235,19 +268,46 @@ function messageHref(message: InboxMailPrototypeMessage): Route {
     : (`/dashboard/tasks/${encodeURIComponent(message.task.id)}#task-activity` as Route);
 }
 
-function DetailFooter({ message }: { message: InboxMailPrototypeMessage }) {
+function DetailFooter({
+  message,
+  selectedWorker,
+}: {
+  message: InboxMailPrototypeMessage;
+  selectedWorker: string | null;
+}) {
   const href = messageHref(message);
 
   if (isActionMessage(message) && message.intent === 'review_work') {
+    const reward = formatUsdcUnits(message.task.reward);
+
     return (
       <footer className="flex flex-wrap items-center gap-3 border-t border-border/58 bg-card/44 px-5 py-4 sm:px-7">
         <p className="mr-auto flex max-w-sm items-start gap-2 text-xs leading-5 text-muted-foreground">
           <AlertCircleIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-destructive" />
-          Accepting marks the task complete and releases payment to the selected worker.
+          {selectedWorker
+            ? `Accepting completes the task and releases ${reward} to ${selectedWorker}.`
+            : 'Select a submission before accepting or rejecting work.'}
         </p>
-        <Button type="button">Accept submission</Button>
-        <Button type="button" variant="outline">
-          Reject
+        <Button
+          aria-label={
+            selectedWorker
+              ? `Accept ${selectedWorker} and release ${reward}`
+              : 'Select a submission first'
+          }
+          disabled={!selectedWorker}
+          type="button"
+        >
+          {selectedWorker ? `Accept ${selectedWorker}` : 'Select a submission'}
+        </Button>
+        <Button
+          aria-label={
+            selectedWorker ? `Reject ${selectedWorker}` : 'Select a submission before rejecting'
+          }
+          disabled={!selectedWorker}
+          type="button"
+          variant="outline"
+        >
+          {selectedWorker ? `Reject ${selectedWorker}` : 'Reject'}
         </Button>
         <Button asChild variant="link">
           <Link href={href}>
@@ -451,6 +511,10 @@ function MessageDetail({
   message: InboxMailPrototypeMessage;
   onBack: () => void;
 }) {
+  const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
+
+  useEffect(() => setSelectedWorker(null), [message.id]);
+
   return (
     <article
       className="flex min-h-0 flex-1 flex-col bg-card/44"
@@ -466,7 +530,7 @@ function MessageDetail({
       <ScrollArea className="min-h-0 flex-1">
         <div className="px-5 py-5 sm:px-7 sm:py-6">
           {isActionMessage(message) && message.intent === 'review_work' ? (
-            <ReviewDetail />
+            <ReviewDetail onSelectWorker={setSelectedWorker} selectedWorker={selectedWorker} />
           ) : isActionMessage(message) && message.intent === 'submit_work' ? (
             <SubmitDetail />
           ) : isActionMessage(message) ? (
@@ -476,7 +540,7 @@ function MessageDetail({
           )}
         </div>
       </ScrollArea>
-      <DetailFooter message={message} />
+      <DetailFooter message={message} selectedWorker={selectedWorker} />
     </article>
   );
 }

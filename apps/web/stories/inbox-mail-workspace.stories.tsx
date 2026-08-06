@@ -116,7 +116,18 @@ export const ReviewSelected: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole('heading', { name: 'Review 3 submissions' })).toBeVisible();
     await expect(canvas.getAllByRole('button', { name: /view evidence/i })).toHaveLength(3);
-    await expect(canvas.getByRole('button', { name: /accept submission/i })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: /select a submission first/i })).toBeDisabled();
+
+    const firstSubmission = canvas.getByRole('button', {
+      name: /select submission from 0x7421/i,
+    });
+    await userEvent.click(firstSubmission);
+
+    await expect(firstSubmission).toHaveAttribute('aria-pressed', 'true');
+    await expect(
+      canvas.getByRole('button', { name: /accept 0x7421.*and release 250 usdc/i })
+    ).toBeEnabled();
+    await expect(canvas.getByRole('button', { name: /reject 0x7421/i })).toBeEnabled();
   },
 };
 
