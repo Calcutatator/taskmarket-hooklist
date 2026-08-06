@@ -64,9 +64,19 @@ export async function resolveTaskAccessGrant(
  * router -- and left `undefined` rather than rejected when absent, because whether a key is
  * required depends on what the procedure does. A read needs none; every relayed write needs
  * one, and `recordRelayedIntent` is the single place that says so.
+ *
+ * Surrounding whitespace is stripped and a blank header is treated as absent. A key that
+ * survives a shell variable or a copied-and-pasted envelope with a trailing newline is the
+ * same key the caller sent on their first attempt, and it has to resolve to the same value or
+ * the retry claims a second intent for one operation. Length is not checked here: the key is
+ * required to be a UUID (`IDEMPOTENCY_KEY_PATTERN` in services/relayed-intents.ts), so
+ * anything longer than 36 characters is already refused with `idempotency_key_required`
+ * before the payment challenge.
  */
 export function resolveIdempotencyKey(req: CreateExpressContextOptions['req']): string | undefined {
-  return headerValue(req.headers[IDEMPOTENCY_KEY_HEADER.toLowerCase()]);
+  const raw = headerValue(req.headers[IDEMPOTENCY_KEY_HEADER.toLowerCase()]);
+  const trimmed = raw?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 export async function createContext({ req, res }: CreateExpressContextOptions) {

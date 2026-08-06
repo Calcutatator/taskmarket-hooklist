@@ -302,7 +302,7 @@ async function scenarioD(
   const evaluationWindowHours = 0.5;
   const appealWindowHours = 0.25;
 
-  log('1/4', 'Creating a claim task with a full evaluator configuration...');
+  log('1/5', 'Creating a claim task with a full evaluator configuration...');
   const { taskId } = (await x402Post(
     '/api/tasks',
     {
@@ -321,7 +321,7 @@ async function scenarioD(
   )) as { taskId: string };
   ok('taskId', taskId);
 
-  log('2/4', 'Reading the task back before anything else touches it...');
+  log('2/5', 'Reading the task back before anything else touches it...');
   const created = await pollUntil(
     () =>
       get(`/api/tasks/${taskId}`) as Promise<{
@@ -356,7 +356,7 @@ async function scenarioD(
   }
   ok('full evaluator configuration live on an open task', 'fee=250 eval=1800s appeal=900s');
 
-  log('3/4', 'Worker claiming and submitting...');
+  log('3/5', 'Worker claiming and submitting...');
   const claimSig = await worker.signMessage({ message: `taskmarket:claim:${taskId}` });
   await post(`/api/tasks/${taskId}/claim`, {
     taskId,
@@ -386,7 +386,7 @@ async function scenarioD(
   // already holds an evaluator for it, so reaching Review is the on-chain proof that the create
   // transaction -- the only relayed transaction that has ever existed for this task -- wrote the
   // evaluator config.
-  log('4/4', 'Waiting for the evaluator-gated state...');
+  log('4/5', 'Waiting for the evaluator-gated state...');
   const status = await pollStatus(taskId, ['review']);
   ok('status', status);
 
@@ -398,8 +398,8 @@ async function scenarioD(
 
   // Error path: the creation route must not become the cheap way past a guard the assignment
   // route enforces. A fee above 100% is rejected before any escrow is taken.
-  log('4/4', 'Checking an out-of-range evaluator fee is rejected...');
-  let rejected = false;
+  log('5/5', 'Checking an out-of-range evaluator fee is rejected...');
+  let rejection: string | null = null;
   try {
     await x402Post(
       '/api/tasks',
@@ -414,13 +414,20 @@ async function scenarioD(
       },
       requester
     );
-  } catch {
-    rejected = true;
+  } catch (error) {
+    rejection = error instanceof Error ? error.message : String(error);
   }
-  if (!rejected) {
+  if (rejection === null) {
     throw new Error('createTask accepted an evaluatorFeeBps above 10000');
   }
-  ok('evaluatorFeeBps above 10000 rejected', true);
+  // Any thrown error used to count as a pass here, which made this step unable to fail for the
+  // reason it exists: a backend that was down, an unfunded payer, or a typo in the request body
+  // all throw, and all reported the fee guard as verified. Naming the field the rejection has
+  // to mention is what separates "the guard refused this" from "something else went wrong".
+  if (!/evaluatorFeeBps/i.test(rejection)) {
+    throw new Error(`createTask rejected the out-of-range fee, but not for the fee: ${rejection}`);
+  }
+  ok('evaluatorFeeBps above 10000 rejected', rejection);
 }
 
 async function main() {

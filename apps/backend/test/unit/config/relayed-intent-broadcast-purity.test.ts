@@ -161,9 +161,25 @@ function locate(sourceFile: ts.SourceFile, node: ts.Node): string {
   return `${relative(SRC_ROOT, sourceFile.fileName)}:${line}`;
 }
 
-/** Every value `import` binding in a file, mapped from local name to the module it came from. */
-function importsOf(sourceFile: ts.SourceFile): Map<string, string> {
-  const bindings = new Map<string, string>();
+/**
+ * One imported binding: the name it is known by locally, and the name the module exports it as.
+ *
+ * The two differ under `import { a as b }`, and the difference is load-bearing -- looking the
+ * local name up in the target file finds no declaration, which this test reports as a finding
+ * rather than following the function it should have followed. An alias is therefore all it
+ * would take to hide an impure call behind a name the target module never declares.
+ */
+type ImportBinding = {
+  /** The name the target module declares it as. Meaningless for a namespace binding. */
+  exported: string;
+  /** `import * as ns`, whose members are only knowable at the member-access site. */
+  isNamespace: boolean;
+  module: string;
+};
+
+/** Every value `import` binding in a file, mapped from local name to where it came from. */
+function importsOf(sourceFile: ts.SourceFile): Map<string, ImportBinding> {
+  const bindings = new Map<string, ImportBinding>();
   for (const statement of sourceFile.statements) {
     if (!ts.isImportDeclaration(statement)) continue;
     if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
@@ -171,15 +187,27 @@ function importsOf(sourceFile: ts.SourceFile): Map<string, string> {
     // an optimisation: every intents file type-imports the db client for its completion
     // handlers' signatures, which must not be read as the broadcaster reaching the database.
     if (statement.importClause?.isTypeOnly) continue;
+    const module = statement.moduleSpecifier.text;
     const named = statement.importClause?.namedBindings;
     if (named && ts.isNamedImports(named)) {
       for (const element of named.elements) {
         if (element.isTypeOnly) continue;
-        bindings.set(element.name.text, statement.moduleSpecifier.text);
+        bindings.set(element.name.text, {
+          exported: (element.propertyName ?? element.name).text,
+          isNamespace: false,
+          module,
+        });
       }
     }
+    if (named && ts.isNamespaceImport(named)) {
+      bindings.set(named.name.text, { exported: named.name.text, isNamespace: true, module });
+    }
     if (statement.importClause?.name) {
-      bindings.set(statement.importClause.name.text, statement.moduleSpecifier.text);
+      bindings.set(statement.importClause.name.text, {
+        exported: 'default',
+        isNamespace: false,
+        module,
+      });
     }
   }
   return bindings;
@@ -248,30 +276,57 @@ function auditFunction(input: {
   const imports = importsOf(sourceFile);
   const declarations = declarationsOf(sourceFile);
 
+  /** Follow a call into the module it was imported from, under the name that module exports. */
+  function followImport(binding: ImportBinding, exported: string, label: string, at: ts.Node) {
+    if (isTerminalModule(sourceFile.fileName, binding.module)) return;
+    const resolved = resolveModule(sourceFile.fileName, binding.module);
+    if (!resolved) {
+      // An unresolvable call is a finding rather than a pass. A broadcaster that reaches a
+      // package this test cannot read is a broadcaster nobody can claim is replayable.
+      findings.push({
+        detail: `calls ${label}() from '${binding.module}', which is neither a terminal module nor a file this test can follow`,
+        location: locate(sourceFile, at),
+      });
+      return;
+    }
+    const target = sourceFor(resolved);
+    // Looked up by the name the module exports, not the local one: under `import { a as b }`
+    // the two differ, and looking up the local name would report a declaration that is there.
+    const declaration = declarationsOf(target).get(exported);
+    if (!declaration) {
+      findings.push({
+        detail: `calls ${label}(), which is not a top-level declaration in ${relative(SRC_ROOT, resolved)}`,
+        location: locate(sourceFile, at),
+      });
+      return;
+    }
+    auditFunction({ findings, node: declaration, seen: input.seen, sourceFile: target });
+  }
+
+  /** A `ns.member()` call, resolved through `ns`'s module when `ns` is a namespace import. */
+  function followMember(node: ts.CallExpression, access: ts.PropertyAccessExpression): void {
+    if (!ts.isIdentifier(access.expression)) return;
+    const binding = imports.get(access.expression.text);
+    if (!binding || !binding.isNamespace) return;
+    followImport(
+      binding,
+      access.name.text,
+      `${access.expression.text}.${access.name.text}`,
+      node
+    );
+  }
+
   function follow(name: string, at: ts.Node): void {
-    const specifier = imports.get(name);
-    if (specifier) {
-      if (isTerminalModule(sourceFile.fileName, specifier)) return;
-      const resolved = resolveModule(sourceFile.fileName, specifier);
-      if (!resolved) {
-        // An unresolvable call is a finding rather than a pass. A broadcaster that reaches a
-        // package this test cannot read is a broadcaster nobody can claim is replayable.
+    const binding = imports.get(name);
+    if (binding) {
+      if (binding.isNamespace) {
         findings.push({
-          detail: `calls ${name}() from '${specifier}', which is neither a terminal module nor a file this test can follow`,
+          detail: `calls ${name}(), a namespace import called directly, which this test cannot resolve to a declaration`,
           location: locate(sourceFile, at),
         });
         return;
       }
-      const target = sourceFor(resolved);
-      const declaration = declarationsOf(target).get(name);
-      if (!declaration) {
-        findings.push({
-          detail: `calls ${name}(), which is not a top-level declaration in ${relative(SRC_ROOT, resolved)}`,
-          location: locate(sourceFile, at),
-        });
-        return;
-      }
-      auditFunction({ findings, node: declaration, seen: input.seen, sourceFile: target });
+      followImport(binding, binding.exported, name, at);
       return;
     }
 
@@ -312,8 +367,12 @@ function auditFunction(input: {
       });
     }
 
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-      follow(node.expression.text, node);
+    if (ts.isCallExpression(node)) {
+      if (ts.isIdentifier(node.expression)) {
+        follow(node.expression.text, node);
+      } else if (ts.isPropertyAccessExpression(node.expression)) {
+        followMember(node, node.expression);
+      }
     }
 
     ts.forEachChild(node, visit);

@@ -105,6 +105,7 @@ describeWithDatabase('a reservation is readable by the holder of its idempotency
 
       // A key is a credential only where no initiator was recorded. Holding one for an intent
       // that has a payer buys nothing, so a leaked key cannot open a settled write.
+      expect(await asStranger).not.toBe('resolved');
       expect(await asStranger).toBe(await asNobody);
     });
 
@@ -116,6 +117,7 @@ describeWithDatabase('a reservation is readable by the holder of its idempotency
 
       // The id path is unchanged. An id proves nothing about who is asking, so the only way to
       // reach a reservation is to already hold the UUID a client minted for it.
+      expect(await byId).not.toBe('resolved');
       expect(await byId).toBe(await byNothing);
     });
   });

@@ -92,7 +92,7 @@ const cases: Array<[string, unknown]> = [
   ['empty containers', { a: {}, b: [] }],
   ['deep nesting', { a: { b: { c: { d: [{ e: 1 }] } } } }],
   ['keys that sort by more than length', { '10': 'c', '1': 'a', '2': 'b', x: 'y' }],
-  ['non-ascii text', { note: 'unicode: e-acute', title: 'a"b\\c\nd\te' }],
+  ['non-ascii text', { note: 'café — 日本語 — Ωμέγα — Привет', title: 'a"b\\c\nd\te — naïve' }],
 ];
 
 describeWithDatabase('relayed intent payload canonicalisation over jsonb', () => {

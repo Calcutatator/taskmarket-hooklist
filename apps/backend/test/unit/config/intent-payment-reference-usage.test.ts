@@ -87,7 +87,7 @@ export function relayedIntentCallSites(source: string, filename = 'source.ts'): 
       }
       sites.push({
         file: filename,
-        line: sourceFile.getLineAndCharacterOfPosition(literal.pos).line + 1,
+        line: sourceFile.getLineAndCharacterOfPosition(literal.getStart(sourceFile)).line + 1,
         payment: named.get('payment'),
         splitFields: [...SPLIT_PAYMENT_FIELDS].filter((field) => named.has(field)).sort(),
       });

@@ -13,7 +13,6 @@ import {
 } from '../../db/schema';
 import { getServerConfig } from '../../config/env';
 import { lowerAddressEq } from '../../lib/agents';
-import { hashTaskAccessPassword } from '../../lib/task-access-password';
 import { logger } from '../../lib/logger';
 import { normalizeRequesterPublicKey } from '../../lib/task';
 import { notifyTaskDropSubscribers } from '../task-drops-email';
@@ -33,7 +32,8 @@ const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
  * requester paid for.
  */
 export type TasksCreateInput = {
-  accessPassword?: string;
+  // No `accessPassword`. The request strips it and carries only the hash, on the payload
+  // itself rather than in here -- see `accessPasswordHash` below.
   allowedViewers?: string[];
   auctionFloorPrice?: string | null;
   auctionStartPrice?: string | null;
@@ -68,6 +68,16 @@ export type TasksCreateInput = {
  * request or the reconciler observed the receipt.
  */
 export type TasksCreateIntentPayload = {
+  /**
+   * The scrypt hash of a private task's access password, already computed by the request, or
+   * null when the task is public or no password was set.
+   *
+   * The hash rather than the password, because this row outlives the request by design: it is
+   * jsonb a reconciler reads back hours later, and it sits in backups long after the task it
+   * guarded is over. A user-chosen secret is the one thing on this payload that must never be
+   * recoverable from it, so the plaintext never leaves the request handler.
+   */
+  accessPasswordHash: string | null;
   allowedViewerAddresses: string[];
   evaluatorAssignment: {
     appealWindow: number;
@@ -191,10 +201,11 @@ export async function completeTasksCreate(context: {
   const expiryTime = new Date(createdAtMs + input.duration * 3600 * 1000);
   const taskVisibility = input.taskVisibility ?? 'public';
   const submissionVisibility = input.submissionVisibility ?? 'public';
+  // Already hashed by the request; there is no plaintext here to hash and deliberately never
+  // was one on the payload. Still gated on visibility so a payload whose visibility says
+  // public cannot carry a password hash onto the row.
   const privateAccessPasswordHash =
-    taskVisibility === 'private' && input.accessPassword
-      ? hashTaskAccessPassword(input.accessPassword)
-      : null;
+    taskVisibility === 'private' ? (payload.accessPasswordHash ?? null) : null;
 
   const requesterAgent = await db
     .select({ agentId: agents.agentId, publicKey: agents.publicKey })

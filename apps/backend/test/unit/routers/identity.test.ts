@@ -42,7 +42,13 @@ describe('identity router', () => {
         .mockReturnValueOnce(makeChain(existing))
         // linkIntentToBroadcast's outbox lookup after the chain call.
         .mockReturnValueOnce(makeChain([]))
-        .mockReturnValueOnce(makeChain([{ agentId: '42' }]));
+        // Carries the registry and chain the completion handler stamps onto the row from the
+        // intent payload, because the read-back now applies the same freshness test the cache
+        // lookup does. A row without them is the stale row that test rejected on the way in,
+        // not the one this mint just wrote.
+        .mockReturnValueOnce(
+          makeChain([{ agentId: '42', identityRegistryAddress: REGISTRY, chainId: CHAIN_ID }])
+        );
       return ctx;
     }
 

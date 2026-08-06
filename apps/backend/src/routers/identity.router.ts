@@ -106,14 +106,27 @@ export const identityRouter = router({
         send: () => contractRegisterIdentityTx(),
       });
 
+      // Read back through the same freshness test the cache lookup above used, not a bare
+      // `agentId is not null`. The row a bare check accepts may be exactly the stale one
+      // `cacheIsFresh` just rejected on the way in -- an agentId minted against a different
+      // registry or a different chain -- and returning it here would report the previous
+      // identity as the one this mint produced. Ignoring it leaves the path at
+      // `intent_completion_deferred`, which is the truth: the mint is confirmed and the
+      // agentId for the current registry and chain has not been recorded yet.
       const registered = await ctx.db
-        .select({ agentId: agents.agentId })
+        .select({
+          agentId: agents.agentId,
+          identityRegistryAddress: agents.identityRegistryAddress,
+          chainId: agents.chainId,
+        })
         .from(agents)
         .where(lowerAddressEq(payer))
         .orderBy(sql`${agents.agentId} is not null desc`)
         .limit(1);
 
-      const agentIdStr = registered[0]?.agentId;
+      const agentIdStr = isCacheFresh(registered[0], registryAddress, chainId)
+        ? registered[0]?.agentId
+        : undefined;
       if (!agentIdStr) {
         // Not a failed chain call: the mint is confirmed and the identity exists, only the
         // read-back of the agentId the completion decodes has not landed yet. That is

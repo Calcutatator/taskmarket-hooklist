@@ -491,6 +491,14 @@ describe('the relay envelope a rebroadcast replays', () => {
 
     const broadcast = getRelayedIntentBroadcaster('tasks.cancel')!;
     let seen: unknown;
+    // Read at the moment the chain call is made, not after `broadcast` has resolved. Observed
+    // from the outer scope, the stored envelope is still in scope no matter what the
+    // broadcaster did, so a broadcaster that minted a fresh envelope around its own contract
+    // call would pass. Read here, the assertion is about the envelope the call actually saw.
+    mockFor('contractCancelTask').mockImplementationOnce(async () => {
+      seen = currentRelayEnvelope();
+      return '0xcancel';
+    });
     await withRelayEnvelope(stored, async () => {
       await broadcast({
         db: {} as never,
@@ -501,7 +509,6 @@ describe('the relay envelope a rebroadcast replays', () => {
           taskId: TASK_ID,
         }),
       });
-      seen = currentRelayEnvelope();
     });
 
     expect(seen).toEqual(stored);
