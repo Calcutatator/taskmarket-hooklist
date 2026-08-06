@@ -1,6 +1,11 @@
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  clearCachedReadAuthHeaders,
+  getCachedReadAuthHeaders,
+  setCachedReadAuthHeaders,
+} from '@/lib/read-auth';
 import { NavUser } from './nav-user';
 
 const { connectOrCreateWallet, login, logout, walletState } = vi.hoisted(() => ({
@@ -108,6 +113,23 @@ describe('NavUser', () => {
     walletState.walletsReady = true;
     window.localStorage.clear();
     window.sessionStorage.clear();
+    clearCachedReadAuthHeaders();
+  });
+
+  it('clears the previous wallet proof before switching wallets', async () => {
+    const user = userEvent.setup();
+    walletState.address = '0x1234567890abcdef1234567890abcdef12345678';
+    walletState.isConnected = true;
+    setCachedReadAuthHeaders(walletState.address, {
+      'X-Taskmarket-Caller-Address': walletState.address,
+      'X-Taskmarket-Caller-Signature': '0xproof',
+    });
+
+    render(<NavUser />);
+    await user.click(screen.getByRole('button', { name: /switch wallet/i }));
+
+    expect(connectOrCreateWallet).toHaveBeenCalledTimes(1);
+    expect(getCachedReadAuthHeaders()).toEqual({});
   });
 
   it('shows the connected wallet details and logs out from the account menu', async () => {

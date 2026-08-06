@@ -1028,6 +1028,36 @@ describe('Task marketplace components', () => {
     expect(document.getElementById('task-activity')).toHaveAttribute('tabindex', '-1');
   });
 
+  it('places appeal focus on recorded verdict evidence before the action controls', () => {
+    render(
+      <TaskDetailPanel
+        focusIntent="appeal_verdict"
+        modeData={{}}
+        task={{
+          ...taskDetail,
+          appealDeadline: '2026-08-08T12:00:00.000Z',
+          evaluator: '0x2222222222222222222222222222222222222222',
+          status: 'appealing',
+          verdictConfidence: 875,
+          verdictEvidenceHash: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          verdictScore: 920,
+          verdictType: 'APPROVE',
+        }}
+      />
+    );
+
+    expect(screen.getByText('Inbox action').closest('[role="status"]')).toHaveTextContent(
+      'Review and appeal the verdict'
+    );
+    const verdict = screen.getByRole('region', { name: /verdict and decision evidence/i });
+    expect(verdict).toHaveAttribute('id', 'task-verdict');
+    expect(verdict).toHaveTextContent('Approved');
+    expect(verdict).toHaveTextContent('920 / 1000');
+    expect(verdict.compareDocumentPosition(document.getElementById('task-next-actions')!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+  });
+
   it.each(['/dashboard/tasks', '/tasks'])(
     'renders a collapsed description preview before submission review on the %s surface',
     async (backHref) => {

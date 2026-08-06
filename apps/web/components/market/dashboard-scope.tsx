@@ -3,6 +3,8 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 
+import { DashboardSectionTabsClient } from '@/components/market/dashboard-section-tabs-client';
+import type { DashboardSection } from '@/components/market/dashboard-section';
 import { DashboardYouView } from '@/components/market/dashboard-you-view';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
@@ -16,9 +18,11 @@ type Scope = 'market' | 'you';
 // client component as a prop, which is what keeps the market view fast here.
 export function DashboardScope({
   marketContent,
+  marketSection,
   marketTitle = 'Marketplace overview',
 }: {
   marketContent: ReactNode;
+  marketSection: DashboardSection;
   marketTitle?: string;
 }) {
   const [scope, setScope] = useState<Scope>('market');
@@ -48,7 +52,14 @@ export function DashboardScope({
           <ToggleGroupItem value="you">You</ToggleGroupItem>
         </ToggleGroup>
       </div>
-      {scope === 'market' ? marketContent : <DashboardYouView />}
+      {scope === 'market' ? (
+        <div className="flex flex-col gap-4 md:gap-6">
+          <DashboardSectionTabsClient section={marketSection} />
+          {marketContent}
+        </div>
+      ) : (
+        <DashboardYouView />
+      )}
     </div>
   );
 }

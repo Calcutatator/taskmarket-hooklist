@@ -24,10 +24,12 @@ import {
 import { formatUsdcUnits } from '@/lib/format';
 import { emitActionInboxEvent } from '@/lib/market/action-inbox-events';
 import { taskRatingProgress } from '@/lib/market/task-badges';
+import { useInvalidateActionQueue } from '@/lib/use-action-queue';
 
 type TaskActionPanelProps = {
   claimedBy?: string | null;
   emptyReason: string;
+  evidenceReady?: boolean;
   hideWhenNoVisibleActions?: boolean;
   pendingActions: PendingAction[];
   requester: string;
@@ -37,6 +39,15 @@ type TaskActionPanelProps = {
 };
 
 const PAID_ACTIONS = new Set<PendingAction['action']>(PAID_PENDING_ACTION_NAMES);
+const SELF_INVALIDATING_ACTIONS = new Set<PendingAction['action']>([
+  'accept',
+  'appeal',
+  'evaluate',
+  'evaluator_timeout',
+  'finalize_verdict',
+  'rate',
+  'resolve_dispute',
+]);
 
 function isPaidAction(action: PendingAction) {
   return action.requiresPayment ?? PAID_ACTIONS.has(action.action);
@@ -51,6 +62,7 @@ function canRunAction(params: ActionVisibilityParams) {
 export function TaskActionsPanel({
   claimedBy,
   emptyReason,
+  evidenceReady,
   hideWhenNoVisibleActions = false,
   pendingActions,
   requester,
@@ -60,8 +72,19 @@ export function TaskActionsPanel({
 }: TaskActionPanelProps) {
   const { address } = useAccount();
   const router = useRouter();
+  const invalidateActionQueue = useInvalidateActionQueue();
   const visibleActions = pendingActions.filter((action) =>
-    canViewAction({ action, address, claimedBy, requester, worker })
+    canViewAction({
+      action,
+      address,
+      claimedBy,
+      disputeResolver: task.disputeResolver,
+      evidenceReady,
+      evaluator: task.evaluator,
+      requester,
+      submissionVisibility: task.submissionVisibility,
+      worker,
+    })
   );
   const hasPaidAction = visibleActions.some(isPaidAction);
   const visibleRatingActions = visibleActions.filter((action) => action.action === 'rate');
@@ -70,12 +93,18 @@ export function TaskActionsPanel({
     address,
     enabled: hasPaidAction,
   });
-  const emptyTitle =
-    pendingActions.length > 0 ? 'No actions for this wallet' : 'No pending commands';
-  const emptyDescription =
-    pendingActions.length > 0
-      ? 'Connect the requester or assigned worker wallet to manage this task.'
-      : emptyReason;
+  const hasEvidenceAction = pendingActions.some(
+    (action) => action.action === 'evaluate' || action.action === 'resolve_dispute'
+  );
+  const evidenceUnavailable = hasEvidenceAction && evidenceReady !== true;
+  const emptyTitle = evidenceUnavailable
+    ? 'Decision evidence unavailable'
+    : pendingActions.length > 0
+      ? 'No actions for this wallet'
+      : 'No pending commands';
+  const emptyDescription = evidenceUnavailable
+    ? 'Evaluation and dispute controls stay unavailable until the submitted evidence is visible on this page.'
+    : emptyReason;
 
   if (hideWhenNoVisibleActions && visibleActions.length === 0) {
     return null;
@@ -124,7 +153,17 @@ export function TaskActionsPanel({
         {visibleActions.length > 0 ? (
           visibleActions.map((action) => {
             const Component = COMPONENT_BY_ACTION[action.action];
-            const canRun = canRunAction({ action, address, claimedBy, requester, worker });
+            const canRun = canRunAction({
+              action,
+              address,
+              claimedBy,
+              disputeResolver: task.disputeResolver,
+              evidenceReady,
+              evaluator: task.evaluator,
+              requester,
+              submissionVisibility: task.submissionVisibility,
+              worker,
+            });
             const blockedByFunding = Boolean(actionFundingPrompt && isPaidAction(action));
 
             return (
@@ -142,6 +181,9 @@ export function TaskActionsPanel({
                         event: 'lifecycle_action_completed',
                         taskId: task.id,
                       });
+                      if (!SELF_INVALIDATING_ACTIONS.has(action.action)) {
+                        void invalidateActionQueue();
+                      }
                       router.refresh();
                     }}
                     task={task}

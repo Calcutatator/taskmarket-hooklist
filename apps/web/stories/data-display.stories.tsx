@@ -11,6 +11,7 @@
 // storybook-coverage: components/market/dashboard-heatmap.tsx
 // storybook-coverage: components/market/dashboard-scope.tsx
 // storybook-coverage: components/market/dashboard-section-tabs.tsx
+// storybook-coverage: components/market/dashboard-section-tabs-client.tsx
 // storybook-coverage: components/market/dashboard-you-view.tsx
 // storybook-coverage: components/market/dreams-reward-disclosure.tsx
 // storybook-coverage: components/market/info-tooltip.tsx
@@ -324,6 +325,7 @@ export const DashboardNavigationStates: Story = {
             <CardContent>Server-rendered marketplace content</CardContent>
           </Card>
         }
+        marketSection="overview"
       />
     </div>
   ),

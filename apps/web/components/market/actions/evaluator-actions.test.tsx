@@ -94,6 +94,19 @@ describe('evaluator task actions', () => {
     expect(invalidateActionQueue).toHaveBeenCalledTimes(1);
   });
 
+  it('announces a failed appeal without reporting success', async () => {
+    payX402Post.mockResolvedValue({ ok: false, error: 'Appeal window has closed' });
+    const user = userEvent.setup();
+    render(<AppealButton action={action('appeal')} disabled={false} task={task} />);
+
+    await user.click(screen.getByRole('button', { name: /appeal verdict/i }));
+    const buttons = await screen.findAllByRole('button', { name: /appeal verdict/i });
+    await user.click(buttons.at(-1)!);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Appeal window has closed');
+    expect(invalidateActionQueue).not.toHaveBeenCalled();
+  });
+
   it('submits a validated evaluator verdict and award in base units', async () => {
     payX402Post.mockResolvedValue({ ok: true, data: {}, txHash: '0xevaluate' });
     const user = userEvent.setup();
@@ -142,7 +155,9 @@ describe('evaluator task actions', () => {
     const resolveButtons = await screen.findAllByRole('button', { name: /resolve dispute/i });
     await user.click(resolveButtons.at(-1)!);
 
-    expect(await screen.findByText(/each award recipient must be unique/i)).toBeInTheDocument();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/each award recipient must be unique/i);
+    expect(alert.closest('fieldset')).toHaveAttribute('aria-invalid', 'true');
     expect(payX402Post).not.toHaveBeenCalled();
   });
 
@@ -154,8 +169,32 @@ describe('evaluator task actions', () => {
     const submitButtons = await screen.findAllByRole('button', { name: /submit evaluation/i });
     await user.click(submitButtons.at(-1)!);
 
-    expect(await screen.findByText(/evidence hash is required/i)).toBeInTheDocument();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/evidence hash is required/i);
+    expect(screen.getByLabelText(/evidence hash/i)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText(/evidence hash/i)).toHaveAttribute('aria-describedby', alert.id);
+    expect(screen.getByLabelText(/score/i)).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByLabelText(/score/i)).not.toHaveAttribute('aria-describedby');
+    expect(screen.getByLabelText(/confidence/i)).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByLabelText(/confidence/i)).not.toHaveAttribute('aria-describedby');
     expect(payX402Post).not.toHaveBeenCalled();
+  });
+
+  it('announces backend evaluation errors at form level without invalidating fields', async () => {
+    payX402Post.mockResolvedValue({ ok: false, error: 'Action is no longer available' });
+    const user = userEvent.setup();
+    render(<EvaluateButton action={action('evaluate')} disabled={false} task={task} />);
+
+    await user.type(screen.getByLabelText(/evidence hash/i), `0x${'a'.repeat(64)}`);
+    await user.click(screen.getByRole('button', { name: /submit evaluation/i }));
+    const submitButtons = await screen.findAllByRole('button', { name: /submit evaluation/i });
+    await user.click(submitButtons.at(-1)!);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/action is no longer available/i);
+    expect(screen.getByLabelText(/score/i)).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByLabelText(/confidence/i)).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByLabelText(/evidence hash/i)).not.toHaveAttribute('aria-invalid');
   });
 
   it('finalizes a verdict without an X402 payment and refreshes the queue', async () => {
@@ -183,5 +222,24 @@ describe('evaluator task actions', () => {
     expect(payX402Post).not.toHaveBeenCalled();
     expect(onSuccess).toHaveBeenCalledTimes(1);
     expect(invalidateActionQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('announces a failed verdict finalization', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      json: vi.fn().mockResolvedValue({ message: 'Appeal window remains open' }),
+      status: 409,
+    });
+    const user = userEvent.setup();
+    render(
+      <FinalizeVerdictButton action={action('finalize_verdict')} disabled={false} task={task} />
+    );
+
+    await user.click(screen.getByRole('button', { name: /finalize verdict/i }));
+    const buttons = await screen.findAllByRole('button', { name: /finalize verdict/i });
+    await user.click(buttons.at(-1)!);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Appeal window remains open');
+    expect(invalidateActionQueue).not.toHaveBeenCalled();
   });
 });

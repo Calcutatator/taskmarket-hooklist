@@ -7,9 +7,8 @@ import {
   FinalizeVerdictInputSchema,
   ResolveDisputeInputSchema,
 } from '@taskmarket/shared';
-import { submissions, tasks } from '../db/schema';
-import { and, eq } from 'drizzle-orm';
-import { lowerColumnEq } from '../lib/agents';
+import { tasks } from '../db/schema';
+import { eq } from 'drizzle-orm';
 import {
   contractEvaluate,
   contractAppeal,
@@ -20,6 +19,7 @@ import {
 import { recordTaskSettlement } from '../services/settlement-recorder';
 import { getServerConfig } from '../config/env';
 import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
+import { resolveAppealAuthorization } from '../services/task-appeal-authorization';
 
 const VERDICT_MAP: Record<string, number> = { approve: 0, reject: 1, partial: 2 };
 
@@ -138,26 +138,22 @@ export const evaluationsRouter = router({
       if (taskResult.length === 0) throw new Error('Task not found');
       const task = taskResult[0];
 
-      if (task.claimedBy) {
-        if (task.claimedBy.toLowerCase() !== payer.toLowerCase()) {
-          throw new Error('Only the task worker can appeal');
+      const preflight = ctx.res.locals.taskActionPreflight as
+        | { action?: string; payer?: string }
+        | undefined;
+      const authorization =
+        preflight?.action === 'appeal' && preflight.payer === payer.toLowerCase()
+          ? ({ authorized: true, authority: 'worker' } as const)
+          : await resolveAppealAuthorization(task, payer);
+      if (!authorization.authorized) {
+        if (authorization.authority === 'unverified') {
+          throw new Error('Unable to verify appeal eligibility');
         }
-      } else if (task.mode === 'bounty' || task.mode === 'benchmark') {
-        const matchingSubmissions = await ctx.db
-          .select({ id: submissions.id })
-          .from(submissions)
-          .where(
-            and(
-              eq(submissions.taskId, input.taskId),
-              lowerColumnEq(submissions.workerAddress, payer)
-            )
-          )
-          .limit(1);
-        if (matchingSubmissions.length === 0) {
-          throw new Error('Only a task submitter can appeal');
-        }
-      } else {
-        throw new Error('Only the task worker can appeal');
+        throw new Error(
+          authorization.authority === 'worker'
+            ? 'Only the task worker can appeal'
+            : 'Only a task submitter can appeal'
+        );
       }
       if (task.status !== 'appealing') throw new Error('Task is not in Appealing state');
 

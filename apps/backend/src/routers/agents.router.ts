@@ -37,13 +37,18 @@ import {
 } from '../lib/task';
 import { sha256Hex } from '../lib/hash';
 import { lowerAddressEq } from '../lib/agents';
-import { taskDiscoverable } from '../lib/task-visibility';
+import {
+  canView,
+  fetchPrivateViewabilityContextForTasks,
+  taskDiscoverable,
+} from '../lib/task-visibility';
 import { computeClockPrice } from '../lib/auction';
 import {
   projectActionQueueTask,
   sortActionQueueItems,
   type ActionQueueTask,
 } from '../lib/action-queue';
+import { resolveAppealAuthorization } from '../services/task-appeal-authorization';
 
 // Implements: ADR-0023 (inbox self-auth converged onto ctx.caller)
 // inbox's `selfAuthed` check below now derives from ctx.caller (the general
@@ -328,7 +333,7 @@ export const agentsRouter = router({
       const { address } = input;
       const normalizedAddress = address.toLowerCase();
       const selfAuthed = ctx.caller?.address.toLowerCase() === normalizedAddress;
-      const roleMembership = or(
+      const assignedRoleMembership = or(
         sql`lower(${tasks.requester}) = lower(${address})`,
         sql`lower(${tasks.claimedBy}) = lower(${address})`,
         sql`lower(${tasks.evaluator}) = lower(${address})`,
@@ -337,20 +342,72 @@ export const agentsRouter = router({
           select 1 from ${taskAwards}
           where ${taskAwards.taskId} = "tasks"."id"
             and lower(${taskAwards.workerAddress}) = lower(${address})
-        )`,
-        sql`exists (
+        )`
+      )!;
+      const submissionMembership = sql`exists (
           select 1 from ${submissions}
           where ${submissions.taskId} = "tasks"."id"
             and lower(${submissions.workerAddress}) = lower(${address})
             and (${submissions.rejectedAt} is null or "tasks"."status" = 'appealing')
-        )`
+        )`;
+      // Submission participation is caller-private identity information for every
+      // submission-visibility mode. An anonymous request may still discover public
+      // requester/assigned-role obligations, but it cannot prove that an arbitrary
+      // queried address submitted work.
+      const roleMembership = selfAuthed
+        ? or(assignedRoleMembership, submissionMembership)!
+        : assignedRoleMembership;
+      const actionRelevantLifecycle = or(
+        inArray(tasks.status, [
+          'open',
+          'claimed',
+          'worker_selected',
+          'pending_approval',
+          'review',
+          'appealing',
+          'disputed',
+        ]),
+        and(
+          eq(tasks.status, 'completed'),
+          sql`lower(${tasks.requester}) = lower(${address})`,
+          sql`exists (
+            select 1 from ${taskAwards}
+            where ${taskAwards.taskId} = "tasks"."id"
+              and ${taskAwards.rating} is null
+          )`
+        )
       )!;
 
-      const candidateRows = await ctx.db
+      const unfilteredCandidateRows = await ctx.db
         .select({ ...getTableColumns(tasks) })
         .from(tasks)
-        .where(selfAuthed ? roleMembership : and(roleMembership, taskDiscoverable))
+        .where(
+          selfAuthed
+            ? and(roleMembership, actionRelevantLifecycle)
+            : and(roleMembership, actionRelevantLifecycle, taskDiscoverable)
+        )
         .orderBy(desc(tasks.createdAt));
+
+      // A submission row establishes possible queue membership, not continuing
+      // authorization to read a private task. Compose the same canView predicate used
+      // by task detail after resolving allowlist/award context in two batched queries.
+      // This also handles revoked allowlists and expired/absent password grants without
+      // adding query fan-out per candidate task.
+      const privateTaskIds = unfilteredCandidateRows
+        .filter((task) => task.taskVisibility === 'private')
+        .map((task) => task.id);
+      const privateViewability = await fetchPrivateViewabilityContextForTasks(
+        ctx.db,
+        privateTaskIds
+      );
+      const candidateRows = unfilteredCandidateRows.filter((task) => {
+        const viewability = privateViewability.get(task.id);
+        return canView(task, ctx.caller, {
+          taskAccessGrant: ctx.taskAccessGrant,
+          allowedViewerAddresses: viewability?.allowedViewerAddresses,
+          awardedWorkerAddresses: viewability?.awardedWorkerAddresses,
+        });
+      });
 
       if (candidateRows.length === 0) {
         return { items: [], total: 0, urgentTotal: 0, waiting: [] };
@@ -371,7 +428,6 @@ export const agentsRouter = router({
             submitters: sql<
               string[]
             >`coalesce(array_agg(distinct lower(${submissions.workerAddress})) filter (where ${submissions.rejectedAt} is null), '{}')`,
-            allSubmitters: sql<string[]>`array_agg(distinct lower(${submissions.workerAddress}))`,
           })
           .from(submissions)
           .where(inArray(submissions.taskId, taskIds))
@@ -413,6 +469,20 @@ export const agentsRouter = router({
         awards.push(award);
         awardsByTask.set(award.taskId, awards);
       }
+
+      const contestAppealAuthorization = new Map(
+        await Promise.all(
+          candidateRows
+            .filter(
+              (task) =>
+                task.status === 'appealing' && (task.mode === 'bounty' || task.mode === 'benchmark')
+            )
+            .map(async (task) => {
+              const authorization = await resolveAppealAuthorization(task, address);
+              return [task.id, authorization.authorized] as const;
+            })
+        )
+      );
 
       const now = new Date();
       const queueTasks: ActionQueueTask[] = candidateRows.map((task) => {
@@ -507,11 +577,7 @@ export const agentsRouter = router({
               Number(submission?.distinctSubmitterCount ?? 0) === 1
                 ? (submission?.onlySubmitter ?? null)
                 : null,
-            appealEligibleWorker: (submission?.allSubmitters ?? []).some(
-              (submitter) => submitter.toLowerCase() === address.toLowerCase()
-            )
-              ? address
-              : null,
+            appealEligibleWorker: contestAppealAuthorization.get(task.id) ? address : null,
             evaluator: task.evaluator,
             disputeResolver: task.disputeResolver,
             evaluatorDeadline: task.evaluatorDeadline,

@@ -46,7 +46,11 @@ export function SkillInstallMenu({ className }: { className?: string }) {
   );
 
   async function copyCommand(method: SkillInstallMethod) {
-    await navigator.clipboard.writeText(commands[method]);
+    try {
+      await navigator.clipboard.writeText(commands[method]);
+    } catch {
+      return;
+    }
     if (copiedResetTimer.current !== null) {
       window.clearTimeout(copiedResetTimer.current);
     }

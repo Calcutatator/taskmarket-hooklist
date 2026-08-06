@@ -50,6 +50,7 @@ import { TaskParticipationModule } from '@/components/market/task-participation-
 import { TaskDescriptionDisclosure } from '@/components/market/task-description-disclosure';
 import { TaskReviewStatus } from '@/components/market/task-review-status';
 import { TaskVisibilityBadge } from '@/components/market/unlisted-badge';
+import { VerdictEvidencePanel } from '@/components/market/verdict-evidence-panel';
 import { Badge } from '@/components/ui/badge';
 import {
   Breadcrumb,
@@ -102,6 +103,7 @@ import { Textarea } from '@/components/ui/textarea';
 import type { MarketStats } from '@/lib/api/server';
 import { explorerTxUrl } from '@/lib/explorer';
 import { compactAddress, formatDateTime, formatUsdcUnits } from '@/lib/format';
+import { TASK_ACTION_PRESENTATION } from '@/lib/market/task-action-presentation';
 import { MODE_TOOLTIPS } from '@/lib/market/status-config';
 import {
   TASK_TAG_BADGE_VARIANT,
@@ -2834,6 +2836,7 @@ export function TaskDetailPanel({
   // loaded submissions), so stripping it here too made the control disappear from the
   // page entirely for that window, not just move surfaces.
   const submissionsLoaded = (modeData?.submissions?.length ?? 0) > 0;
+  const decisionEvidenceReady = submissionsLoaded && task.submissionVisibility === 'public';
   // Benchmark's optional `task submit` channel (alongside its primary `task proof`
   // flow) already gets real accept/reject_submission pending actions from the
   // backend (contestHasSubmissions), but had no frontend review surface at all.
@@ -2871,20 +2874,7 @@ export function TaskDetailPanel({
       <TaskParticipationModule action={participationAction} task={task} />
     </div>
   ) : null;
-  const focusLabel = focusIntent
-    ? {
-        appeal_verdict: 'Review and appeal the verdict',
-        evaluate_work: 'Evaluate submitted work',
-        finalize_verdict: 'Finalize the verdict',
-        rate_workers: 'Rate settlement recipients',
-        resolve_dispute: 'Resolve the dispute',
-        review_work: 'Review submitted work',
-        select_auction_winner: 'Select the auction winner',
-        select_worker: 'Select a worker',
-        settle_expired: 'Settle the expired task',
-        submit_work: 'Submit your work',
-      }[focusIntent]
-    : null;
+  const focusLabel = focusIntent ? TASK_ACTION_PRESENTATION[focusIntent].focusLabel : null;
 
   return (
     <div className="grid w-full min-w-0 gap-6 lg:grid-cols-3">
@@ -2956,6 +2946,10 @@ export function TaskDetailPanel({
           />
         </section>
         <LiveStatusBanner marketStats={marketStats} modeData={modeData} task={task} />
+        <VerdictEvidencePanel
+          forceVisible={focusIntent === 'appeal_verdict' || focusIntent === 'finalize_verdict'}
+          task={task}
+        />
         <SettlementPayoutsPanel profileBasePath={profileBasePath} task={task} />
         {descriptionBody || detailTags.length > 0 ? (
           <section
@@ -3001,6 +2995,7 @@ export function TaskDetailPanel({
             <TaskActionsPanel
               claimedBy={task.claimedBy}
               emptyReason={pendingActionEmptyReason(task)}
+              evidenceReady={decisionEvidenceReady}
               pendingActions={mainNextActions}
               requester={task.requester}
               task={task}
@@ -3014,6 +3009,7 @@ export function TaskDetailPanel({
             <TaskActionsPanel
               claimedBy={task.claimedBy}
               emptyReason={pendingActionEmptyReason(task)}
+              evidenceReady={decisionEvidenceReady}
               hideWhenNoVisibleActions
               pendingActions={cancelActions}
               requester={task.requester}

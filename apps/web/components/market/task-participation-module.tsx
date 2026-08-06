@@ -33,6 +33,8 @@ import {
   skillInstallCommands,
 } from '@/lib/skill';
 import { isPrivyConfigured } from '@/lib/privy-config';
+import { emitActionInboxEvent } from '@/lib/market/action-inbox-events';
+import { useInvalidateActionQueue } from '@/lib/use-action-queue';
 
 function CommandRow({ command, label }: { command: string; label: string }) {
   return (
@@ -110,6 +112,7 @@ function TaskParticipationContent({
   walletAccessStatus: WalletAccessStatus | 'unavailable';
 }) {
   const router = useRouter();
+  const invalidateActionQueue = useInvalidateActionQueue();
   const canParticipate = canViewAction({
     action,
     address,
@@ -202,7 +205,15 @@ function TaskParticipationContent({
                   <SubmitArtifactsForm
                     action={action}
                     disabled={false}
-                    onSuccess={() => router.refresh()}
+                    onSuccess={() => {
+                      emitActionInboxEvent({
+                        action: action.action,
+                        event: 'lifecycle_action_completed',
+                        taskId: task.id,
+                      });
+                      void invalidateActionQueue();
+                      router.refresh();
+                    }}
                     task={task}
                   />
                 </DialogContent>

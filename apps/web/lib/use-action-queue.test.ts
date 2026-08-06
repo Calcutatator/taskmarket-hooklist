@@ -51,25 +51,64 @@ describe('useActionQueue', () => {
   });
 
   it('renders the public queue without requiring wallet verification', () => {
-    renderHook(() => useActionQueue(ADDRESS, { readAuthReady: false }));
+    const { result } = renderHook(() => useActionQueue(ADDRESS, { readAuthReady: false }));
 
     expect(actionQueueUseQuery).toHaveBeenCalled();
     expect(invalidateActionQueue).not.toHaveBeenCalled();
+    expect(result.current.callerScopedReady).toBe(false);
   });
 
   it('invalidates once when read authentication adds private and unlisted actions', async () => {
-    const { rerender } = renderHook(
+    const { rerender, result } = renderHook(
       ({ readAuthReady }) => useActionQueue(ADDRESS, { readAuthReady }),
       { initialProps: { readAuthReady: false } }
     );
 
     rerender({ readAuthReady: true });
 
+    expect(result.current.callerScopedReady).toBe(false);
+
     await waitFor(() => expect(invalidateActionQueue).toHaveBeenCalledTimes(1));
     expect(invalidateActionQueue).toHaveBeenCalledWith({ address: ADDRESS });
+    await waitFor(() => expect(result.current.callerScopedReady).toBe(true));
 
     rerender({ readAuthReady: true });
     expect(invalidateActionQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes before exposing caller-scoped data when authentication is ready at mount', async () => {
+    let finishInvalidation: (() => void) | undefined;
+    invalidateActionQueue.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishInvalidation = resolve;
+        })
+    );
+
+    const { result } = renderHook(() => useActionQueue(ADDRESS, { readAuthReady: true }));
+
+    expect(invalidateActionQueue).toHaveBeenCalledWith({ address: ADDRESS });
+    expect(result.current.callerScopedReady).toBe(false);
+
+    await act(async () => finishInvalidation?.());
+    await waitFor(() => expect(result.current.callerScopedReady).toBe(true));
+  });
+
+  it('refreshes the caller scope before exposing a switched wallet projection', async () => {
+    const otherAddress = '0x2222222222222222222222222222222222222222' as const;
+    const { rerender, result } = renderHook(
+      ({ address }: { address: `0x${string}` }) => useActionQueue(address, { readAuthReady: true }),
+      { initialProps: { address: ADDRESS as `0x${string}` } }
+    );
+
+    await waitFor(() => expect(result.current.callerScopedReady).toBe(true));
+    rerender({ address: otherAddress });
+
+    expect(result.current.callerScopedReady).toBe(false);
+    await waitFor(() =>
+      expect(invalidateActionQueue).toHaveBeenCalledWith({ address: otherAddress })
+    );
+    await waitFor(() => expect(result.current.callerScopedReady).toBe(true));
   });
 
   it('provides explicit invalidation for successful lifecycle mutations', async () => {

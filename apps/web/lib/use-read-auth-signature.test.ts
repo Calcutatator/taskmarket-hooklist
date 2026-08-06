@@ -8,12 +8,13 @@ vi.mock('wagmi', () => ({
 }));
 
 import { useReadAuthSignature, useReadAuthSignatureState } from './use-read-auth-signature';
-import { getCachedReadAuthHeaders } from './read-auth';
+import { clearCachedReadAuthHeaders, getCachedReadAuthHeaders } from './read-auth';
 
 const ADDRESS = '0x1111111111111111111111111111111111111111' as const;
 
 describe('useReadAuthSignature', () => {
   afterEach(() => {
+    clearCachedReadAuthHeaders();
     vi.clearAllMocks();
   });
 
@@ -80,6 +81,59 @@ describe('useReadAuthSignature', () => {
     expect(signMessageAsync).toHaveBeenCalledTimes(1);
   });
 
+  it('reuses a verified wallet proof after every consumer unmounts', async () => {
+    signMessageAsync.mockResolvedValue('0xsignature');
+    const first = renderHook(() => useReadAuthSignature(ADDRESS));
+
+    await waitFor(() => expect(first.result.current).toBe(true));
+    first.unmount();
+
+    const second = renderHook(() => useReadAuthSignature(ADDRESS));
+
+    expect(second.result.current).toBe(true);
+    expect(signMessageAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one in-flight wallet proof across concurrent consumers', async () => {
+    let resolveSignature: ((signature: `0x${string}`) => void) | undefined;
+    signMessageAsync.mockImplementation(
+      () =>
+        new Promise<`0x${string}`>((resolve) => {
+          resolveSignature = resolve;
+        })
+    );
+
+    const first = renderHook(() => useReadAuthSignature(ADDRESS));
+    const second = renderHook(() => useReadAuthSignature(ADDRESS));
+
+    await waitFor(() => expect(signMessageAsync).toHaveBeenCalled());
+    expect(signMessageAsync).toHaveBeenCalledTimes(1);
+
+    first.unmount();
+    await act(async () => resolveSignature?.('0xsignature'));
+
+    await waitFor(() => expect(second.result.current).toBe(true));
+    expect(getCachedReadAuthHeaders()).toEqual({
+      'X-Taskmarket-Caller-Address': ADDRESS,
+      'X-Taskmarket-Caller-Signature': '0xsignature',
+    });
+  });
+
+  it('does not clear another consumer proof when an inactive consumer mounts or unmounts', async () => {
+    signMessageAsync.mockResolvedValue('0xsignature');
+    const connected = renderHook(() => useReadAuthSignature(ADDRESS));
+    await waitFor(() => expect(connected.result.current).toBe(true));
+
+    const inactive = renderHook(() => useReadAuthSignature(undefined));
+    inactive.unmount();
+
+    expect(getCachedReadAuthHeaders()).toEqual({
+      'X-Taskmarket-Caller-Address': ADDRESS,
+      'X-Taskmarket-Caller-Signature': '0xsignature',
+    });
+    expect(signMessageAsync).toHaveBeenCalledTimes(1);
+  });
+
   it('re-signs and re-caches when the connected address changes', async () => {
     const OTHER = '0x2222222222222222222222222222222222222222' as const;
     let resolveOtherSignature: ((signature: string) => void) | undefined;
@@ -123,6 +177,42 @@ describe('useReadAuthSignature', () => {
     act(() => rerender({ address: undefined }));
 
     expect(getCachedReadAuthHeaders()).toEqual({});
+  });
+
+  it('keeps the proof until the last connected consumer observes a disconnect', async () => {
+    signMessageAsync.mockResolvedValue('0xsignature');
+    const first = renderHook(({ address }) => useReadAuthSignature(address), {
+      initialProps: { address: ADDRESS as `0x${string}` | undefined },
+    });
+    const second = renderHook(({ address }) => useReadAuthSignature(address), {
+      initialProps: { address: ADDRESS as `0x${string}` | undefined },
+    });
+    await waitFor(() => {
+      expect(first.result.current).toBe(true);
+      expect(second.result.current).toBe(true);
+    });
+
+    act(() => first.rerender({ address: undefined }));
+    expect(getCachedReadAuthHeaders()).toEqual({
+      'X-Taskmarket-Caller-Address': ADDRESS,
+      'X-Taskmarket-Caller-Signature': '0xsignature',
+    });
+
+    act(() => second.rerender({ address: undefined }));
+    expect(getCachedReadAuthHeaders()).toEqual({});
+  });
+
+  it('requires a fresh proof after explicit logout clears the session', async () => {
+    signMessageAsync.mockResolvedValue('0xsignature');
+    const first = renderHook(() => useReadAuthSignature(ADDRESS));
+    await waitFor(() => expect(first.result.current).toBe(true));
+
+    clearCachedReadAuthHeaders();
+    expect(getCachedReadAuthHeaders()).toEqual({});
+
+    const second = renderHook(() => useReadAuthSignature(ADDRESS));
+    await waitFor(() => expect(second.result.current).toBe(true));
+    expect(signMessageAsync).toHaveBeenCalledTimes(2);
   });
 
   it('ignores a signature that resolves after unmounting another wallet consumer', async () => {

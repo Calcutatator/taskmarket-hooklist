@@ -275,6 +275,7 @@ const HOOK_ABI = parseAbi([
 ]);
 const REGISTRY_READ_ABI = parseAbi([
   'function getTaskHooks(bytes32 taskId) view returns (address[])',
+  'function taskSubmissionHashes(bytes32 taskId, address worker) view returns (bytes32[])',
 ]);
 const REGISTERED_EVENT = parseAbiItem(
   'event Registered(uint256 indexed agentId, string agentURI, address indexed owner)'
@@ -1241,6 +1242,52 @@ export async function contractGetTaskHooks(
     functionName: 'getTaskHooks',
     args: [taskId],
   });
+}
+
+export async function contractGetContestAppealState(
+  taskId: `0x${string}`,
+  worker: `0x${string}`,
+  contractAddress?: string | null
+): Promise<{ claimedWorker: `0x${string}`; hasSubmission: boolean }> {
+  const config = getServerConfig();
+  const publicClient = getPublicClient();
+  const address = (contractAddress ?? config.CONTRACT_ADDRESS) as `0x${string}`;
+  const [task, submissionHashes] = await Promise.all([
+    publicClient.readContract({
+      address,
+      abi: SETTLEMENT_READ_ABI,
+      functionName: 'getTask',
+      args: [taskId],
+    }),
+    publicClient.readContract({
+      address,
+      abi: REGISTRY_READ_ABI,
+      functionName: 'taskSubmissionHashes',
+      args: [taskId, worker],
+    }),
+  ]);
+
+  return {
+    claimedWorker: task.worker,
+    hasSubmission: submissionHashes.length > 0,
+  };
+}
+
+export async function contractGetTaskWorker(
+  taskId: `0x${string}`,
+  contractAddress?: string | null
+): Promise<`0x${string}`> {
+  const config = getServerConfig();
+  const publicClient = getPublicClient();
+  const address = (contractAddress ?? config.CONTRACT_ADDRESS) as `0x${string}`;
+  const task = await publicClient.readContract({
+    address,
+    abi: SETTLEMENT_READ_ABI,
+    functionName: 'getTask',
+    args: [taskId],
+  });
+
+  return task.worker;
 }
 
 export async function contractGetSettlementChainState(

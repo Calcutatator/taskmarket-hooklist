@@ -8,6 +8,7 @@ import { SubmissionPayoutAction } from '@/components/market/actions/submission-p
 import { emitActionInboxEvent } from '@/lib/market/action-inbox-events';
 import { commandForTaskWorker } from '@/lib/market/task-action-command';
 import type { WorkerSubmissionGroup } from '@/lib/market/submission-review';
+import { useInvalidateActionQueue } from '@/lib/use-action-queue';
 
 export type WorkerSubmissionActionsProps = {
   acceptAction?: PendingAction;
@@ -25,6 +26,7 @@ export function WorkerSubmissionActions({
   task,
 }: WorkerSubmissionActionsProps) {
   const router = useRouter();
+  const invalidateActionQueue = useInvalidateActionQueue();
 
   if (group.rejected || (!acceptAction && !rejectAction)) {
     return null;
@@ -52,6 +54,7 @@ export function WorkerSubmissionActions({
               event: 'lifecycle_action_completed',
               taskId: task.id,
             });
+            void invalidateActionQueue();
             onRejectSuccess(workerKey);
           }}
           onSuccess={() => router.refresh()}

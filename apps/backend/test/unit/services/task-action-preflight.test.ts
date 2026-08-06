@@ -1,12 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockCtx, makeChain } from '../helpers';
+
+vi.mock('../../../src/services/contract', () => ({
+  contractGetContestAppealState: vi.fn(),
+}));
+
 import {
   type PaidTaskAction,
   validatePaidTaskAction,
 } from '../../../src/services/task-action-preflight';
+import { contractGetContestAppealState } from '../../../src/services/contract';
 
 const REQUESTER = '0x0000000000000000000000000000000000000001';
 const WORKER = '0x0000000000000000000000000000000000000002';
+const OTHER_WORKER = '0x0000000000000000000000000000000000000003';
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const NOW = new Date('2026-07-11T00:00:00.000Z');
 
 function task(overrides: Record<string, unknown> = {}) {
@@ -58,6 +66,14 @@ function task(overrides: Record<string, unknown> = {}) {
 }
 
 describe('paid task action preflight', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(contractGetContestAppealState).mockResolvedValue({
+      claimedWorker: ZERO_ADDRESS,
+      hasSubmission: false,
+    });
+  });
+
   const allowedCases: Array<{
     action: PaidTaskAction;
     task: Record<string, unknown>;
@@ -228,19 +244,21 @@ describe('paid task action preflight', () => {
   });
 
   it('allows a contest submitter to appeal when no single worker is claimed', async () => {
+    vi.mocked(contractGetContestAppealState).mockResolvedValueOnce({
+      claimedWorker: ZERO_ADDRESS,
+      hasSubmission: true,
+    });
     const ctx = createMockCtx();
-    ctx.db.select
-      .mockReturnValueOnce(
-        makeChain([
-          task({
-            mode: 'bounty',
-            status: 'appealing',
-            claimedBy: null,
-            appealDeadline: new Date('2026-07-11T01:00:00.000Z'),
-          }),
-        ])
-      )
-      .mockReturnValueOnce(makeChain([{ id: 'submission' }]));
+    ctx.db.select.mockReturnValueOnce(
+      makeChain([
+        task({
+          mode: 'bounty',
+          status: 'appealing',
+          claimedBy: null,
+          appealDeadline: new Date('2026-07-11T01:00:00.000Z'),
+        }),
+      ])
+    );
 
     await expect(
       validatePaidTaskAction(
@@ -251,22 +269,21 @@ describe('paid task action preflight', () => {
         NOW
       )
     ).resolves.toBeUndefined();
+    expect(ctx.db.select).toHaveBeenCalledOnce();
   });
 
   it('rejects an unrelated wallet appealing a contest verdict', async () => {
     const ctx = createMockCtx();
-    ctx.db.select
-      .mockReturnValueOnce(
-        makeChain([
-          task({
-            mode: 'benchmark',
-            status: 'appealing',
-            claimedBy: null,
-            appealDeadline: new Date('2026-07-11T01:00:00.000Z'),
-          }),
-        ])
-      )
-      .mockReturnValueOnce(makeChain([]));
+    ctx.db.select.mockReturnValueOnce(
+      makeChain([
+        task({
+          mode: 'benchmark',
+          status: 'appealing',
+          claimedBy: null,
+          appealDeadline: new Date('2026-07-11T01:00:00.000Z'),
+        }),
+      ])
+    );
 
     await expect(
       validatePaidTaskAction(
@@ -277,6 +294,81 @@ describe('paid task action preflight', () => {
         NOW
       )
     ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('rejects a losing submitter when the recovered onchain task has an awarded worker', async () => {
+    vi.mocked(contractGetContestAppealState).mockResolvedValueOnce({
+      claimedWorker: OTHER_WORKER,
+      hasSubmission: true,
+    });
+    const ctx = createMockCtx();
+    ctx.db.select.mockReturnValueOnce(
+      makeChain([
+        task({
+          mode: 'bounty',
+          status: 'appealing',
+          claimedBy: null,
+          appealDeadline: new Date('2026-07-11T01:00:00.000Z'),
+        }),
+      ])
+    );
+
+    await expect(
+      validatePaidTaskAction(
+        ctx.db,
+        'appeal',
+        { params: { taskId: '0xtask' }, body: { taskId: '0xtask' } } as never,
+        WORKER,
+        NOW
+      )
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('allows the recovered onchain awarded worker without a submission row', async () => {
+    vi.mocked(contractGetContestAppealState).mockResolvedValueOnce({
+      claimedWorker: WORKER,
+      hasSubmission: false,
+    });
+    const ctx = createMockCtx();
+    ctx.db.select.mockReturnValueOnce(
+      makeChain([
+        task({
+          mode: 'benchmark',
+          status: 'appealing',
+          claimedBy: null,
+          appealDeadline: new Date('2026-07-11T01:00:00.000Z'),
+        }),
+      ])
+    );
+
+    await expect(
+      validatePaidTaskAction(
+        ctx.db,
+        'appeal',
+        { params: { taskId: '0xtask' }, body: { taskId: '0xtask' } } as never,
+        WORKER,
+        NOW
+      )
+    ).resolves.toBeUndefined();
+    expect(ctx.db.select).toHaveBeenCalledOnce();
+  });
+
+  it('fails closed when onchain appeal eligibility cannot be read', async () => {
+    vi.mocked(contractGetContestAppealState).mockRejectedValueOnce(new Error('RPC unavailable'));
+    const ctx = createMockCtx();
+    ctx.db.select.mockReturnValueOnce(
+      makeChain([task({ mode: 'bounty', status: 'appealing', claimedBy: null })])
+    );
+
+    await expect(
+      validatePaidTaskAction(
+        ctx.db,
+        'appeal',
+        { params: { taskId: '0xtask' }, body: { taskId: '0xtask' } } as never,
+        WORKER,
+        NOW
+      )
+    ).rejects.toMatchObject({ message: 'Unable to verify appeal eligibility', status: 403 });
   });
 
   it('allows a non-requester payer to call refund_expired (ADR-0026, permissionless)', async () => {

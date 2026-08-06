@@ -372,7 +372,10 @@ function PrivyHeaderAccountControlInner({ targetId }: { targetId: string }) {
         <div className="grid gap-2">
           <Button
             className="w-full justify-start"
-            onClick={() => connectOrCreateWallet()}
+            onClick={() => {
+              clearClientAuthState();
+              connectOrCreateWallet();
+            }}
             size="sm"
             type="button"
             variant="outline"

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { cache } from 'react';
 import { TaskActionIntent } from '@taskmarket/shared';
 
-import { TaskDetailPanel } from '@/components/market/tasks';
+import { CallerScopedTaskDetail } from '@/components/market/caller-scoped-task-detail';
 import { PrivateTaskAccessGate } from '@/components/market/private-task-access-gate';
 import { fetchMarketStats, fetchTask, fetchTaskModeData, type MarketStats } from '@/lib/api/server';
 import {
@@ -84,7 +84,7 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
 
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
-      <TaskDetailPanel
+      <CallerScopedTaskDetail
         focusIntent={focusIntent}
         marketStats={marketStats}
         modeData={modeData}

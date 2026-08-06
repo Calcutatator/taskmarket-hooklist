@@ -147,7 +147,11 @@ function SimplePaidAction({
         </Button>
       </ConfirmDialog>
       <p className="text-xs text-muted-foreground">Costs 0.001 USDC.</p>
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? (
+        <p className="text-xs text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -190,8 +194,13 @@ function AwardEditor({
   onChange: (awards: AwardDraft[]) => void;
 }) {
   const id = useId();
+  const errorId = `${id}-error`;
   return (
-    <fieldset className="grid gap-3 rounded-xl border border-border/60 bg-background/42 p-3">
+    <fieldset
+      aria-describedby={error ? errorId : undefined}
+      aria-invalid={error ? true : undefined}
+      className="grid gap-3 rounded-xl border border-border/60 bg-background/42 p-3"
+    >
       <legend className="px-1 text-sm font-semibold text-foreground">Payout recipients</legend>
       {awards.map((award, index) => (
         <div className="grid gap-2 rounded-lg border border-border/52 p-3" key={`${id}-${index}`}>
@@ -276,7 +285,11 @@ function AwardEditor({
         <PlusIcon aria-hidden="true" className="size-4" />
         Add recipient
       </Button>
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? (
+        <p className="text-xs text-destructive" id={errorId} role="alert">
+          {error}
+        </p>
+      ) : null}
     </fieldset>
   );
 }
@@ -344,9 +357,13 @@ function VerdictForm({
   const [awards, setAwards] = useState<AwardDraft[]>([defaultAward(props.task)]);
   const [step, setStep] = useState<X402Step | 'done' | 'idle'>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [invalidFields, setInvalidFields] = useState<Array<'confidence' | 'evidence' | 'score'>>(
+    []
+  );
   const [awardError, setAwardError] = useState<string | undefined>();
   const [txHash, setTxHash] = useState<string | null>(null);
   const formId = useId();
+  const errorId = `${formId}-error`;
 
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect the assigned decision-maker wallet to continue." />;
@@ -355,27 +372,30 @@ function VerdictForm({
 
   async function submit() {
     setError(null);
+    setInvalidFields([]);
     setAwardError(undefined);
 
     const parsedScore = Number(score);
     const parsedConfidence = Number(confidence);
-    if (
-      !Number.isInteger(parsedScore) ||
-      parsedScore < 0 ||
-      parsedScore > 1000 ||
-      !Number.isInteger(parsedConfidence) ||
-      parsedConfidence < 0 ||
-      parsedConfidence > 1000
-    ) {
+    const scoreInvalid = !Number.isInteger(parsedScore) || parsedScore < 0 || parsedScore > 1000;
+    const confidenceInvalid =
+      !Number.isInteger(parsedConfidence) || parsedConfidence < 0 || parsedConfidence > 1000;
+    if (scoreInvalid || confidenceInvalid) {
+      const fields: Array<'confidence' | 'score'> = [];
+      if (scoreInvalid) fields.push('score');
+      if (confidenceInvalid) fields.push('confidence');
+      setInvalidFields(fields);
       setError('Score and confidence must be whole numbers from 0 to 1000.');
       return;
     }
     if (endpoint === 'evaluate') {
       if (!evidenceHash || evidenceHash === ZERO_EVIDENCE_HASH) {
+        setInvalidFields(['evidence']);
         setError('Evidence hash is required and cannot be the zero hash.');
         return;
       }
       if (!EVIDENCE_HASH_PATTERN.test(evidenceHash)) {
+        setInvalidFields(['evidence']);
         setError('Evidence hash must be a 32-byte 0x-prefixed hex value.');
         return;
       }
@@ -445,6 +465,8 @@ function VerdictForm({
             <div className="grid gap-1">
               <Label htmlFor={`${formId}-score`}>Score (0-1000)</Label>
               <Input
+                aria-describedby={invalidFields.includes('score') ? errorId : undefined}
+                aria-invalid={invalidFields.includes('score') ? true : undefined}
                 id={`${formId}-score`}
                 max={1000}
                 min={0}
@@ -456,6 +478,8 @@ function VerdictForm({
             <div className="grid gap-1">
               <Label htmlFor={`${formId}-confidence`}>Confidence (0-1000)</Label>
               <Input
+                aria-describedby={invalidFields.includes('confidence') ? errorId : undefined}
+                aria-invalid={invalidFields.includes('confidence') ? true : undefined}
                 id={`${formId}-confidence`}
                 max={1000}
                 min={0}
@@ -468,6 +492,8 @@ function VerdictForm({
           <div className="grid gap-1">
             <Label htmlFor={`${formId}-evidence`}>Evidence hash</Label>
             <Input
+              aria-describedby={invalidFields.includes('evidence') ? errorId : undefined}
+              aria-invalid={invalidFields.includes('evidence') ? true : undefined}
               id={`${formId}-evidence`}
               onChange={(event) => setEvidenceHash(event.currentTarget.value)}
               placeholder="0x followed by 64 hexadecimal characters"
@@ -496,7 +522,11 @@ function VerdictForm({
       <p className="text-xs text-muted-foreground">
         Review the visible submissions before signing. Awards are final and cost 0.001 USDC.
       </p>
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? (
+        <p className="text-xs text-destructive" id={errorId} role="alert">
+          {error}
+        </p>
+      ) : null}
     </form>
   );
 }
@@ -581,7 +611,11 @@ export function FinalizeVerdictButton(props: TaskActionComponentProps) {
       <p className="text-xs text-muted-foreground">
         Finalizes the evaluator verdict after the appeal deadline. No X402 payment is required.
       </p>
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? (
+        <p className="text-xs text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

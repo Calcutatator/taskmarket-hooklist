@@ -14,6 +14,7 @@ import {
 } from '@/components/market/fund-wallet-button';
 import { Button } from '@/components/ui/button';
 import { usePrivyAccountState } from '@/components/privy-account-control';
+import { clearClientAuthState } from '@/lib/clear-client-auth-state';
 import { compactAddress, formatUsdcUnits } from '@/lib/format';
 import { emitActionInboxEvent } from '@/lib/market/action-inbox-events';
 import { isPrivyConfigured } from '@/lib/privy-config';
@@ -140,13 +141,16 @@ export function SubmissionPayoutAction({
   }
 
   function handlePayoutSuccess() {
-    emitActionInboxEvent({
-      action: action.action,
-      event: 'lifecycle_action_completed',
-      taskId: task.id,
-    });
     beginSettlementConfirmation();
-    onSuccess?.();
+    if (onSuccess) {
+      onSuccess();
+    } else {
+      emitActionInboxEvent({
+        action: action.action,
+        event: 'lifecycle_action_completed',
+        taskId: task.id,
+      });
+    }
   }
 
   if (requesterConnected) {
@@ -288,6 +292,7 @@ function PrivyWalletActionButtonInner({ label }: { label: string }) {
         if (loading && readyTimedOut) {
           window.location.reload();
         } else if (walletActionStatus === 'connected') {
+          clearClientAuthState();
           void connectOrCreateWallet();
         } else {
           beginWalletAccess();

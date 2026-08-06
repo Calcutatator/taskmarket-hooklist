@@ -2,10 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { createMockCtx, makeChain } from '../helpers';
 
+vi.mock('../../../src/services/contract', () => ({
+  contractGetContestAppealState: vi.fn(),
+}));
+
 import { agentsRouter } from '../../../src/routers/agents.router';
+import { contractGetContestAppealState } from '../../../src/services/contract';
 
 const ADDR = '0xAgent00000000000000000000000000000000001';
 const AGENT_ID = 'agent-001';
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 function makeActionQueueTask(overrides: Record<string, unknown> = {}) {
   return {
@@ -76,6 +82,10 @@ describe('agents router', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
+    vi.mocked(contractGetContestAppealState).mockResolvedValue({
+      claimedWorker: ZERO_ADDRESS,
+      hasSubmission: false,
+    });
   });
 
   describe('stats', () => {
@@ -405,7 +415,7 @@ describe('agents router', () => {
       expect(ctx.db.select).toHaveBeenCalledTimes(5);
     });
 
-    it('discovers every participant role while keeping anonymous results discoverable-only', async () => {
+    it('discovers public assigned roles without trusting anonymous submission membership', async () => {
       const candidateChain = makeChain([]);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(candidateChain);
@@ -419,9 +429,40 @@ describe('agents router', () => {
       expect(query.sql).toContain('"tasks"."evaluator"');
       expect(query.sql).toContain('"tasks"."dispute_resolver"');
       expect(query.sql).toContain('from "task_awards"');
-      expect(query.sql).toContain('from "submissions"');
+      expect(query.sql).not.toContain('from "submissions"');
       expect(query.sql).toContain('"tasks"."task_visibility" not in');
+      expect(query.sql).toContain('"tasks"."status" in');
+      expect(query.params).toEqual(
+        expect.arrayContaining([
+          'open',
+          'claimed',
+          'worker_selected',
+          'pending_approval',
+          'review',
+          'appealing',
+          'disputed',
+          'completed',
+        ])
+      );
+      expect(query.params).not.toEqual(expect.arrayContaining(['expired', 'cancelled']));
+      expect(query.sql).toContain('"task_awards"."rating" is null');
     });
+
+    it.each(['never', 'reveal_all', 'winner_only'])(
+      'does not infer anonymous victim membership from active %s submissions',
+      async () => {
+        const candidateChain = makeChain([]);
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(candidateChain);
+
+        const result = await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+        expect(result).toEqual({ items: [], total: 0, urgentTotal: 0, waiting: [] });
+        const where = candidateChain.where.mock.calls[0]?.[0];
+        const query = new PgDialect().sqlToQuery(where);
+        expect(query.sql).not.toContain('from "submissions"');
+      }
+    );
 
     it('adds private and unlisted role tasks only after read-auth verifies the same address', async () => {
       const candidateChain = makeChain([]);
@@ -432,7 +473,29 @@ describe('agents router', () => {
 
       const where = candidateChain.where.mock.calls[0]?.[0];
       const query = new PgDialect().sqlToQuery(where);
+      expect(query.sql).toContain('from "submissions"');
       expect(query.sql).not.toContain('task_visibility');
+    });
+
+    it('filters a former private submitter after allowlist and password access are gone', async () => {
+      const candidateChain = makeChain([
+        makeActionQueueTask({
+          requester: '0xRequester',
+          taskVisibility: 'private',
+          submissionVisibility: 'never',
+        }),
+      ]);
+      const ctx = createMockCtx(undefined, { address: ADDR.toLowerCase() });
+      ctx.db.select
+        .mockReturnValueOnce(candidateChain)
+        .mockReturnValueOnce(makeChain([])) // revoked allowlist
+        .mockReturnValueOnce(makeChain([])); // no award membership
+
+      const result = await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+      expect(result).toEqual({ items: [], total: 0, urgentTotal: 0, waiting: [] });
+      expect(ctx.taskAccessGrant).toBeUndefined();
+      expect(ctx.db.select).toHaveBeenCalledTimes(3);
     });
 
     it('prioritizes an assigned worker submission when its deadline is within 24 hours', async () => {
@@ -531,7 +594,11 @@ describe('agents router', () => {
     it('queues a contest appeal only for a wallet that actually submitted', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-08-06T00:00:00.000Z'));
-      const ctx = createMockCtx();
+      vi.mocked(contractGetContestAppealState).mockResolvedValueOnce({
+        claimedWorker: ZERO_ADDRESS,
+        hasSubmission: true,
+      });
+      const ctx = createMockCtx(undefined, { address: ADDR.toLowerCase() });
       ctx.db.select
         .mockReturnValueOnce(
           makeChain([
@@ -551,7 +618,6 @@ describe('agents router', () => {
               distinctSubmitterCount: 2,
               onlySubmitter: null,
               submitters: [ADDR.toLowerCase(), '0xanother'],
-              allSubmitters: [ADDR.toLowerCase(), '0xanother'],
             },
           ])
         )
@@ -573,6 +639,47 @@ describe('agents router', () => {
         action: 'appeal',
         eligibleAddress: ADDR,
       });
+    });
+
+    it('does not queue a recovered contest appeal for a losing submitter', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-06T00:00:00.000Z'));
+      vi.mocked(contractGetContestAppealState).mockResolvedValueOnce({
+        claimedWorker: '0x00000000000000000000000000000000000000aa',
+        hasSubmission: true,
+      });
+      const ctx = createMockCtx(undefined, { address: ADDR.toLowerCase() });
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            makeActionQueueTask({
+              id: 'task-recovered-appeal',
+              requester: '0xRequester',
+              status: 'appealing',
+              claimedBy: null,
+              appealDeadline: new Date('2026-08-07T00:00:00.000Z'),
+            }),
+          ])
+        )
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              taskId: 'task-recovered-appeal',
+              count: 2,
+              distinctSubmitterCount: 2,
+              onlySubmitter: null,
+              submitters: [ADDR.toLowerCase(), '0xanother'],
+            },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await agentsRouter.createCaller(ctx).actionQueue({ address: ADDR });
+
+      expect(result).toEqual({ items: [], total: 0, urgentTotal: 0, waiting: [] });
+      expect(contractGetContestAppealState).toHaveBeenCalledOnce();
     });
 
     it('suppresses unsupported evaluator controls and unsafe expired refunds from totals', async () => {

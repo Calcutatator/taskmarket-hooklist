@@ -4,17 +4,33 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PendingAction, TaskDetailResponse } from '@taskmarket/shared';
 
-import { canViewAction, TaskActionsPanel } from './task-actions-panel';
-import type { TaskActionComponentProps } from './actions/types';
+import {
+  ACTION_INBOX_EVENT_NAME,
+  type TimedActionInboxEvent,
+} from '@/lib/market/action-inbox-events';
 
-const { refresh } = vi.hoisted(() => ({ refresh: vi.fn() }));
+import type { TaskActionComponentProps } from './actions/types';
+import { canViewAction, TaskActionsPanel } from './task-actions-panel';
+
+const { account, invalidateActionQueue, refresh } = vi.hoisted(() => ({
+  account: {
+    address: '0x1111111111111111111111111111111111111111' as string | undefined,
+    isConnected: true,
+  },
+  invalidateActionQueue: vi.fn(),
+  refresh: vi.fn(),
+}));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh }),
 }));
 
 vi.mock('wagmi', () => ({
-  useAccount: () => ({ address: '0x1111111111111111111111111111111111111111' }),
+  useAccount: () => account,
+}));
+
+vi.mock('@/lib/use-action-queue', () => ({
+  useInvalidateActionQueue: () => invalidateActionQueue,
 }));
 
 vi.mock('@/components/market/fund-wallet-button', () => ({
@@ -33,16 +49,41 @@ vi.mock('@/components/market/actions', () => ({
         run accept
       </button>
     ),
+    cancel: () => <button type="button">fail cancel</button>,
+    evaluate: ({ onSuccess }: TaskActionComponentProps) => (
+      <button onClick={() => onSuccess?.()} type="button">
+        run evaluate
+      </button>
+    ),
+    finalize_verdict: ({ onSuccess }: TaskActionComponentProps) => (
+      <button onClick={() => onSuccess?.()} type="button">
+        run finalize
+      </button>
+    ),
+    select_worker: ({ onSuccess }: TaskActionComponentProps) => (
+      <button onClick={() => onSuccess?.()} type="button">
+        run select worker
+      </button>
+    ),
     submit: () => <button type="button">Choose files</button>,
     rate: ({ action }: TaskActionComponentProps) => (
       <button type="button">Rate {action.targetWorker}</button>
+    ),
+    resolve_dispute: ({ onSuccess }: TaskActionComponentProps) => (
+      <button onClick={() => onSuccess?.()} type="button">
+        run resolve dispute
+      </button>
     ),
   },
 }));
 
 const task = {
+  claimedBy: '0x4444444444444444444444444444444444444444',
+  disputeResolver: '0x3333333333333333333333333333333333333333',
+  evaluator: '0x2222222222222222222222222222222222222222',
   id: 'task-1',
   requester: '0x1111111111111111111111111111111111111111',
+  submissionVisibility: 'public',
 } as unknown as TaskDetailResponse;
 
 const action = { action: 'accept', role: 'requester', command: 'tm accept' } as PendingAction;
@@ -50,6 +91,31 @@ const action = { action: 'accept', role: 'requester', command: 'tm accept' } as 
 describe('TaskActionsPanel', () => {
   beforeEach(() => {
     refresh.mockReset();
+    invalidateActionQueue.mockReset();
+    invalidateActionQueue.mockResolvedValue(undefined);
+    account.address = task.requester;
+    account.isConnected = true;
+  });
+
+  it('invalidates the shared queue when a common action succeeds', async () => {
+    const user = userEvent.setup();
+    const selectWorker = {
+      action: 'select_worker',
+      role: 'requester',
+      command: 'tm select-worker',
+    } as PendingAction;
+    render(
+      <TaskActionsPanel
+        emptyReason="none"
+        pendingActions={[selectWorker]}
+        requester={task.requester}
+        task={task}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /run select worker/i }));
+
+    expect(invalidateActionQueue).toHaveBeenCalledTimes(1);
   });
 
   it('passes an onSuccess that calls router.refresh into the action component', async () => {
@@ -65,6 +131,229 @@ describe('TaskActionsPanel', () => {
 
     await user.click(screen.getByRole('button', { name: /run accept/i }));
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits one real lifecycle completion event when an action succeeds', async () => {
+    const user = userEvent.setup();
+    const events: TimedActionInboxEvent[] = [];
+    const listener = (event: Event) => {
+      events.push((event as CustomEvent<TimedActionInboxEvent>).detail);
+    };
+    window.addEventListener(ACTION_INBOX_EVENT_NAME, listener);
+
+    render(
+      <TaskActionsPanel
+        emptyReason="none"
+        pendingActions={[action]}
+        requester={task.requester}
+        task={task}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /run accept/i }));
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual(
+      expect.objectContaining({
+        action: 'accept',
+        event: 'lifecycle_action_completed',
+        taskId: task.id,
+      })
+    );
+    window.removeEventListener(ACTION_INBOX_EVENT_NAME, listener);
+  });
+
+  it('emits no lifecycle completion event when an action does not complete', async () => {
+    const user = userEvent.setup();
+    const listener = vi.fn<(event: Event) => void>();
+    window.addEventListener(ACTION_INBOX_EVENT_NAME, listener);
+    const failedAction = {
+      action: 'cancel',
+      role: 'requester',
+      command: 'tm cancel',
+    } as PendingAction;
+
+    render(
+      <TaskActionsPanel
+        emptyReason="none"
+        pendingActions={[failedAction]}
+        requester={task.requester}
+        task={task}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /fail cancel/i }));
+
+    expect(listener).not.toHaveBeenCalled();
+    window.removeEventListener(ACTION_INBOX_EVENT_NAME, listener);
+  });
+
+  it('shows public evidence evaluation only to the assigned evaluator', () => {
+    const evaluateAction = {
+      action: 'evaluate',
+      role: 'evaluator',
+      command: 'tm evaluate',
+    } as PendingAction;
+    account.address = task.evaluator ?? undefined;
+
+    const { rerender } = render(
+      <TaskActionsPanel
+        emptyReason="none"
+        evidenceReady
+        pendingActions={[evaluateAction]}
+        requester={task.requester}
+        task={task}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /run evaluate/i })).toBeInTheDocument();
+
+    account.address = task.claimedBy ?? undefined;
+    rerender(
+      <TaskActionsPanel
+        emptyReason="none"
+        evidenceReady
+        pendingActions={[evaluateAction]}
+        requester={task.requester}
+        task={task}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: /run evaluate/i })).not.toBeInTheDocument();
+  });
+
+  it('hides evidence-dependent actions while the assigned wallet is disconnected', () => {
+    const evaluateAction = {
+      action: 'evaluate',
+      role: 'evaluator',
+      command: 'tm evaluate',
+    } as PendingAction;
+    account.address = undefined;
+    account.isConnected = false;
+
+    render(
+      <TaskActionsPanel
+        emptyReason="none"
+        evidenceReady
+        pendingActions={[evaluateAction]}
+        requester={task.requester}
+        task={task}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: /run evaluate/i })).not.toBeInTheDocument();
+    expect(screen.getByText('No actions for this wallet')).toBeInTheDocument();
+  });
+
+  it('shows public evidence dispute resolution only to the assigned resolver', () => {
+    const resolveAction = {
+      action: 'resolve_dispute',
+      role: 'dispute_resolver',
+      command: 'tm resolve-dispute',
+    } as PendingAction;
+    account.address = task.disputeResolver ?? undefined;
+
+    render(
+      <TaskActionsPanel
+        emptyReason="none"
+        evidenceReady
+        pendingActions={[resolveAction]}
+        requester={task.requester}
+        task={task}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /run resolve dispute/i })).toBeInTheDocument();
+  });
+
+  it.each(['evaluate', 'resolve_dispute'] as const)(
+    'fails closed for %s when submission evidence is restricted',
+    (actionName) => {
+      const restrictedAction = {
+        action: actionName,
+        role: actionName === 'evaluate' ? 'evaluator' : 'dispute_resolver',
+        command: `tm ${actionName}`,
+      } as PendingAction;
+      account.address =
+        (actionName === 'evaluate' ? task.evaluator : task.disputeResolver) ?? undefined;
+
+      render(
+        <TaskActionsPanel
+          emptyReason="none"
+          pendingActions={[restrictedAction]}
+          requester={task.requester}
+          task={{ ...task, submissionVisibility: 'never' }}
+        />
+      );
+
+      expect(
+        screen.queryByRole('button', { name: /run evaluate|run resolve dispute/i })
+      ).not.toBeInTheDocument();
+      expect(screen.getByText('Decision evidence unavailable')).toBeInTheDocument();
+    }
+  );
+
+  it('fails closed while public evidence has not loaded', () => {
+    const evaluateAction = {
+      action: 'evaluate',
+      role: 'evaluator',
+      command: 'tm evaluate',
+    } as PendingAction;
+    account.address = task.evaluator ?? undefined;
+
+    render(
+      <TaskActionsPanel
+        emptyReason="No evaluator actions are available."
+        pendingActions={[evaluateAction]}
+        requester={task.requester}
+        task={task}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: /run evaluate/i })).not.toBeInTheDocument();
+    expect(screen.getByText('Decision evidence unavailable')).toBeInTheDocument();
+    expect(screen.getByText(/until the submitted evidence is visible/i)).toBeInTheDocument();
+  });
+
+  it('keeps requester, worker, and permissionless visibility behavior unchanged', () => {
+    const requesterAction = {
+      action: 'cancel',
+      role: 'requester',
+      command: 'tm cancel',
+    } as PendingAction;
+    const workerAction = {
+      action: 'submit',
+      role: 'worker',
+      command: 'tm submit',
+    } as PendingAction;
+    const permissionlessAction = {
+      action: 'finalize_verdict',
+      role: 'anyone',
+      command: 'tm finalize',
+    } as PendingAction;
+
+    expect(
+      canViewAction({
+        action: requesterAction,
+        address: task.requester,
+        requester: task.requester,
+      })
+    ).toBe(true);
+    expect(
+      canViewAction({
+        action: workerAction,
+        address: task.claimedBy ?? undefined,
+        claimedBy: task.claimedBy,
+        requester: task.requester,
+      })
+    ).toBe(true);
+    expect(
+      canViewAction({
+        action: permissionlessAction,
+        address: task.requester,
+        requester: task.requester,
+      })
+    ).toBe(true);
   });
 
   it('shows permissionless actions to requester and worker wallets', () => {

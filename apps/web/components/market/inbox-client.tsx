@@ -1,7 +1,6 @@
 'use client';
 
 import type {
-  TaskActionIntentValue,
   TaskActionQueueItem,
   TaskActionQueueResponse,
   TaskActionWaitingItem,
@@ -19,22 +18,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatUsdcUnits } from '@/lib/format';
 import { emitActionInboxEvent } from '@/lib/market/action-inbox-events';
+import {
+  TASK_ACTION_PRESENTATION,
+  taskActionHref,
+  taskActionTitle,
+} from '@/lib/market/task-action-presentation';
 import { taskTitle } from '@/lib/market/task-title';
 import { useActionQueue } from '@/lib/use-action-queue';
 import { useReadAuthSignature } from '@/lib/use-read-auth-signature';
-
-const INTENT_DESCRIPTION: Record<TaskActionIntentValue, string> = {
-  appeal_verdict: 'Review the verdict and supporting evidence before the appeal window closes.',
-  evaluate_work: 'Review the submitted evidence and record your independent verdict.',
-  finalize_verdict: 'The verdict window is complete. Finalize it to move the task forward.',
-  rate_workers: 'Share feedback after settlement to complete the task relationship.',
-  resolve_dispute: 'Review the task evidence and issue the dispute decision.',
-  review_work: 'Review the delivered evidence before accepting, rejecting, or releasing payment.',
-  select_auction_winner: 'Compare the eligible bids before assigning the work.',
-  select_worker: 'Compare the pitches and choose who should complete the task.',
-  settle_expired: 'Resolve the expired assignment so the task can reach a terminal state.',
-  submit_work: 'Upload the requested deliverables before the task deadline.',
-};
 
 const WAITING_LABEL: Record<TaskActionWaitingItem['reason'], string> = {
   waiting_for_appeal_window: 'Waiting for appeal window',
@@ -44,51 +35,6 @@ const WAITING_LABEL: Record<TaskActionWaitingItem['reason'], string> = {
   waiting_for_submissions: 'Waiting for submissions',
   waiting_for_worker: 'Waiting for worker delivery',
 };
-
-function itemTitle(item: TaskActionQueueItem): string {
-  const total = item.progress?.total;
-  const remaining = total ? total - (item.progress?.completed ?? 0) : null;
-
-  switch (item.intent) {
-    case 'appeal_verdict':
-      return 'Review and appeal the verdict';
-    case 'evaluate_work':
-      return 'Evaluate submitted work';
-    case 'finalize_verdict':
-      return 'Finalize the verdict';
-    case 'rate_workers':
-      return remaining && remaining > 1 ? `Rate ${remaining} workers` : 'Rate the worker';
-    case 'resolve_dispute':
-      return 'Resolve the dispute';
-    case 'review_work':
-      return total && total > 1 ? `Review ${total} submissions` : 'Review submitted work';
-    case 'select_auction_winner':
-      return 'Select the auction winner';
-    case 'select_worker':
-      return total && total > 1
-        ? `Compare ${total} pitches and select a worker`
-        : 'Select a worker';
-    case 'settle_expired':
-      return 'Settle the expired task';
-    case 'submit_work':
-      return 'Submit your work';
-  }
-}
-
-function actionHref(detailBasePath: string, item: TaskActionQueueItem): Route {
-  const base = detailBasePath.replace(/\/+$/, '');
-  const anchor =
-    item.intent === 'rate_workers'
-      ? 'settlement-payouts'
-      : item.intent === 'submit_work'
-        ? 'task-participation'
-        : item.intent === 'review_work' ||
-            item.intent === 'select_worker' ||
-            item.intent === 'select_auction_winner'
-          ? 'task-activity'
-          : 'task-next-actions';
-  return `${base}/${encodeURIComponent(item.task.id)}?focus=${item.intent}#${anchor}` as Route;
-}
 
 function absoluteDeadline(value: string): string {
   return new Intl.DateTimeFormat('en', {
@@ -109,7 +55,7 @@ function ActionRow({
     <li>
       <Link
         className="group grid gap-3 rounded-lg border border-border/70 bg-card/44 p-4 transition-colors hover:border-primary/60 hover:bg-card/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-        href={actionHref(detailBasePath, item)}
+        href={taskActionHref(detailBasePath, item.task.id, item.intent) as Route}
         onClick={() =>
           emitActionInboxEvent({
             event: 'item_opened',
@@ -136,12 +82,14 @@ function ActionRow({
           ) : null}
         </div>
         <div className="grid gap-1">
-          <p className="font-mono text-sm font-bold text-primary">{itemTitle(item)}</p>
+          <p className="font-mono text-sm font-bold text-primary">
+            {taskActionTitle(item.intent, item.progress)}
+          </p>
           <p className="break-words font-display text-lg font-semibold leading-tight text-foreground">
             {taskTitle(item.task)}
           </p>
           <p className="max-w-2xl text-sm leading-5 text-muted-foreground">
-            {INTENT_DESCRIPTION[item.intent]}
+            {TASK_ACTION_PRESENTATION[item.intent].description}
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/58 pt-3 text-xs text-muted-foreground">
@@ -334,25 +282,28 @@ export function InboxClient({
     enabled: Boolean(isConnected && address),
     readAuthReady,
   });
-  const viewedRef = useRef(false);
+  const refreshingCallerScope = Boolean(readAuthReady && !query.callerScopedReady);
+  const viewedScopesRef = useRef(new Set<string>());
 
   useEffect(() => {
-    if (!query.data || viewedRef.current) return;
-    viewedRef.current = true;
+    if (!address || !isConnected || !query.data || !query.callerScopedReady) return;
+    const scope = address.toLowerCase();
+    if (viewedScopesRef.current.has(scope)) return;
+    viewedScopesRef.current.add(scope);
     emitActionInboxEvent({
       actionCount: query.data.total,
       event: 'queue_viewed',
       waitingCount: query.data.waiting.length,
     });
-  }, [query.data]);
+  }, [address, isConnected, query.callerScopedReady, query.data]);
 
   return (
     <InboxQueueView
       connected={Boolean(isConnected && address)}
-      data={query.data}
+      data={refreshingCallerScope ? undefined : query.data}
       detailBasePath={detailBasePath}
       isError={query.isError}
-      isLoading={query.isLoading}
+      isLoading={query.isLoading || refreshingCallerScope}
       onRetry={() => void query.refetch()}
     />
   );

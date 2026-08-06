@@ -4,22 +4,30 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PendingAction, TaskDetailResponse } from '@taskmarket/shared';
 
+import {
+  ACTION_INBOX_EVENT_NAME,
+  type TimedActionInboxEvent,
+} from '@/lib/market/action-inbox-events';
+
 import { TaskParticipationModule } from './task-participation-module';
 
-const { account, authState, connectOrCreateWallet, login } = vi.hoisted(() => ({
-  account: {
-    address: undefined as `0x${string}` | undefined,
-    isConnected: false,
-  },
-  authState: {
-    authenticated: false,
-    providerMissing: false,
-    walletAddress: undefined as `0x${string}` | undefined,
-    walletsReady: true,
-  },
-  connectOrCreateWallet: vi.fn(),
-  login: vi.fn(),
-}));
+const { account, authState, connectOrCreateWallet, invalidateActionQueue, login, refresh } =
+  vi.hoisted(() => ({
+    account: {
+      address: undefined as `0x${string}` | undefined,
+      isConnected: false,
+    },
+    authState: {
+      authenticated: false,
+      providerMissing: false,
+      walletAddress: undefined as `0x${string}` | undefined,
+      walletsReady: true,
+    },
+    connectOrCreateWallet: vi.fn(),
+    invalidateActionQueue: vi.fn(),
+    login: vi.fn(),
+    refresh: vi.fn(),
+  }));
 
 vi.mock('wagmi', () => ({
   useAccount: () => account,
@@ -49,11 +57,22 @@ vi.mock('@privy-io/react-auth', () => ({
 }));
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
+  useRouter: () => ({ refresh }),
+}));
+
+vi.mock('@/lib/use-action-queue', () => ({
+  useInvalidateActionQueue: () => invalidateActionQueue,
 }));
 
 vi.mock('@/components/market/actions/submit-artifacts-form', () => ({
-  SubmitArtifactsForm: () => <button type="button">Choose files</button>,
+  SubmitArtifactsForm: ({ onSuccess }: { onSuccess: () => void }) => (
+    <div>
+      <button onClick={onSuccess} type="button">
+        Complete submission
+      </button>
+      <button type="button">Cancel submission</button>
+    </div>
+  ),
 }));
 
 const requester = '0xAaa1111111111111111111111111111111111111';
@@ -141,7 +160,38 @@ describe('TaskParticipationModule', () => {
     await user.click(screen.getByRole('button', { name: /upload files/i }));
 
     expect(screen.getByRole('dialog', { name: /submit work/i })).toBeVisible();
-    expect(screen.getByRole('button', { name: /choose files/i })).toBeVisible();
+    expect(screen.getByRole('button', { name: /complete submission/i })).toBeVisible();
+  });
+
+  it('emits one lifecycle event only after a successful browser submission', async () => {
+    const user = userEvent.setup();
+    account.address = '0xCcc3333333333333333333333333333333333333';
+    account.isConnected = true;
+    authState.authenticated = true;
+    const events: TimedActionInboxEvent[] = [];
+    const listener = (event: Event) => {
+      events.push((event as CustomEvent<TimedActionInboxEvent>).detail);
+    };
+    window.addEventListener(ACTION_INBOX_EVENT_NAME, listener);
+
+    render(<TaskParticipationModule action={submitAction} task={task} />);
+    await user.click(screen.getByRole('button', { name: /upload files/i }));
+    await user.click(screen.getByRole('button', { name: /cancel submission/i }));
+
+    expect(events).toHaveLength(0);
+    expect(refresh).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: /complete submission/i }));
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      action: 'submit',
+      event: 'lifecycle_action_completed',
+      taskId: 'task-1',
+    });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(invalidateActionQueue).toHaveBeenCalledTimes(1);
+    window.removeEventListener(ACTION_INBOX_EVENT_NAME, listener);
   });
 
   it('lets an authenticated worker create a wallet before uploading', async () => {

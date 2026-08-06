@@ -94,6 +94,7 @@ import {
   handleStandardFeePostPaymentFailure,
 } from '../services/orphaned-payments';
 import { computeUpdatePaymentAmount } from '../services/task-payments';
+import { resolveAppealAuthorization } from '../services/task-appeal-authorization';
 
 // Tasks created before the ERC-8195 Rev007 submission-integrity upgrade (PR #135,
 // merged 2026-06-30T18:15:06-04:00) predate the current escrow/refund flow. A wave of
@@ -1020,24 +1021,18 @@ export const tasksRouter = router({
               .from(submissions)
               .where(and(eq(submissions.taskId, task.id), isNull(submissions.rejectedAt)))
               .groupBy(submissions.workerAddress)
+              .limit(2)
           : [];
       const latestSubmission = distinctSubmitters.length === 1 ? distinctSubmitters : [];
-      const appealSubmission =
+      const appealAuthorization =
         task.status === 'appealing' &&
         (task.mode === 'bounty' || task.mode === 'benchmark') &&
         ctx.caller?.address
-          ? await ctx.db
-              .select({ workerAddress: submissions.workerAddress })
-              .from(submissions)
-              .where(
-                and(
-                  eq(submissions.taskId, task.id),
-                  sql`lower(${submissions.workerAddress}) = lower(${ctx.caller.address})`
-                )
-              )
-              .limit(1)
-          : [];
-      const appealEligibleWorker = appealSubmission[0]?.workerAddress ?? null;
+          ? await resolveAppealAuthorization(task, ctx.caller.address)
+          : null;
+      const appealEligibleWorker = appealAuthorization?.authorized
+        ? (ctx.caller?.address ?? null)
+        : null;
       const requesterActorType: 'agent' | 'human' =
         requesterAgentRow[0]?.registeredVia === 'web' ? 'human' : 'agent';
       const workerActorType: 'agent' | 'human' | undefined = workerAddress
@@ -1268,6 +1263,11 @@ export const tasksRouter = router({
             })),
           },
           now
+        ).filter(
+          (action) =>
+            action.action !== 'appeal' ||
+            (task.mode !== 'bounty' && task.mode !== 'benchmark') ||
+            appealEligibleWorker !== null
         ),
         awards,
       };

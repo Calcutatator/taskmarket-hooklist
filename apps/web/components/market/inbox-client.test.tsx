@@ -3,12 +3,18 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  ACTION_INBOX_EVENT_NAME,
+  type TimedActionInboxEvent,
+} from '@/lib/market/action-inbox-events';
+
 const { accountState, queueState, useActionQueue, useReadAuthSignature } = vi.hoisted(() => ({
   accountState: {
     address: '0x1111111111111111111111111111111111111111' as `0x${string}` | undefined,
     isConnected: true,
   },
   queueState: {
+    callerScopedReady: true,
     data: undefined as TaskActionQueueResponse | undefined,
     isError: false,
     isLoading: false,
@@ -110,6 +116,7 @@ describe('InboxClient', () => {
     accountState.address = '0x1111111111111111111111111111111111111111';
     accountState.isConnected = true;
     queueState.data = actionQueue;
+    queueState.callerScopedReady = true;
     queueState.isError = false;
     queueState.isLoading = false;
     queueState.refetch = vi.fn();
@@ -139,6 +146,64 @@ describe('InboxClient', () => {
       enabled: true,
       readAuthReady: true,
     });
+  });
+
+  it('emits queue viewed only after caller-scoped enrichment and once per wallet', () => {
+    const events: TimedActionInboxEvent[] = [];
+    const listener = (event: Event) => {
+      events.push((event as CustomEvent<TimedActionInboxEvent>).detail);
+    };
+    window.addEventListener(ACTION_INBOX_EVENT_NAME, listener);
+    queueState.callerScopedReady = false;
+    queueState.data = { items: [], total: 0, urgentTotal: 0, waiting: [] };
+
+    const { rerender } = render(<InboxClient />);
+    expect(events).toHaveLength(0);
+
+    queueState.callerScopedReady = true;
+    queueState.data = actionQueue;
+    rerender(<InboxClient />);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ actionCount: 1, event: 'queue_viewed', waitingCount: 1 });
+
+    queueState.data = { ...actionQueue, urgentTotal: 0 };
+    rerender(<InboxClient />);
+    expect(events).toHaveLength(1);
+
+    accountState.address = '0x2222222222222222222222222222222222222222';
+    queueState.callerScopedReady = false;
+    rerender(<InboxClient />);
+    expect(events).toHaveLength(1);
+
+    queueState.callerScopedReady = true;
+    queueState.data = { items: [], total: 0, urgentTotal: 0, waiting: [] };
+    rerender(<InboxClient />);
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({ actionCount: 0, event: 'queue_viewed', waitingCount: 0 });
+    window.removeEventListener(ACTION_INBOX_EVENT_NAME, listener);
+  });
+
+  it('keeps a cached anonymous projection hidden during authenticated refresh', () => {
+    queueState.callerScopedReady = false;
+    queueState.data = { items: [], total: 0, urgentTotal: 0, waiting: [] };
+
+    render(<InboxClient />);
+
+    expect(screen.getByRole('region', { name: /loading inbox/i })).toBeVisible();
+    expect(screen.queryByText(/all caught up/i)).not.toBeInTheDocument();
+  });
+
+  it('does not emit a queue view for a disconnected anonymous scope', () => {
+    const listener = vi.fn();
+    window.addEventListener(ACTION_INBOX_EVENT_NAME, listener);
+    accountState.address = undefined;
+    accountState.isConnected = false;
+    queueState.callerScopedReady = false;
+
+    render(<InboxClient />);
+
+    expect(listener).not.toHaveBeenCalled();
+    window.removeEventListener(ACTION_INBOX_EVENT_NAME, listener);
   });
 
   it('offers a real sign-in action when no wallet is connected', () => {
@@ -205,5 +270,39 @@ describe('InboxClient', () => {
     expect(
       screen.queryByRole('button', { name: /accept|reject|release payment/i })
     ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['evaluate_work', 'evaluate', 'task-activity'],
+    ['resolve_dispute', 'resolve_dispute', 'task-activity'],
+    ['appeal_verdict', 'appeal', 'task-verdict'],
+    ['finalize_verdict', 'finalize_verdict', 'task-verdict'],
+  ] as const)('routes %s through its evidence-first task section', (intent, action, anchor) => {
+    queueState.data = {
+      items: [
+        {
+          actions: [
+            { action, command: `taskmarket task ${action} task-review`, role: 'evaluator' },
+          ],
+          dueAt: null,
+          id: `task-review:${intent}`,
+          intent,
+          priority: 'required',
+          progress: null,
+          role: action === 'resolve_dispute' ? 'dispute_resolver' : 'evaluator',
+          task,
+        },
+      ],
+      total: 1,
+      urgentTotal: 0,
+      waiting: [],
+    };
+
+    render(<InboxClient />);
+
+    expect(screen.getByRole('link', { name: /open task/i })).toHaveAttribute(
+      'href',
+      `/dashboard/tasks/task-review?focus=${intent}#${anchor}`
+    );
   });
 });
