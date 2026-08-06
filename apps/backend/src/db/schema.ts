@@ -999,6 +999,22 @@ export const relayedIntents = pgTable(
     // rebroadcast would give every attempt a fresh window, so the deadline would never arrive.
     relayValidBefore: numeric('relay_valid_before', { precision: 20, scale: 0 }),
     relayReceiptNonce: text('relay_receipt_nonce'),
+    // The `consumedReceipts` key `TaskMarketForwarder.relay` sets when this intent's call
+    // succeeds: keccak256(chainId, pgtrSender, paymentAmount, receiptNonce, validBefore,
+    // taskMarket, selector). Written at nonce allocation, before anything is sent (ADR-0071).
+    //
+    // It exists because it is the only durable handle on "did *this* intent's call land" that
+    // survives a send which never returned a hash. The receipt nonce inside it is minted once
+    // per intent and replayed verbatim, so nothing but this intent's own relay can set the bit,
+    // and the bit is set only when the call succeeded. Recomputing it in a sweep is not
+    // possible -- `pgtrSender`, `paymentAmount` and the selector live only inside the broadcast
+    // path -- so it is persisted at the one moment all seven inputs are in hand.
+    //
+    // Null on every row written before this column existed, and on the three operations that do
+    // not relay (`wallet.withdrawDreams`, `identity.register`, and `wallet.withdraw`, which is
+    // answered by EIP-3009 `authorizationState` instead). A null is never read as "not
+    // consumed": it means there is no question to ask, so the intent stays non-terminal.
+    relayReceiptHash: text('relay_receipt_hash'),
     lastError: text('last_error'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1020,6 +1036,11 @@ export const relayedIntents = pgTable(
     // Reservations are found by expiry, and only ever the expired ones, so the sweep must not
     // read the whole table to find them.
     reservedExpiryIdx: index('idx_relayed_intents_reserved_expires_at').on(table.reservedExpiresAt),
+    // The stranded sweep (ADR-0071) wants only rows with a linked outbox row and no hash, which
+    // is a vanishingly small slice of this table. Partial on `tx_hash IS NULL` for that reason.
+    strandedIdx: index('idx_relayed_intents_stranded')
+      .on(table.status, table.serverWalletTransactionId)
+      .where(sql`${table.txHash} IS NULL`),
     // 'reserved' is the pre-payment state (ADR-0067), and its exclusion from every query that
     // hands an intent to the chain is what makes a reservation structurally non-broadcastable:
     // `claimIntentForBroadcast`, `listUnbroadcastIntents` and `listAbandonedIntents` all

@@ -308,3 +308,8 @@ adrs:
     title: "A reason that asserts a fact carries it, rather than leaving a reader to guess"
     status: Accepted
     date: "2026-08-06"
+  - number: "0071"
+    file: "0071-an-intent-asks-the-chain-whether-its-own-receipt-was-consumed.md"
+    title: An intent asks the chain whether its own receipt was consumed
+    status: Accepted
+    date: "2026-08-06"

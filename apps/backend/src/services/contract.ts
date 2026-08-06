@@ -22,6 +22,7 @@ import {
   newRelayEnvelope,
   RELAY_VALID_WINDOW_SECS,
 } from './relay-envelope';
+import { computeRelayReceiptHash } from './relay-receipt';
 import {
   projectSettlementLogs,
   toSettlementCompletionLogs,
@@ -553,6 +554,21 @@ async function relayThroughForwarderResult(
   // mechanism, where there is nothing durable to link to.
   const outboxLink = currentRelayOutboxLink();
 
+  // Computed here, once, for the same reason the envelope is resolved here: this is the only
+  // place all seven of the forwarder's receipt inputs exist together. It is constant across the
+  // retry loop below, because every one of its inputs is -- the calldata, the payment and the
+  // envelope are all fixed before the first attempt, which is exactly why the resulting bit
+  // identifies the *intent* rather than one attempt at it (ADR-0071).
+  const receiptHash = computeRelayReceiptHash({
+    chainId: publicClient.chain?.id ?? config.CHAIN_ID,
+    data,
+    paymentAmount,
+    pgtrSender: pgtrSenderAddr,
+    receiptNonce,
+    taskMarket: config.CONTRACT_ADDRESS as `0x${string}`,
+    validBefore,
+  });
+
   // Retry loop to handle RPC read-after-write lag: the node may confirm a receipt
   // but simulation for the next call still sees the pre-tx state. Retrying after a
   // short delay allows the node's state to catch up.
@@ -575,7 +591,12 @@ async function relayThroughForwarderResult(
       const result = await dispatchServerWalletTransaction({
         // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).
         fees: gas,
-        onNonceAllocated: outboxLink?.onAllocated,
+        // The receipt hash rides the allocation hook rather than being written separately:
+        // both must be durable before `send` is called, and a hash written after it would be
+        // missing on exactly the branch it exists for (ADR-0071).
+        onNonceAllocated: outboxLink
+          ? (transactionId: string) => outboxLink.onAllocated(transactionId, receiptHash)
+          : undefined,
         onNonceReleased: outboxLink?.onReleased,
         simulate: () =>
           runWithRpcApplicationAttempt(attempt + 1, () =>

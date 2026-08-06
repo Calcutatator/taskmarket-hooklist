@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 const SRC_ROOT = join(process.cwd(), 'src');
 const LEDGER_PATH = 'services/orphaned-payments.ts';
 const SETTLEMENT_PATH = 'services/relayed-intent-settlement.ts';
+const STRANDED_PATH = 'services/relayed-intent-stranded.ts';
 
 const GUARDED_EXPORTS = new Set([
   'handlePostPaymentFailure',
@@ -27,6 +28,8 @@ const GUARDED_EXPORTS = new Set([
 const DECISION_ALLOWLIST: Record<string, string> = {
   [SETTLEMENT_PATH]:
     'The sole decision path (ADR-0048): reached only from the reconciler verdict or from an intent that was provably never broadcast.',
+  [STRANDED_PATH]:
+    'The same decision on the same standard, for the one state settlement cannot reach: an intent whose send never returned a hash (ADR-0071). It refunds only on a chain read that names this intent alone -- the forwarder receipt its own call would have consumed, or the EIP-3009 authorization the user signed -- and only past the deadline the chain itself enforces. An unanswered read and an absence before that deadline both leave the intent untouched, so no timeout reaches this call here either.',
 };
 
 const FAILURE_EXPLANATION = [
@@ -121,7 +124,8 @@ export function decidesOrphanedPayment(source: string, filename = 'source.ts'): 
  * that needs to outlive the request; `contractProjectSettlementForTx` is here for the same
  * reason, since it decodes a hash somebody else's write produced.
  */
-const CHAIN_READ_IMPORTS = /^(contractGet|contractProjectSettlementForTx$|resolveRegisteredAgentId$)/;
+const CHAIN_READ_IMPORTS =
+  /^(contractGet|contractProjectSettlementForTx$|resolveRegisteredAgentId$)/;
 
 /** True when the source imports something from the contract service that relays a write. */
 export function relaysChainWrite(source: string, filename = 'source.ts'): boolean {

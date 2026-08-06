@@ -35,6 +35,9 @@
  *      This runs automatically against a loopback RPC (the sandbox and local dev), because it
  *      broadcasts a transaction that is intentionally stuck and strands a nonce on purpose.
  *      Set SMOKE_NONCE_FAULT=1 to force it on elsewhere, or 0 to force it off.
+ *   7b. A paid write that really lands and then loses its transaction hash -- the dropped
+ *      connection ADR-0069 left non-terminal -- is completed from the forwarder receipt its
+ *      own call consumed, and is not refunded. Same gating as step 7.
  *   8. The allocator agrees with the chain afterwards, with nothing stranded mid-flight, one
  *      intent per payment, and no successful payment recorded as orphaned.
  *
@@ -166,6 +169,46 @@ async function readIntents(
       )
     order by created_at asc
   `;
+}
+
+/**
+ * One intent by id.
+ *
+ * The join in `readIntents` cannot reach a `tasks.create` intent whose hash has been discarded
+ * -- that hash *is* the join -- which is precisely the state step 8b creates, so it is followed
+ * by id instead.
+ */
+async function readIntentById(sql: postgres.Sql, intentId: string): Promise<IntentRow | null> {
+  const rows = await sql<IntentRow[]>`
+    select id, operation, status, payer, payment_tx_hash, payment_amount,
+           server_wallet_transaction_id, tx_hash,
+           last_error, created_at, completed_at
+    from relayed_intents where id = ${intentId}
+  `;
+  return rows[0] ?? null;
+}
+
+async function pollIntentById(
+  sql: postgres.Sql,
+  intentId: string,
+  predicate: (row: IntentRow) => boolean,
+  label: string,
+  timeoutMs = 180_000
+): Promise<IntentRow> {
+  const deadline = Date.now() + timeoutMs;
+  let last: IntentRow | null = null;
+  while (Date.now() < deadline) {
+    last = await readIntentById(sql, intentId);
+    if (last && predicate(last)) return last;
+    await sleep(3000);
+  }
+  throw new Error(
+    `Timed out waiting for ${label}. Last seen: ${
+      last
+        ? JSON.stringify({ id: last.id, lastError: last.last_error, status: last.status })
+        : '(no intent row)'
+    }`
+  );
 }
 
 async function pollIntent(
@@ -886,6 +929,104 @@ async function main() {
       );
     }
     ok('no refund was issued while the paid intent was stranded', paidIntent.payment_tx_hash);
+
+    // 8b. The state step 8 could not reach: a send that landed on chain and never returned a
+    // hash. Step 8 always has a hash somewhere -- that is what lets the reconciler read a
+    // receipt and heal the intent. Here there is none, anywhere, which is why every mechanism
+    // in step 8 dead-ends and why ADR-0069 left the intent non-terminal (ADR-0071).
+    //
+    // Fault injection, same conventions as above: the transaction is real, sent by the real
+    // broadcast path, and lands for real. What is injected is the *loss of its hash*, which is
+    // the one part of a dropped connection that cannot be produced by asking a live stack
+    // nicely. Nothing about the chain state is faked -- the task exists, the escrow moved, the
+    // forwarder consumed the receipt -- so what is asserted is genuinely recovery from the
+    // chain rather than recovery from a row we wrote.
+    log('8b/9', 'Discarding the hash of a paid intent that really landed...');
+
+    const hashlessTaskId = await setupPaidTask(requester, 'hashless');
+    const landedIntent = await pollIntent(
+      sql,
+      hashlessTaskId,
+      'tasks.create',
+      (row) => row.status === 'completed',
+      `tasks.create intent for ${hashlessTaskId} to complete`
+    );
+    if (!landedIntent.payment_tx_hash) {
+      throw new Error(`Intent ${landedIntent.id} has no payment reference to reason about`);
+    }
+    paymentHashes.push(landedIntent.payment_tx_hash);
+
+    const [receiptRow] = await sql<{ relay_receipt_hash: string | null }[]>`
+      select relay_receipt_hash from relayed_intents where id = ${landedIntent.id}
+    `;
+    if (!receiptRow?.relay_receipt_hash) {
+      throw new Error(
+        `Intent ${landedIntent.id} carries no relay_receipt_hash, so the broadcast path did not ` +
+          'persist one and nothing could ever establish that its call landed'
+      );
+    }
+    ok('a real paid create with its forwarder receipt recorded', {
+      intentId: landedIntent.id,
+      receiptHash: receiptRow.relay_receipt_hash,
+    });
+
+    // Now lose the hash, everywhere it exists, exactly as a dropped connection would have. The
+    // outbox row becomes what the reconciler leaves behind when a replacement comes back
+    // `nonce too low` and there is no hash to read a receipt for: terminal, so no gap, and
+    // hashless. The intent goes back to `recorded` with its link intact.
+    //
+    // Both rows are backdated past the sweep's fifteen-minute cutoff rather than waiting it
+    // out, the same way step 8 backdates the recycled row past the stuck threshold.
+    await sql`
+      update server_wallet_transactions
+      set status = 'failed', tx_hash = null, updated_at = now() - interval '1 hour'
+      where id = (select server_wallet_transaction_id from relayed_intents where id = ${landedIntent.id})
+    `;
+    await sql`
+      update relayed_intents
+      set status = 'recorded', tx_hash = null, completed_at = null, last_error = null,
+          updated_at = now() - interval '1 hour'
+      where id = ${landedIntent.id}
+    `;
+    ok('hash discarded; the intent is stranded with nothing able to name its transaction', {
+      intentId: landedIntent.id,
+    });
+
+    // The recovery, and the whole point: with no hash anywhere, the only remaining question is
+    // whether the forwarder consumed this intent's own one-shot receipt. It did, because the
+    // call really landed -- so the intent completes and, critically, no refund is issued.
+    const recovered = await pollIntentById(
+      sql,
+      landedIntent.id,
+      (row) => row.status === 'completed',
+      `the stranded sweep to complete hashless intent ${landedIntent.id} from its forwarder receipt`
+    );
+    ok('a hashless intent was completed from the effect it left on chain', {
+      intentId: recovered.id,
+      taskId: hashlessTaskId,
+    });
+
+    // The task row proves the chain effect is projected even though the completion handler
+    // never ran again -- the indexer wrote it from the TaskCreated event, keyed on the hash it
+    // read off the log rather than one we handed it.
+    const projected = await sql<{ id: string }[]>`
+      select id from tasks where id = ${hashlessTaskId}
+    `;
+    if (projected.length !== 1) {
+      throw new Error(
+        `Intent ${recovered.id} completed but task ${hashlessTaskId} is not in the database, so ` +
+          'the on-chain effect was not projected after all'
+      );
+    }
+    ok('the on-chain effect is projected by the indexer', hashlessTaskId);
+
+    const hashlessRefunds = await readOrphanedPayments(sql, [landedIntent.payment_tx_hash]);
+    if (hashlessRefunds.length > 0) {
+      throw new Error(
+        `A hashless intent whose call landed on chain was refunded: ${JSON.stringify(hashlessRefunds)}`
+      );
+    }
+    ok('no refund was issued for work that landed', landedIntent.payment_tx_hash);
   } else {
     // Always announce the skip, including when the deep checks themselves are off. A step that
     // vanishes from the output is indistinguishable from a step that passed, and this script's

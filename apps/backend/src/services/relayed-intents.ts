@@ -1057,11 +1057,21 @@ export async function releaseIntentForRetry(input: { db: Db; intentId: string })
 export async function linkIntentToOutboxRow(input: {
   db: Db;
   intentId: string;
+  relayReceiptHash?: string;
   serverWalletTransactionId: string;
 }): Promise<void> {
   await input.db
     .update(relayedIntents)
-    .set({ serverWalletTransactionId: input.serverWalletTransactionId, updatedAt: new Date() })
+    .set({
+      // Written in the same statement as the link, because the two are needed together and
+      // under the same circumstances: a send that never answers leaves the link as the only
+      // evidence a nonce was spent, and this hash as the only evidence of what it did
+      // (ADR-0071). Omitted rather than nulled when absent -- a later attempt must never clear
+      // a hash an earlier one wrote.
+      ...(input.relayReceiptHash ? { relayReceiptHash: input.relayReceiptHash } : {}),
+      serverWalletTransactionId: input.serverWalletTransactionId,
+      updatedAt: new Date(),
+    })
     .where(eq(relayedIntents.id, input.intentId));
 }
 
@@ -1098,9 +1108,9 @@ export async function unlinkIntentFromOutboxRow(input: {
 export function intentOutboxLink(db: Db, intentId: string): RelayOutboxLink {
   let allocated: string | null = null;
   return {
-    onAllocated: async (serverWalletTransactionId: string) => {
+    onAllocated: async (serverWalletTransactionId: string, relayReceiptHash?: `0x${string}`) => {
       allocated = serverWalletTransactionId;
-      await linkIntentToOutboxRow({ db, intentId, serverWalletTransactionId });
+      await linkIntentToOutboxRow({ db, intentId, relayReceiptHash, serverWalletTransactionId });
     },
     onReleased: async () => {
       if (!allocated) return;
@@ -1383,6 +1393,52 @@ export async function listConfirmedUnsettledIntents(input: {
  * will now reject cannot be made to land by any number of further attempts. The attempt cap
  * is the belt-and-braces half, bounding resource use rather than correctness (ADR-0050).
  */
+/**
+ * Intents whose nonce was spent by a transaction nothing can name.
+ *
+ * The one state ADR-0069 deliberately left open, and the state this query exists to close. An
+ * intent arrives here by exactly one route: its send never returned a hash, so the dispatcher's
+ * unknown branch kept the nonce reserved (no evidence it was free), and the reconciler later
+ * found that nonce occupied and made the outbox row terminal without ever having a hash to read
+ * a receipt from. The intent is left `recorded` with a link and no hash.
+ *
+ * Every other sweep is closed to it, which is why it needed a new one rather than a widened old
+ * one: `listUnbroadcastIntents` requires a null link, `listConfirmedUnsettledIntents` joins on a
+ * hash it does not have, and `settleAbandonedIntents` explicitly skips anything carrying a link.
+ * Widening any of those would have loosened a predicate that other, live states depend on.
+ *
+ * The outbox row must be terminal *and* hashless. A row still `reserved` or `broadcast` belongs
+ * to the reconciler, which is still replacing it and may yet produce a receipt; a row that
+ * carries a hash has an answer readable the ordinary way. Only the row that has given up
+ * without ever naming a transaction is this state.
+ */
+export async function listStrandedIntents(input: {
+  cutoff: Date;
+  db: Db;
+  limit: number;
+}): Promise<RelayedIntent[]> {
+  const rows = await input.db
+    .select({ intent: relayedIntents })
+    .from(relayedIntents)
+    .innerJoin(
+      serverWalletTransactions,
+      eq(serverWalletTransactions.id, relayedIntents.serverWalletTransactionId)
+    )
+    .where(
+      and(
+        eq(relayedIntents.status, 'recorded'),
+        isNull(relayedIntents.txHash),
+        eq(serverWalletTransactions.status, 'failed'),
+        isNull(serverWalletTransactions.txHash),
+        lt(relayedIntents.updatedAt, input.cutoff)
+      )
+    )
+    .orderBy(asc(relayedIntents.createdAt))
+    .limit(input.limit);
+
+  return rows.map((row) => row.intent);
+}
+
 export async function listAbandonedIntents(input: {
   db: Db;
   cutoff: Date;

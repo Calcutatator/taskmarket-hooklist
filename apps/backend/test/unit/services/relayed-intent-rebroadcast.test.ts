@@ -14,6 +14,13 @@ vi.mock('../../../src/services/relayed-intent-settlement', () => ({
   settleAbandonedIntents: vi.fn().mockResolvedValue(undefined),
 }));
 
+// The stranded sweep runs on the same pass (ADR-0071) and needs a real database to ask its
+// question. Stubbed for the same reason settlement is: these tests are about which intents the
+// worker hands to the dispatcher, not about how a hashless one is resolved.
+vi.mock('../../../src/services/relayed-intent-stranded', () => ({
+  settleStrandedIntents: vi.fn().mockResolvedValue(undefined),
+}));
+
 // The worker also expires stale reservations on each pass (ADR-0067). Stubbed for the same
 // reason settlement is: these tests are about which intents the worker hands to the dispatcher,
 // and a sweep that needs a real database would only add a failure unrelated to that question.
@@ -28,9 +35,8 @@ vi.mock('../../../src/services/relayed-intents', async (importOriginal) => ({
 
 const { dispatchRelayedIntent } = await import('../../../src/services/relayed-intent-registry');
 const { settleAbandonedIntents } = await import('../../../src/services/relayed-intent-settlement');
-const { listUnbroadcastIntents, MAX_BROADCAST_ATTEMPTS, relayEnvelopeForIntent } = await import(
-  '../../../src/services/relayed-intents'
-);
+const { listUnbroadcastIntents, MAX_BROADCAST_ATTEMPTS, relayEnvelopeForIntent } =
+  await import('../../../src/services/relayed-intents');
 const { createRelayedIntentWorker } = await import('../../../src/services/relayed-intent-worker');
 
 afterAll(restoreServerEnvironment);

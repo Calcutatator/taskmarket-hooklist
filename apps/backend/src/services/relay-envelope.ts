@@ -37,7 +37,19 @@ export function newRelayEnvelope(now: () => number = Date.now): RelayEnvelope {
  * never answered produces neither while its transaction mines (ADR-0069).
  */
 export type RelayOutboxLink = {
-  onAllocated: (transactionId: string) => Promise<void>;
+  /**
+   * `receiptHash` is the forwarder's `consumedReceipts` key for the call about to go out
+   * (ADR-0071). It travels with the link rather than being written separately because it is
+   * needed under exactly the same circumstances and at exactly the same moment: an intent whose
+   * send never answers has no hash to settle by, and this is the only per-intent handle that
+   * survives it. Recomputing it later is impossible -- `pgtrSender`, `paymentAmount` and the
+   * selector exist only inside the broadcast path -- so it is persisted before the send or not
+   * at all.
+   *
+   * Optional so a caller that has no forwarder call to make (the direct-send operations) is
+   * representable rather than having to invent a value.
+   */
+  onAllocated: (transactionId: string, receiptHash?: `0x${string}`) => Promise<void>;
   onReleased: () => Promise<void>;
 };
 

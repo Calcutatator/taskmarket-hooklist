@@ -3,6 +3,7 @@ import { db } from '../db/client';
 import { logger } from '../lib/logger';
 import { dispatchRelayedIntent } from './relayed-intent-registry';
 import { settleAbandonedIntents } from './relayed-intent-settlement';
+import { settleStrandedIntents } from './relayed-intent-stranded';
 import { settlePendingOrphanedRefunds } from './orphaned-payments';
 import { expireStaleReservations } from './reservation-sweep';
 import { listUnbroadcastIntents } from './relayed-intents';
@@ -79,6 +80,14 @@ export function createRelayedIntentWorker(options?: {
     // finally refundable. Settlement makes that call, not this worker -- the worker only says
     // when to look (ADR-0048).
     await settleAbandonedIntents(MAX_INTENTS_PER_PASS);
+
+    // The intents the sweep above deliberately skips: those carrying a linked outbox row, whose
+    // send never returned a hash and whose nonce the reconciler later found spent by something
+    // it could not name (ADR-0069). Neither refundable nor completable from a hash, they are
+    // resolved by asking the chain whether the intent's own one-shot receipt was consumed
+    // (ADR-0071). Separate from the sweep above for the same reason the reservation sweep is:
+    // same kind of work, different evidence.
+    await settleStrandedIntents(MAX_INTENTS_PER_PASS);
 
     // Reservations that were claimed and never filled (ADR-0067). Runs on the same pass because
     // it is the same kind of work -- retiring an intent nothing is going to finish -- but it is

@@ -27,12 +27,14 @@ const RELEASE_EXPORT = /^release[A-Z].*(Nonce|Guard|Claim)$/;
 const RELEASE_ALLOWLIST: Record<string, string> = {
   [REGISTRATION_PATH]:
     "Declares the operation's releaseGuard. Settlement resolves and runs it from the registry once the intent reaches `failed` (ADR-0050).",
+  'services/relayed-intent-stranded.ts':
+    "Releases the guard immediately after writing `failed`, and reaches that only past the deadline the chain enforces on this intent's own material (ADR-0071). That is the precondition a release needs: past `validBefore` no transaction carrying the guarded signature can be included, so there is nothing left in a mempool to replay it against.",
   'services/relayed-intent-settlement.ts':
     'Invokes releaseIntentGuard immediately after writing `failed`, which it reaches only from a reverted receipt, a mined replacement, or an exhausted retry budget. The registry has one further call for the unpaid deterministic-revert branch it marks failed itself; that one is internal to the module that defines releaseIntentGuard, so no import brings it into view here.',
 };
 
 const RELEASE_EXPLANATION = [
-  'A guard release may only be declared as an operation\'s `releaseGuard` in',
+  "A guard release may only be declared as an operation's `releaseGuard` in",
   `${REGISTRATION_PATH}, so that it runs from intent settlement and only there. Calling one`,
   'from a router -- or from an `onNotBroadcast` callback -- decides "nothing reached the chain"',
   'from a thrown error, which no thrown error establishes: `already known` means the',
@@ -142,7 +144,9 @@ describe('who may release an intent guard', () => {
     const callers = sourceFiles(SRC_ROOT)
       .map((path) => relative(SRC_ROOT, path))
       // The intent modules define these functions; they are the thing guarded, not a caller.
-      .filter((path) => !path.startsWith(join('services', 'intents') + '/') || path === REGISTRATION_PATH)
+      .filter(
+        (path) => !path.startsWith(join('services', 'intents') + '/') || path === REGISTRATION_PATH
+      )
       .filter((path) => importsGuardRelease(readFileSync(join(SRC_ROOT, path), 'utf8'), path))
       .sort();
 
@@ -167,11 +171,14 @@ describe('who may release an intent guard', () => {
     const direct = `import { releaseWalletWithdrawDreamsNonce } from './intents/wallet-intents';`;
     const aliased = `import { releaseWalletWithdrawDreamsNonce as hand } from './intents/wallet-intents';`;
     const namespaced = `import * as w from './intents/wallet-intents'; w.releaseWalletWithdrawDreamsNonce({});`;
-    for (const source of [direct, aliased, namespaced]) expect(importsGuardRelease(source)).toBe(true);
+    for (const source of [direct, aliased, namespaced])
+      expect(importsGuardRelease(source)).toBe(true);
 
     // Completing an intent is not releasing a guard, and neither is broadcasting one.
     expect(
-      importsGuardRelease(`import { completeWalletWithdrawDreams } from './intents/wallet-intents';`)
+      importsGuardRelease(
+        `import { completeWalletWithdrawDreams } from './intents/wallet-intents';`
+      )
     ).toBe(false);
     // A reservation release is not guard state: losing it in either direction is harmless.
     expect(

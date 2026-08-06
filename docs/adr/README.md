@@ -278,6 +278,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0068 — The idempotency key is claimed before settlement, not before the challenge](0068-the-key-is-claimed-before-settlement-not-before-the-challenge.md)
 - [0069 — The outbox row is an intent's evidence that a nonce may be spent](0069-the-outbox-row-is-the-intents-evidence-that-a-nonce-was-spent.md)
 - [0070 — A reason that asserts a fact carries it, rather than leaving a reader to guess](0070-a-reason-that-asserts-a-fact-carries-it.md)
+- [0071 — An intent asks the chain whether its own receipt was consumed](0071-an-intent-asks-the-chain-whether-its-own-receipt-was-consumed.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting
