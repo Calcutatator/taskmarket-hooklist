@@ -31,15 +31,28 @@ describe('IntentStatusResponseSchema terminalReason', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it.each(['recorded', 'broadcast'] as const)(
-    'rejects a terminal reason on a %s intent, which is still being carried',
+  // `completed` is here as well as the two in-flight statuses: it is terminal, but it is the
+  // terminal outcome that has no reason to give. The completion path clears `lastError` in the
+  // same statement that writes the status, so a completed intent carrying a verdict is a shape
+  // the lifecycle cannot produce either.
+  it.each(['recorded', 'broadcast', 'completed', 'reserved'] as const)(
+    'rejects a terminal reason on a %s intent, which has no failure to report',
     (status) => {
       const parsed = IntentStatusResponseSchema.safeParse(
-        response({ status, terminalReason: 'escrow deposit reverted' })
+        response({
+          status,
+          // A reserved intent has been sent nowhere, so a hash would raise its own issue.
+          txHash: status === 'reserved' ? null : `0x${'ab'.repeat(32)}`,
+          terminalReason: 'escrow deposit reverted',
+        })
       );
 
       expect(parsed.success).toBe(false);
-      expect(parsed.error?.issues[0]?.path).toEqual(['terminalReason']);
+      // Searched for, not read off index 0: which issue comes first is an ordering detail of
+      // the refinement, and this is asserting that the field was rejected at all.
+      expect(parsed.error?.issues.some((issue) => issue.path.join('.') === 'terminalReason')).toBe(
+        true
+      );
     }
   );
 
