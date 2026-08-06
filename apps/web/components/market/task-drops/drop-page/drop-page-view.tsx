@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button';
 import { compactAddress, formatUsdcUnits, sumUsdcBaseUnits } from '@/lib/format';
 import { taskCoverPlaceholderStyle } from '@/lib/market/task-cover';
 import { publicAgentPath } from '@/lib/seo';
+import { skillNpxInstallCommand } from '@/lib/skill';
 
 // The public Task Drop page. A marketing surface with a live data core: it is the destination of
 // the X launch post, the Discord pin, the header's Latest Drop button and /live, so it has to
@@ -39,7 +40,7 @@ import { publicAgentPath } from '@/lib/seo';
 // The BRAND-CANON palette is exposed through page-scoped `drop-*` semantic tokens. The
 // `taskdrop-theme` boundary keeps this campaign treatment from leaking into other surfaces.
 
-const SKILL_COMMAND = 'curl -fsSL https://taskmarket.dev/skill.md -o skill.md';
+const SKILL_COMMAND = skillNpxInstallCommand();
 const SKILL_HREF = 'https://taskmarket.dev/skill.md';
 const LIVE_DROP_HREF = '/live';
 
