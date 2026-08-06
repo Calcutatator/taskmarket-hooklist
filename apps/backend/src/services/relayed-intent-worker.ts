@@ -6,7 +6,8 @@ import { settleAbandonedIntents } from './relayed-intent-settlement';
 import { settleStrandedIntents } from './relayed-intent-stranded';
 import { settlePendingOrphanedRefunds } from './orphaned-payments';
 import { expireStaleReservations } from './reservation-sweep';
-import { listUnbroadcastIntents } from './relayed-intents';
+import { countStaleNonTerminalIntents, listUnbroadcastIntents } from './relayed-intents';
+import { publishStaleIntentSnapshot } from './intent-health-snapshot';
 
 export const DEFAULT_INTENT_WORKER_INTERVAL_MS = 10_000;
 const MAX_INTENTS_PER_PASS = 10;
@@ -106,6 +107,28 @@ export function createRelayedIntentWorker(options?: {
     } catch (error) {
       // Ledger bookkeeping must not take down the intent passes above it.
       logger.error('Settling pending orphaned refunds failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // What none of the sweeps above could move on (ADR-0053). Counted here, at the end of the
+    // pass, for two reasons. It is the honest number -- rows that survived everything that just
+    // tried to resolve them, rather than a queue depth measured before the queue was worked --
+    // and it puts the one query behind `/api/health`'s stale-intent count on this interval
+    // instead of on inbound request volume. Health is public, unauthenticated and polled
+    // continuously; a query per request there is an amplification aimed at the endpoint that
+    // most needs to keep answering when the service is struggling.
+    try {
+      publishStaleIntentSnapshot({
+        measuredAt: new Date(now()),
+        staleNonTerminal: await countStaleNonTerminalIntents({ db: database }),
+      });
+    } catch (error) {
+      // A count is the least important thing this pass does. Failing to compute it leaves the
+      // previous snapshot published rather than clearing it, so health keeps reporting the last
+      // answer alongside the `measuredAt` that shows it going stale -- which is more useful to a
+      // reader than the field vanishing and reappearing.
+      logger.warn('Counting stale relayed intents failed', {
         error: error instanceof Error ? error.message : String(error),
       });
     }
