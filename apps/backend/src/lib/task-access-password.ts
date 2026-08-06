@@ -27,9 +27,32 @@ const LEGACY_SCRYPT_N = 16384;
  * later without invalidating hashes created under an older, lower cost factor.
  */
 export function hashTaskAccessPassword(password: string): string {
-  const salt = randomBytes(16);
+  return hashWithSalt(password, randomBytes(16));
+}
+
+function hashWithSalt(password: string, salt: Buffer): string {
   const hash = scryptSync(password, salt, SCRYPT_KEYLEN, SCRYPT_OPTIONS);
   return `scrypt:${SCRYPT_N}:${salt.toString('hex')}:${hash.toString('hex')}`;
+}
+
+/**
+ * The same hash, with its salt derived from `saltSeed` instead of drawn at random.
+ *
+ * For the one caller that has to produce a byte-identical hash twice: a relayed write hashes
+ * the password on the request path so no plaintext is ever persisted, and the resulting hash
+ * goes into the intent payload -- which ADR-0061 compares verbatim to tell an honest retry
+ * from a caller changing their arguments. A random salt makes every attempt a different
+ * payload, so the second attempt at one creation would be refused as a payload mismatch.
+ *
+ * A salt does not have to be secret or random, only unique per stored hash, which is what it
+ * buys: no two records share a hash and no precomputed table covers them. Seeding it from the
+ * caller's own per-operation idempotency key keeps that property -- the seed is unique per
+ * creation -- while making the derivation reproducible. The seed is never the password and
+ * never derived from it, so nothing about the password leaks into the salt.
+ */
+export function hashTaskAccessPasswordWithDerivedSalt(password: string, saltSeed: string): string {
+  const salt = createHash('sha256').update(`task-access-password-salt:${saltSeed}`).digest();
+  return hashWithSalt(password, salt.subarray(0, 16));
 }
 
 // A fixed, valid-shaped hash used only to keep the "no password set" and "wrong password"

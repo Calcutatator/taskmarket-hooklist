@@ -4,6 +4,9 @@ import { createIntentCtx, makeChain } from '../helpers';
 vi.mock('../../../src/services/contract', () => ({
   contractClaimTask: vi.fn().mockResolvedValue('0xstaketx'),
   contractForfeitAndReopen: vi.fn().mockResolvedValue('0xforfeittx'),
+  // The claim completion stamps `claimedAt` from the receipt's block rather than the wall
+  // clock, so an inline run and a reconciler pass hours later write the same time.
+  blockTimestampForTx: vi.fn().mockResolvedValue(1_700_000_000),
 }));
 
 // Partial: the ceiling helpers and other exports must stay real, only the config lookup is

@@ -91,9 +91,11 @@ describeWithDatabase('a relayed intent is reserved before it is paid for', () =>
       })
     ).toBeNull();
 
-    const past = new Date(Date.now() + 60_000);
+    // A cutoff ahead of now, so nothing is excluded merely for being too recent: if the
+    // reservation is absent it is because the query excludes reservations.
+    const generousCutoff = new Date(Date.now() + 60_000);
     expect(
-      await listUnbroadcastIntents({ cutoff: past, db: database, limit: 10 })
+      await listUnbroadcastIntents({ cutoff: generousCutoff, db: database, limit: 10 })
     ).toHaveLength(0);
 
     // Nor by the abandoned path, which is the other way a `recorded` intent gets acted on.
@@ -101,7 +103,7 @@ describeWithDatabase('a relayed intent is reserved before it is paid for', () =>
       .update(relayedIntents)
       .set({ broadcastAttempts: MAX_BROADCAST_ATTEMPTS })
       .where(eq(relayedIntents.id, reserved.id));
-    expect(await listAbandonedIntents({ cutoff: past, db: database, limit: 10 })).toHaveLength(0);
+    expect(await listAbandonedIntents({ cutoff: generousCutoff, db: database, limit: 10 })).toHaveLength(0);
   });
 
   it('becomes broadcastable in the same statement that attaches its payment', async () => {

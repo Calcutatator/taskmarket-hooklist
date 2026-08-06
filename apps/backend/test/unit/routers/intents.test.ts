@@ -247,7 +247,9 @@ describe('intents.get', () => {
    * arrived (ADR-0052).
    */
   describe('the task id a creation eventually got', () => {
-    const TASK_ID = `0x${'ab'.repeat(32)}`;
+    // Deliberately distinct from `intentRow`'s default `txHash`: if the two matched, an
+    // implementation that reported the transaction hash as the task id would still pass.
+    const TASK_ID = `0x${'7c'.repeat(32)}`;
 
     it('reports it once the creation has completed', async () => {
       const ctx = ctxFor(intentRow({ status: 'completed' }), undefined, { id: TASK_ID });

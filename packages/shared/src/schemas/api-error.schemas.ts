@@ -28,8 +28,9 @@ export const API_ERROR_REASONS = [
    */
   'idempotency_key_reused',
   /**
-   * The request arrived with no `Idempotency-Key` header, or one that is not a UUID. Rejected
-   * before the 402 challenge, so nothing was charged (ADR-0052).
+   * The request arrived with no `X-Taskmarket-Idempotency-Key` header (the value of
+   * `IDEMPOTENCY_KEY_HEADER`), or one that is not a UUID. Rejected before the 402 challenge,
+   * so nothing was charged (ADR-0052).
    */
   'idempotency_key_required',
   /**
@@ -150,6 +151,18 @@ const IN_FLIGHT_REASONS: ReadonlySet<ApiErrorReason> = new Set([
  * confirming" is the false positive that leaves a user waiting for a write that is already
  * dead. A reused key naming a `completed` intent is likewise not in flight -- the write landed,
  * and the caller reads its result from `intents.get`.
+ *
+ * Those two are the *only* answers that make it terminal. Anything else -- `reserved`,
+ * `recorded`, `broadcast`, a status this package is too old to recognise, or no status at all
+ * -- reads as in flight. That is the opposite of the default this predicate applies elsewhere,
+ * and deliberately so, because for this one reason the two errors are not symmetric. The
+ * reason code itself is proof that an intent already exists under this key: that is what
+ * `idempotency_key_reused` means. So "in flight" only ever tells the caller to poll
+ * `intents.get`, which is correct and free whatever the intent turns out to have done, while
+ * "terminal" tells them the key is spent and a fresh one is needed -- and acting on that when
+ * the write is in fact still running is a second paid submission of an operation already under
+ * way. An unclassified answer must not be allowed to cause a double charge, so the unknown
+ * case resolves to the side that only ever costs a poll.
  */
 export function isInFlightApiError(envelope: ApiErrorEnvelope | null | undefined): boolean {
   if (!envelope || !IN_FLIGHT_REASONS.has(envelope.reason)) return false;
@@ -157,11 +170,7 @@ export function isInFlightApiError(envelope: ApiErrorEnvelope | null | undefined
   // `reserved` is in flight in the most literal sense: another request holds this key and is
   // partway through paying for it (ADR-0067). Answering "terminal" would tell the caller to
   // start again with a fresh key, which is a second charge for the same operation.
-  return (
-    envelope.intentStatus === 'reserved' ||
-    envelope.intentStatus === 'recorded' ||
-    envelope.intentStatus === 'broadcast'
-  );
+  return envelope.intentStatus !== 'completed' && envelope.intentStatus !== 'failed';
 }
 
 /**

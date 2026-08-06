@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 
 import type { db as DbType } from '../../db/client';
 import { claims, tasks } from '../../db/schema';
-import { contractClaimTask, contractForfeitAndReopen } from '../contract';
+import { blockTimestampForTx, contractClaimTask, contractForfeitAndReopen } from '../contract';
 
 type Db = typeof DbType;
 
@@ -51,6 +51,20 @@ export async function completeClaimsClaim(context: {
 }): Promise<void> {
   const { db, payload } = context;
 
+  // The claim happened when the transaction mined, not when this handler runs. Reading it off
+  // the receipt's block is what makes the two ways this completion can be reached agree: an
+  // inline run moments after the receipt and a reconciler pass hours later observe the same
+  // block and write the same `claimedAt`, whereas `new Date()` made the claim window the
+  // worker is measured against restart at whatever time the reconciler happened to fire.
+  //
+  // Read from the chain rather than captured into the payload, which is what the sibling
+  // `bids.auctionAccept` does with `acceptedAt`. That route is paid, so a repeated key is
+  // refused before ADR-0061's payload comparison can see its per-attempt timestamp; this one
+  // is free, so a wall-clock field in its payload would make an honest retry look like a
+  // change of arguments. Same choice, and for the same reason, as
+  // `completeEvaluationsEvaluate`'s `evaluatedAt`.
+  const claimedAt = await blockTimestampForTx(context.txHash);
+
   await db
     .insert(claims)
     .values({
@@ -66,7 +80,7 @@ export async function completeClaimsClaim(context: {
   await db
     .update(tasks)
     .set({
-      claimedAt: new Date(),
+      claimedAt: new Date(claimedAt * 1000),
       claimedBy: payload.workerAddress,
       status: 'claimed',
     })

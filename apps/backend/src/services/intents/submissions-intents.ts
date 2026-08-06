@@ -89,7 +89,21 @@ export async function completeSubmissionsSubmit(context: {
     // than moved before the chain call: the ceiling has to be evaluated in the same
     // transaction as the insert it guards, or concurrent submissions all read the same
     // under-ceiling count and all insert.
-    if (payload.mode === 'bounty' || payload.mode === 'benchmark') {
+    //
+    // Skipped when this submission is already recorded, because on that path there is no
+    // insert for it to guard -- `onConflictDoNothing` below is a no-op -- and the row itself
+    // is one of the ones the count returns. A worker whose last allowed submission put them
+    // exactly at the ceiling would otherwise have every repeat completion of this same intent
+    // throw, aborting the transaction and leaving a confirmed on-chain submitWork that can
+    // never finish being written down. The guard still bites for a genuinely new submission,
+    // which is the case it exists for.
+    const [alreadyRecorded] = await tx
+      .select({ id: submissions.id })
+      .from(submissions)
+      .where(eq(submissions.id, payload.submissionId))
+      .limit(1);
+
+    if (!alreadyRecorded && (payload.mode === 'bounty' || payload.mode === 'benchmark')) {
       await assertUnderHardSubmissionCeilingForInsert(tx, payload.taskId, payload.workerAddress);
     }
 

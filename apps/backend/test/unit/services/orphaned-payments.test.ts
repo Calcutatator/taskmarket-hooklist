@@ -178,7 +178,10 @@ describe('services/orphaned-payments', () => {
       // `retryFailedOrphanedRefunds` selects on 'failed' and `attemptRefund` claims
       // 'pending'/'failed'. Any status outside that set is safe; 'refunding' is the one the
       // row is already holding and the one the schema's check constraint permits.
+      // The settle update must have happened at all -- an absent `set` payload would make the
+      // status check below pass on `undefined` rather than on a status.
       const written = settle.set.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+      expect(written).toBeDefined();
       expect(['pending', 'failed']).not.toContain(written?.refundStatus);
     });
   });

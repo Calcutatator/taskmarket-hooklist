@@ -62,8 +62,31 @@ import { log, ok, post, x402Post, getAccounts, API_URL, type Account } from './_
  * them together would either forbid a perfectly cheap 100-free-submission run or permit an
  * expensive 94-paid one.
  */
-const MAX_FREE_SUBMISSIONS = Number(process.env.SMOKE_RATE_LIMIT_MAX_FREE ?? 150);
-const MAX_PAID_SUBMISSIONS = Number(process.env.SMOKE_RATE_LIMIT_MAX_PAID ?? 20);
+/**
+ * Read one budget, or refuse to start.
+ *
+ * `Number('abc')` is NaN, and every `count < budget` guard downstream is false against NaN --
+ * so a mistyped override did not cap the run at some wrong number, it removed the cap and let
+ * the submission loops run unbounded. On the paid budget that is real USDC, settled one
+ * authorization at a time until something else stops it. An override that cannot be honoured
+ * has to end the run rather than be silently ignored, and it is validated here, at the read,
+ * so it cannot reach a guard at all.
+ */
+function submissionBudget(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    console.error('\n=== Rate-limit smoke test ABORTED (nothing was checked) ===');
+    console.error(`reason: ${name}=${raw} is not a positive whole number of submissions`);
+    console.error(`fix:    unset ${name} to use the default (${fallback}), or set an integer >= 1`);
+    process.exit(2);
+  }
+  return parsed;
+}
+
+const MAX_FREE_SUBMISSIONS = submissionBudget('SMOKE_RATE_LIMIT_MAX_FREE', 150);
+const MAX_PAID_SUBMISSIONS = submissionBudget('SMOKE_RATE_LIMIT_MAX_PAID', 20);
 
 type BackendLimits = { freeSubmissionAllowance: number; hardSubmissionCeiling: number };
 

@@ -82,6 +82,7 @@ import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import { registerRelayedIntentHandlers } from '../services/intents/register';
 import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
+import { hashTaskAccessPasswordWithDerivedSalt } from '../lib/task-access-password';
 import {
   broadcastTasksCreate,
   type TasksCreateIntentPayload,
@@ -350,11 +351,32 @@ export const tasksRouter = router({
         ? buildEvaluatorAssignment({ ...input, evaluator: input.evaluator })
         : null;
 
+      // Hashed here, on the request path, and the plaintext dropped before the payload is
+      // built. The payload is persisted verbatim to `relayed_intents.payload` and read back by
+      // processes that never saw the request, so a plaintext password reaching it would leave
+      // a user-chosen secret sitting in a jsonb column indefinitely -- readable by anything
+      // with database access, and surviving in backups long after the task it guarded ended.
+      // Only the hash the task row was always going to store ever leaves this line.
+      //
+      // The salt is derived rather than drawn at random so that two attempts at one creation
+      // produce an identical payload; see hashTaskAccessPasswordWithDerivedSalt for why that
+      // is required here and why it costs the salt nothing.
+      const accessPasswordHash =
+        taskVisibility === 'private' && input.accessPassword
+          ? hashTaskAccessPasswordWithDerivedSalt(
+              input.accessPassword,
+              `${ctx.idempotencyKey}:tasks.create:accessPassword`
+            )
+          : null;
+      const intentInput: Record<string, unknown> = { ...input };
+      delete intentInput.accessPassword;
+
       const payload = {
+        accessPasswordHash,
         allowedViewerAddresses,
         evaluatorAssignment,
         inlineTaskDrop,
-        input: input as unknown as Record<string, unknown>,
+        input: intentInput,
         normalizedPayer,
         payer,
         resolvedTaskDropId,

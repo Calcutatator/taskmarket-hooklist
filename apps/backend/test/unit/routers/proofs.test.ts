@@ -159,6 +159,9 @@ describe('proofs router', () => {
       const result = await proofsRouter.createCaller(ctx).submit(submitInput);
 
       expect(result.success).toBe(true);
+      // The queued rejection must actually have been consumed: without this, a route that
+      // never attempted the commitment at all would satisfy the two assertions below.
+      expect(contractSubmitWork).toHaveBeenCalledOnce();
       expect(ctx.insertChain(proofs).values).toHaveBeenCalledOnce();
       expect(ctx.insertChain(submissions).values).not.toHaveBeenCalled();
     });

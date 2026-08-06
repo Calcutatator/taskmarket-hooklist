@@ -1,4 +1,5 @@
 // Verifies: ADR-0014 (public-by-default task visibility, unlisted/private opt-in)
+import { randomUUID } from 'crypto';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { createIntentCtx, createMockCtx, makeChain } from '../helpers';
@@ -559,6 +560,61 @@ describe('tasks router', () => {
         expect(set).not.toHaveProperty('escrowTxHash');
         expect(set).not.toHaveProperty('stakeRequired');
         expect(set).not.toHaveProperty('stakeBps');
+      });
+    });
+
+    describe('private access password', () => {
+      const PASSWORD = 'super-secret-password';
+
+      it('never puts the plaintext password in the intent payload it persists', async () => {
+        const ctx = createTaskCtx(PAYER);
+        const caller = tasksRouter.createCaller(ctx);
+
+        await caller.create({
+          ...baseTaskInput,
+          taskVisibility: 'private',
+          accessPassword: PASSWORD,
+        });
+
+        // `relayed_intents.payload` is jsonb that outlives the request -- read back by a
+        // reconciler hours later, and kept in backups long after the task ends. A user-chosen
+        // password reaching it is a stored secret, so assert on the serialized row rather than
+        // on one field: the plaintext must not be anywhere in it, under any key.
+        const intent = ctx.intents[0];
+        expect(intent).toBeDefined();
+
+        const payload = intent!.payload as {
+          accessPasswordHash: string | null;
+          input: Record<string, unknown>;
+        };
+        expect(JSON.stringify(payload)).not.toContain(PASSWORD);
+        expect(payload.accessPasswordHash).toEqual(expect.stringMatching(/^scrypt:/));
+        expect(payload.input).not.toHaveProperty('accessPassword');
+      });
+
+      it('derives the same hash twice, so an honest retry is not a payload mismatch', async () => {
+        // The same key both times, which is what a retry of one creation sends -- and what the
+        // salt is seeded from. Two different keys are two different operations and are meant
+        // to produce different hashes.
+        const idempotencyKey = randomUUID();
+        const hashes: string[] = [];
+        for (const _attempt of [0, 1]) {
+          const ctx = createTaskCtx(PAYER);
+          ctx.idempotencyKey = idempotencyKey;
+          await tasksRouter.createCaller(ctx).create({
+            ...baseTaskInput,
+            taskVisibility: 'private',
+            accessPassword: PASSWORD,
+          });
+          hashes.push(
+            (ctx.intents[0]!.payload as { accessPasswordHash: string }).accessPasswordHash
+          );
+        }
+
+        // ADR-0061 compares the stored payload against the resent one verbatim to tell a retry
+        // from a caller changing their arguments. A randomly salted hash would differ on every
+        // attempt, so the second attempt at one creation would be refused as a mismatch.
+        expect(hashes[0]).toEqual(hashes[1]);
       });
     });
   });
