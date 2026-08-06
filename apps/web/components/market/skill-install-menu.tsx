@@ -7,7 +7,7 @@ import {
   ExternalLinkIcon,
   PackagePlusIcon,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -34,11 +34,27 @@ const methodDescriptions: Record<SkillInstallMethod, string> = {
 export function SkillInstallMenu({ className }: { className?: string }) {
   const commands = skillInstallCommands();
   const [copiedMethod, setCopiedMethod] = useState<SkillInstallMethod | null>(null);
+  const copiedResetTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedResetTimer.current !== null) {
+        window.clearTimeout(copiedResetTimer.current);
+      }
+    },
+    []
+  );
 
   async function copyCommand(method: SkillInstallMethod) {
     await navigator.clipboard.writeText(commands[method]);
+    if (copiedResetTimer.current !== null) {
+      window.clearTimeout(copiedResetTimer.current);
+    }
     setCopiedMethod(method);
-    window.setTimeout(() => setCopiedMethod(null), 1600);
+    copiedResetTimer.current = window.setTimeout(() => {
+      copiedResetTimer.current = null;
+      setCopiedMethod(null);
+    }, 1600);
   }
 
   return (
