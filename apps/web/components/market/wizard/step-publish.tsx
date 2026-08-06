@@ -250,26 +250,53 @@ export function StepPublish({
   const breakdown = computeCostBreakdown(values.reward);
 
   const exchangeRateQuery = trpc.wallet.exchangeRate.useQuery();
-  const dreamsPerUsdc = exchangeRateQuery.data?.dreamsPerUsdc;
-  const bonusBps = exchangeRateQuery.data?.bonusBps ?? 0;
-  const workerSplitBps = exchangeRateQuery.data?.workerSplitBps ?? 10_000;
   // The bonus % (bonusBps) sets how much of the task's USD value becomes a DREAMS
   // bonus; dreamsPerUsdc is the separate exchange rate used to convert that USD
   // amount into DREAMS tokens. Both are then split between worker/requester by
   // workerSplitBps -- three independent knobs, applied in that order.
-  const hasDreamsEstimate = Boolean(dreamsPerUsdc && dreamsPerUsdc !== '0' && bonusBps > 0);
-  const estimatedWorkerUsdBonus = hasDreamsEstimate
-    ? estimateWorkerUsdBonusValue(breakdown.escrowed, bonusBps, workerSplitBps)
-    : null;
-  const estimatedWorkerDreamsBonus = hasDreamsEstimate
-    ? estimateWorkerDreamsBonus(breakdown.escrowed, dreamsPerUsdc!, bonusBps, workerSplitBps)
-    : null;
-  const estimatedRequesterUsdBonus = hasDreamsEstimate
-    ? estimateRequesterUsdBonusValue(breakdown.escrowed, bonusBps, workerSplitBps)
-    : null;
-  const estimatedRequesterDreamsBonus = hasDreamsEstimate
-    ? estimateRequesterDreamsBonus(breakdown.escrowed, dreamsPerUsdc!, bonusBps, workerSplitBps)
-    : null;
+  //
+  // Read as one object rather than three separately-defaulted numbers. The endpoint returns all
+  // three together or the query has not resolved, so there is no state in which one of them is
+  // known and another has to be guessed -- and a guessed workerSplitBps would quietly show the
+  // requester an estimate in which the worker takes the entire bonus.
+  const exchangeRate = exchangeRateQuery.data;
+  const hasDreamsEstimate = Boolean(
+    exchangeRate?.dreamsPerUsdc && exchangeRate.dreamsPerUsdc !== '0' && exchangeRate.bonusBps > 0
+  );
+  const estimatedWorkerUsdBonus =
+    hasDreamsEstimate && exchangeRate
+      ? estimateWorkerUsdBonusValue(
+          breakdown.escrowed,
+          exchangeRate.bonusBps,
+          exchangeRate.workerSplitBps
+        )
+      : null;
+  const estimatedWorkerDreamsBonus =
+    hasDreamsEstimate && exchangeRate
+      ? estimateWorkerDreamsBonus(
+          breakdown.escrowed,
+          exchangeRate.dreamsPerUsdc,
+          exchangeRate.bonusBps,
+          exchangeRate.workerSplitBps
+        )
+      : null;
+  const estimatedRequesterUsdBonus =
+    hasDreamsEstimate && exchangeRate
+      ? estimateRequesterUsdBonusValue(
+          breakdown.escrowed,
+          exchangeRate.bonusBps,
+          exchangeRate.workerSplitBps
+        )
+      : null;
+  const estimatedRequesterDreamsBonus =
+    hasDreamsEstimate && exchangeRate
+      ? estimateRequesterDreamsBonus(
+          breakdown.escrowed,
+          exchangeRate.dreamsPerUsdc,
+          exchangeRate.bonusBps,
+          exchangeRate.workerSplitBps
+        )
+      : null;
 
   async function handlePublish() {
     const submitValues = { ...form.getValues() };
