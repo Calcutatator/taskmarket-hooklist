@@ -68,10 +68,10 @@ const DREAMS_HOOK_SEED_BLOCK = config.DREAMS_HOOK_SEED_BLOCK;
 // RewardVault and EpochBudget are deployed alongside the reward hook at their own
 // addresses, so each needs its own poll. Both are optional -- a deployment without
 // them simply has no stream, exactly as with DREAMS_HOOK_ADDRESS.
-const REWARD_VAULT_ADDRESS = config.REWARD_VAULT_ADDRESS as `0x${string}` | undefined;
-const REWARD_VAULT_SEED_BLOCK = config.REWARD_VAULT_SEED_BLOCK;
-const EPOCH_BUDGET_ADDRESS = config.EPOCH_BUDGET_ADDRESS as `0x${string}` | undefined;
-const EPOCH_BUDGET_SEED_BLOCK = config.EPOCH_BUDGET_SEED_BLOCK;
+const DREAMS_VAULT_ADDRESS = config.DREAMS_VAULT_ADDRESS as `0x${string}` | undefined;
+const DREAMS_VAULT_SEED_BLOCK = config.DREAMS_VAULT_SEED_BLOCK;
+const DREAMS_EPOCH_BUDGET_ADDRESS = config.DREAMS_EPOCH_BUDGET_ADDRESS as `0x${string}` | undefined;
+const DREAMS_EPOCH_BUDGET_SEED_BLOCK = config.DREAMS_EPOCH_BUDGET_SEED_BLOCK;
 
 // The ERC-8004 identity registry is a third-party contract with no artifact in this
 // repo, so this one signature stays a literal. Every Taskmarket-owned event comes
@@ -1145,9 +1145,9 @@ async function processQualifiedHookEvents(
 }
 
 async function processRewardVaultEvents(fromBlock: bigint, toBlock: bigint): Promise<void> {
-  if (!REWARD_VAULT_ADDRESS) return;
+  if (!DREAMS_VAULT_ADDRESS) return;
   await processQualifiedHookEvents(
-    REWARD_VAULT_ADDRESS,
+    DREAMS_VAULT_ADDRESS,
     'RewardVault',
     REWARD_VAULT_EVENT_ITEMS,
     fromBlock,
@@ -1156,9 +1156,9 @@ async function processRewardVaultEvents(fromBlock: bigint, toBlock: bigint): Pro
 }
 
 async function processEpochBudgetEvents(fromBlock: bigint, toBlock: bigint): Promise<void> {
-  if (!EPOCH_BUDGET_ADDRESS) return;
+  if (!DREAMS_EPOCH_BUDGET_ADDRESS) return;
   await processQualifiedHookEvents(
-    EPOCH_BUDGET_ADDRESS,
+    DREAMS_EPOCH_BUDGET_ADDRESS,
     'EpochBudget',
     EPOCH_BUDGET_EVENT_ITEMS,
     fromBlock,
@@ -1207,16 +1207,16 @@ async function pollIndexerOnce(): Promise<void> {
     }
   }
 
-  if (REWARD_VAULT_ADDRESS) {
-    const vaultLastBlock = await getLastBlock('reward_vault', REWARD_VAULT_SEED_BLOCK);
+  if (DREAMS_VAULT_ADDRESS) {
+    const vaultLastBlock = await getLastBlock('reward_vault', DREAMS_VAULT_SEED_BLOCK);
     if (latestBlock > vaultLastBlock) {
       await processInChunks(vaultLastBlock + 1n, latestBlock, processRewardVaultEvents);
       await setLastBlock('reward_vault', latestBlock);
     }
   }
 
-  if (EPOCH_BUDGET_ADDRESS) {
-    const budgetLastBlock = await getLastBlock('epoch_budget', EPOCH_BUDGET_SEED_BLOCK);
+  if (DREAMS_EPOCH_BUDGET_ADDRESS) {
+    const budgetLastBlock = await getLastBlock('epoch_budget', DREAMS_EPOCH_BUDGET_SEED_BLOCK);
     if (latestBlock > budgetLastBlock) {
       await processInChunks(budgetLastBlock + 1n, latestBlock, processEpochBudgetEvents);
       await setLastBlock('epoch_budget', latestBlock);

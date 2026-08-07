@@ -195,16 +195,16 @@ const envSchema = z
       .regex(/^0x[a-fA-F0-9]{40}$/)
       .optional(),
     DREAMS_HOOK_SEED_BLOCK: z.coerce.number().default(0),
-    REWARD_VAULT_ADDRESS: z
+    DREAMS_VAULT_ADDRESS: z
       .string()
       .regex(/^0x[a-fA-F0-9]{40}$/)
       .optional(),
-    REWARD_VAULT_SEED_BLOCK: z.coerce.number().default(0),
-    EPOCH_BUDGET_ADDRESS: z
+    DREAMS_VAULT_SEED_BLOCK: z.coerce.number().default(0),
+    DREAMS_EPOCH_BUDGET_ADDRESS: z
       .string()
       .regex(/^0x[a-fA-F0-9]{40}$/)
       .optional(),
-    EPOCH_BUDGET_SEED_BLOCK: z.coerce.number().default(0),
+    DREAMS_EPOCH_BUDGET_SEED_BLOCK: z.coerce.number().default(0),
     LEGAL_ENFORCEMENT_ENABLED: strictBooleanFromEnv.default(false),
     PRIVY_APP_ID: z.string().optional(),
     PRIVY_APP_SECRET: z.string().optional(),

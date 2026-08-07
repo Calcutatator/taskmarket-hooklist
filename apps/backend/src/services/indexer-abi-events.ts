@@ -215,7 +215,7 @@ export const REWARD_HOOK_EVENT_ITEMS: AbiEvent[] = resolve(
   REWARD_HOOK_INDEXED_EVENT_NAMES
 );
 
-// -- RewardVault (REWARD_VAULT_ADDRESS) -------------------------------------
+// -- RewardVault (DREAMS_VAULT_ADDRESS) -------------------------------------
 
 export const REWARD_VAULT_INDEXED_EVENT_NAMES = [
   'Reserved',
@@ -236,7 +236,7 @@ export const REWARD_VAULT_EVENT_ITEMS: AbiEvent[] = resolve(
   REWARD_VAULT_INDEXED_EVENT_NAMES
 );
 
-// -- EpochBudget (EPOCH_BUDGET_ADDRESS) -------------------------------------
+// -- EpochBudget (DREAMS_EPOCH_BUDGET_ADDRESS) -------------------------------------
 
 export const EPOCH_BUDGET_INDEXED_EVENT_NAMES = [
   'Consumed',
