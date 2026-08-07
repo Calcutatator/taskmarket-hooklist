@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  INTERACTIVE_HTML_ESCAPE_MESSAGE,
   MAX_INTERACTIVE_HTML_BYTES,
   buildSandboxedHtmlDocument,
   canRenderInteractiveHtml,
@@ -103,6 +104,25 @@ describe('buildSandboxedHtmlDocument', () => {
     expect(policy).not.toContain('unsafe-eval');
   });
 
+  it('allows scripts from approved public CDNs without trusting arbitrary script origins', () => {
+    const rendered = buildSandboxedHtmlDocument(`
+      <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"></script>
+      <script src="https://unpkg.com/three@0.160.0/build/three.module.js"></script>
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+      <script src="https://scripts.example.com/untrusted.js"></script>
+    `);
+    const parsed = new DOMParser().parseFromString(rendered, 'text/html');
+    const policy =
+      parsed.head
+        .querySelector('meta[http-equiv="Content-Security-Policy"]')
+        ?.getAttribute('content') ?? '';
+
+    expect(policy).toContain(
+      "script-src 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com"
+    );
+    expect(policy).not.toContain('https://scripts.example.com');
+  });
+
   it('keeps the Taskmarket policy first when submitted HTML contains its own policy', () => {
     const rendered = buildSandboxedHtmlDocument(`
       <html>
@@ -118,5 +138,17 @@ describe('buildSandboxedHtmlDocument', () => {
     expect(policies).toHaveLength(2);
     expect(policies[0]?.getAttribute('content')).toContain("default-src 'none'");
     expect(policies[1]?.getAttribute('content')).toBe('default-src *');
+  });
+
+  it('adds a fixed Escape bridge after submitted content without expanding permissions', () => {
+    const rendered = buildSandboxedHtmlDocument(
+      '<button id="submitted-control">Submitted control</button>'
+    );
+    const parsed = new DOMParser().parseFromString(rendered, 'text/html');
+    const bridge = parsed.body.querySelector('script[data-taskmarket-bridge="escape"]');
+
+    expect(bridge?.previousElementSibling?.id).toBe('submitted-control');
+    expect(bridge?.textContent).toContain("event.key==='Escape'");
+    expect(bridge?.textContent).toContain(INTERACTIVE_HTML_ESCAPE_MESSAGE);
   });
 });

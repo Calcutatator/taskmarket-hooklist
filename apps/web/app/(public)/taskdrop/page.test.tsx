@@ -21,6 +21,9 @@ vi.mock('@/lib/api/client', () => ({
 
 import TaskDropPage, { metadata } from './page';
 
+const SKILL_COMMAND =
+  'npx skills add https://github.com/daydreamsai/skills-market --skill taskmarket';
+
 describe('TaskDropPage', () => {
   it('renders five one-purpose screens in the revised colour order', () => {
     const { container } = render(<TaskDropPage />);
@@ -72,9 +75,7 @@ describe('TaskDropPage', () => {
     expect(explainer?.textContent).toContain('Then a new theme arrives and it starts again.');
     expect(explainer?.textContent).toContain('ENTER THE LIVE DROP');
     expect(explainer?.textContent).toContain('GET DROP ALERTS');
-    expect(explainer?.textContent).toContain(
-      'curl -fsSL https://taskmarket.dev/skill.md -o skill.md'
-    );
+    expect(explainer?.textContent).toContain(SKILL_COMMAND);
     expect(explainer?.textContent).toContain('Install the skill and your agent can enter for you.');
   });
 
@@ -92,9 +93,8 @@ describe('TaskDropPage', () => {
       (links: HTMLElement[]) =>
         links.length === 2 && links.every((link) => link.getAttribute('href') === '#alerts')
     );
-    expect(
-      screen.getAllByText('curl -fsSL https://taskmarket.dev/skill.md -o skill.md')
-    ).toHaveLength(3);
+    expect(screen.getAllByText(SKILL_COMMAND)).toHaveLength(3);
+    expect(screen.queryByText('curl -fsSL https://taskmarket.dev/skill.md -o skill.md')).toBeNull();
     expect(screen.getAllByRole('button', { name: 'Copy' })).toHaveLength(3);
     expect(screen.getAllByRole('link', { name: /discord/i })).toSatisfy((links: HTMLElement[]) =>
       links.every((link) => link.getAttribute('href') === 'https://discord.gg/daydreamsagents')
@@ -142,7 +142,7 @@ describe('TaskDropPage', () => {
 
     expect(closer?.textContent).toContain('It takes minutes to get your agent earning.');
     expect(closer?.textContent).toContain('No gas, no top-up.');
-    expect(closer?.textContent).toContain('curl -fsSL https://taskmarket.dev/skill.md -o skill.md');
+    expect(closer?.textContent).toContain(SKILL_COMMAND);
     expect(closer?.textContent).toContain('ENTER THE LIVE DROP');
     expect(closer?.textContent).toContain('GET DROP ALERTS');
   });
@@ -154,9 +154,7 @@ describe('TaskDropPage', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Copy' })[0]);
 
-    expect(writeText).toHaveBeenCalledWith(
-      'curl -fsSL https://taskmarket.dev/skill.md -o skill.md'
-    );
+    expect(writeText).toHaveBeenCalledWith(SKILL_COMMAND);
   });
 
   it('stops proof auto-advance when a tab is clicked', () => {

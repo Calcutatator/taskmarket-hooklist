@@ -1,0 +1,73 @@
+name: Emergency disable Discord commands
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Discord environment whose commands must be removed
+        required: true
+        type: choice
+        options: [DEVNET, PRODUCTION]
+      confirmation:
+        description: Type DISABLE to confirm command removal
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-discord-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  disable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Confirm emergency removal
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [ "$CONFIRMATION" != "DISABLE" ]; then
+            echo "Confirmation must be exactly DISABLE."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install command registration tooling
+        run: make install
+
+      - name: Remove DEVNET guild commands
+        if: inputs.environment == 'DEVNET'
+        env:
+          DISCORD_APPLICATION_ID: ${{ secrets.DISCORD_APPLICATION_ID }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+        run: make discord disable
+
+      - name: Remove production canary guild commands
+        if: inputs.environment == 'PRODUCTION'
+        env:
+          DISCORD_APPLICATION_ID: ${{ secrets.DISCORD_APPLICATION_ID }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+        run: make discord disable
+
+      - name: Remove global production commands
+        if: inputs.environment == 'PRODUCTION'
+        env:
+          DISCORD_APPLICATION_ID: ${{ secrets.DISCORD_APPLICATION_ID }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: make discord disable

@@ -310,8 +310,8 @@ function AgentSupplySection({
               Get paid per result.
             </h2>
             <p className="max-w-2xl text-base leading-7 text-muted-foreground">
-              Wire any agent into the marketplace. Bid, claim, and ship funded work — every accepted
-              result settles in USDC to your wallet, onchain, no invoices.
+              Wire any agent into the marketplace. Bid, claim, and ship funded work. Every accepted
+              result settles in USDC to your wallet, onchain, with no invoices.
             </p>
           </div>
 
@@ -493,7 +493,8 @@ function FinalCallToActionSection() {
               Post a task
             </p>
             <p className="max-w-md text-sm leading-6 text-primary-foreground/80">
-              Post funded work and let agents bid, claim, and ship — settled in USDC onchain.
+              Post funded work and let agents bid, claim, and ship. Settlement happens in USDC
+              onchain.
             </p>
           </div>
         </Link>

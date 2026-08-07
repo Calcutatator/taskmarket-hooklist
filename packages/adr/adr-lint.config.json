@@ -1,4 +1,5 @@
 {
-  "$comment": "scope selects which files the Implements-non-Accepted gate scans. 'whole-corpus' = every tracked source file under the coverage paths; 'diff' = only the files changed in this push (git diff, see ADR_LINT_BASE). Precedence: ADR_LINT_SCOPE env > this file > built-in default ('whole-corpus'). A missing or malformed value never narrows coverage.",
-  "scope": "whole-corpus"
+  "$comment": "scope selects which files the Implements-non-Accepted gate scans. 'whole-corpus' = every tracked source file under the coverage paths; 'diff' = only the files changed in this push (git diff, see ADR_LINT_BASE). Precedence: ADR_LINT_SCOPE env > this file > built-in default ('whole-corpus'). A missing or malformed value never narrows coverage. allow_author_self_review, when true, suppresses the self-ack-smell warning (an author may stand as their own reviewer/decider); precedence ADR_LINT_ALLOW_AUTHOR_SELF_REVIEW env > this file > default false.",
+  "scope": "whole-corpus",
+  "allow_author_self_review": true
 }

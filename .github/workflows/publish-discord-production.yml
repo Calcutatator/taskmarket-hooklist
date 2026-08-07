@@ -1,0 +1,80 @@
+name: Publish Discord production commands
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Immutable 40-character production commit SHA validated in the canary guild
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: deploy-discord-PRODUCTION
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: PRODUCTION
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Verify immutable deployed production commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISH_REF: ${{ inputs.ref }}
+        run: |
+          if ! [[ "$PUBLISH_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "Publish ref must be a full immutable commit SHA."
+            exit 1
+          fi
+
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$PUBLISH_REF" origin/main; then
+            echo "Publish commit is not reachable from origin/main."
+            exit 1
+          fi
+
+          CONCLUSION=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${PUBLISH_REF}" \
+            --jq '[.workflow_runs[] | select(.name == "Deploy Discord app to Railway PRODUCTION" and .event == "push")] | .[0].conclusion // "not_found"')
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "No successful production canary deployment exists for this commit."
+            exit 1
+          fi
+
+      - name: Verify exact production deployment
+        env:
+          DISCORD_APP_URL: ${{ secrets.DISCORD_APP_PRODUCTION_URL }}
+          EXPECTED_COMMIT_SHA: ${{ inputs.ref }}
+          EXPECTED_DEPLOY_ENVIRONMENT: PRODUCTION
+        run: make discord smoke
+
+      - name: Install command registration tooling
+        run: make install
+
+      - name: Exercise signed interaction seam before global publication
+        run: make discord signed-smoke
+
+      - name: Publish global production commands
+        env:
+          DISCORD_APPLICATION_ID: ${{ secrets.DISCORD_APPLICATION_ID }}
+          DISCORD_APP_URL: ${{ secrets.DISCORD_APP_PRODUCTION_URL }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: make discord register

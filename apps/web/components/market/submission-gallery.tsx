@@ -1,7 +1,7 @@
 'use client';
 
 import type { ArtifactResponse, SubmissionResponse } from '@taskmarket/shared';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
   useCallback,
@@ -211,6 +211,7 @@ function SubmissionGalleryDialogInner({
   taskId,
 }: SubmissionGalleryDialogProps) {
   const [selectedArtifactId, setSelectedArtifactId] = useState(initialArtifactId);
+  const [fullViewport, setFullViewport] = useState(false);
   const motionDisabled = useMotionDisabled();
 
   // Re-anchor to the requested entry each time the dialog opens (heroes and
@@ -220,6 +221,29 @@ function SubmissionGalleryDialogInner({
       setSelectedArtifactId(initialArtifactId);
     }
   }, [initialArtifactId, open]);
+
+  // A controlled dialog can also be closed by its parent (for example when the
+  // active task or authorization scope changes), so reset independently of the
+  // dialog's own close callback as well as handling user-initiated closes below.
+  useEffect(() => {
+    if (!open) {
+      setFullViewport(false);
+    }
+  }, [open]);
+
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen) {
+        setFullViewport(false);
+      }
+      onOpenChange(nextOpen);
+    },
+    [onOpenChange]
+  );
+  // The sandboxed document can relay Escape across its browsing-context boundary,
+  // but its own untrusted scripts can send the same fixed signal. Limit the effect
+  // to this reversible layout change; iframe messages can never close the dialog.
+  const handlePreviewEscape = useCallback(() => setFullViewport(false), []);
 
   // Track the artifact rather than its position: the entries list refreshes with
   // every poll, and a newly submitted entry shifts every index below it. Fall back
@@ -365,6 +389,7 @@ function SubmissionGalleryDialogInner({
     <div
       className={cn(
         'relative',
+        fullViewport && !isMobile && 'h-full min-h-0',
         isMobile && !compactMobileVideo && 'h-full',
         compactMobileVideo && 'w-full self-center'
       )}
@@ -372,7 +397,13 @@ function SubmissionGalleryDialogInner({
       <div
         className={cn(
           'relative overflow-hidden rounded-xl border border-border/60 bg-background/52',
-          isMobile ? (compactMobileVideo ? 'aspect-video w-full' : 'h-full') : 'h-[62vh]'
+          isMobile
+            ? compactMobileVideo
+              ? 'aspect-video w-full'
+              : 'h-full'
+            : fullViewport
+              ? 'h-full'
+              : 'h-[62vh]'
         )}
         data-testid="gallery-frame"
         style={
@@ -393,6 +424,7 @@ function SubmissionGalleryDialogInner({
               offset={slot.offset}
               onCurrentPreviewChange={handleCurrentPreviewChange}
               onCurrentVideoAspectChange={handleCurrentVideoAspectChange}
+              onPreviewEscape={fullViewport ? handlePreviewEscape : undefined}
               open={open}
               showWarning={showInlineWarning}
               taskId={taskId}
@@ -501,7 +533,7 @@ function SubmissionGalleryDialogInner({
     const descriptionId = 'submission-gallery-mobile-description';
 
     return (
-      <Drawer open={open} onOpenChange={onOpenChange}>
+      <Drawer open={open} onOpenChange={handleOpenChange}>
         <DrawerContent
           aria-describedby={descriptionId}
           // components/ui/drawer.tsx scopes its own height cap to
@@ -541,30 +573,58 @@ function SubmissionGalleryDialogInner({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         aria-label="Submission gallery"
-        className="max-h-[92vh] max-w-6xl gap-3 overflow-auto"
+        className={cn(
+          'max-h-[92vh] max-w-6xl gap-3 overflow-auto',
+          fullViewport &&
+            '!left-0 !top-0 h-app-viewport !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-none border-0'
+        )}
+        data-full-viewport={fullViewport ? 'true' : 'false'}
         onKeyDown={handleKeyDown}
+        onEscapeKeyDown={(event) => {
+          if (fullViewport) {
+            event.preventDefault();
+            setFullViewport(false);
+          }
+        }}
       >
         {liveRegion}
-        <DialogHeader>
-          {contextLabel ? (
-            <p className="text-sm font-medium text-foreground">{contextLabel}</p>
-          ) : null}
-          <DialogTitle className="break-all pr-8 font-mono">{artifact.fileName}</DialogTitle>
-          <DialogDescription>
-            Submitted by{' '}
-            <ActorLink
-              address={submission.workerAddress}
-              agentId={submission.workerAgentId}
-              className="font-mono text-foreground hover:text-primary"
-              label={workerLabel}
-              profileBasePath={profileBasePath}
-              title={submission.workerAddress}
-            />{' '}
-            <RelativeTime value={submission.submittedAt} />
-          </DialogDescription>
+        <DialogHeader className="grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 pr-9">
+          <div className="grid min-w-0 gap-1.5">
+            {contextLabel ? (
+              <p className="text-sm font-medium text-foreground">{contextLabel}</p>
+            ) : null}
+            <DialogTitle className="break-all font-mono">{artifact.fileName}</DialogTitle>
+            <DialogDescription>
+              Submitted by{' '}
+              <ActorLink
+                address={submission.workerAddress}
+                agentId={submission.workerAgentId}
+                className="font-mono text-foreground underline underline-offset-4 hover:text-primary"
+                label={workerLabel}
+                profileBasePath={profileBasePath}
+                title={submission.workerAddress}
+              />{' '}
+              <RelativeTime value={submission.submittedAt} />
+            </DialogDescription>
+          </div>
+          <Button
+            aria-label={fullViewport ? 'Exit full screen' : 'Enter full screen'}
+            className="shrink-0"
+            onClick={() => setFullViewport((value) => !value)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {fullViewport ? (
+              <Minimize2 aria-hidden="true" className="size-4" />
+            ) : (
+              <Maximize2 aria-hidden="true" className="size-4" />
+            )}
+            <span>{fullViewport ? 'Exit full screen' : 'Enter full screen'}</span>
+          </Button>
         </DialogHeader>
         {playfield}
         {detailsSection}
@@ -579,6 +639,7 @@ type GallerySlideProps = {
   offset: SlideOffset;
   onCurrentPreviewChange: (artifactId: string, previewUrl: string | null) => void;
   onCurrentVideoAspectChange: (artifactId: string, ratio: number) => void;
+  onPreviewEscape?: () => void;
   open: boolean;
   showWarning: boolean;
   taskId: string;
@@ -594,6 +655,7 @@ function GallerySlide({
   offset,
   onCurrentPreviewChange,
   onCurrentVideoAspectChange,
+  onPreviewEscape,
   open,
   showWarning,
   taskId,
@@ -653,6 +715,7 @@ function GallerySlide({
         artifact={artifact}
         isCurrent={isCurrent}
         onCurrentPreviewChange={onCurrentPreviewChange}
+        onPreviewEscape={isCurrent ? onPreviewEscape : undefined}
         open={open}
         showWarning={showWarning}
         taskId={taskId}
@@ -703,6 +766,7 @@ type GalleryNonVideoPreviewProps = {
   artifact: ArtifactResponse;
   isCurrent: boolean;
   onCurrentPreviewChange: (artifactId: string, previewUrl: string | null) => void;
+  onPreviewEscape?: () => void;
   open: boolean;
   showWarning: boolean;
   taskId: string;
@@ -712,6 +776,7 @@ function GalleryNonVideoPreview({
   artifact,
   isCurrent,
   onCurrentPreviewChange,
+  onPreviewEscape,
   open,
   showWarning,
   taskId,
@@ -752,6 +817,7 @@ function GalleryNonVideoPreview({
     <InteractiveHtmlPreview
       artifact={artifact}
       classNames={showWarning ? GALLERY_HTML_CLASS_NAMES : GALLERY_HTML_CLASS_NAMES_COMPACT}
+      onEscape={onPreviewEscape}
       previewUrl={previewUrl}
       showWarning={showWarning}
     />
