@@ -1,0 +1,28 @@
+version: 1
+native_automod:
+  mention_spam:
+    enabled: true
+    maximum_mentions: 5
+    action: block_and_alert_mod_queue
+  suspicious_content:
+    enabled: true
+    categories: [phishing, credential_theft, malware, impersonation]
+    action: block_and_alert_mod_queue
+  keywords:
+    action: block_and_alert_mod_queue
+    examples: [seed phrase, recovery phrase, private key, wallet validation, support agent dm]
+  repeated_messages:
+    enabled: true
+    action: block_and_alert_mod_queue
+raid_protection:
+  verification_level: high
+  new_account_slowmode_seconds: 30
+  emergency_mode:
+    verification_level: highest
+    pause_invites: true
+    lock_member_posting: true
+policy:
+  never_auto_ban_on_keyword_alone: true
+  moderator_review_required: true
+  appeals_path: private_support_form
+  evidence_retention_days: 90

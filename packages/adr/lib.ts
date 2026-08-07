@@ -469,7 +469,14 @@ export function checkConsideredOptionsMinimum(content: string, file: string): Is
 }
 
 // See docs/adr/README.md "Three roles" for the Author/Reviewers/Deciders policy this enforces.
-export function checkAuthorReviewersDeciders(content: string, file: string, status: string | null): Issue[] {
+// When allowAuthorSelfReview is true, the self-ack-smell nudge is suppressed (an author may
+// stand as their own reviewer/decider); a blank Deciders on an Accepted ADR still blocks.
+export function checkAuthorReviewersDeciders(
+  content: string,
+  file: string,
+  status: string | null,
+  allowAuthorSelfReview = false,
+): Issue[] {
   const issues: Issue[] = [];
   const author = fieldValue(content, AUTHOR_RE);
   const reviewers = fieldValue(content, REVIEWERS_RE);
@@ -489,7 +496,7 @@ export function checkAuthorReviewersDeciders(content: string, file: string, stat
       message: 'Status is Accepted but Reviewers is blank or a placeholder — consider recording a lightweight technical ack',
     });
   }
-  if (!isPlaceholder(author)) {
+  if (!allowAuthorSelfReview && !isPlaceholder(author)) {
     const authorName = normalizeName(author);
     if (!isPlaceholder(deciders) && authorName && authorName === normalizeName(deciders)) {
       issues.push({
@@ -697,8 +704,8 @@ export const ADR_INDEX_FRESHNESS_OPTIONS: DocIndexFreshnessOptions = {
   yamlOptions: ADR_INDEX_YAML_OPTIONS,
 };
 
-// Matches the `Implements: ADR-NNNN` back-pointer convention the audit already relies on.
-export const IMPLEMENTS_ADR_RE = /Implements:\s*ADR-(\d{4})/g;
+// The `Implements:` back-pointer parser (findImplementsRefs) is defined below, next to
+// the audit's back-pointer scanning, so the gate and the audit share one parser.
 
 /**
  * Status-aware remediation text for a back-pointer to a non-Accepted ADR.
@@ -749,12 +756,7 @@ export function checkProposedAdrImplementation(
       continue;
     }
 
-    const claimed = new Set<string>();
-    // A fresh clone per file: IMPLEMENTS_ADR_RE is a shared module-level global, and matchAll
-    // seeds its iterator from the regex's current lastIndex, so reusing it directly can skip
-    // matches depending on what another consumer left behind.
-    const implementsRe = new RegExp(IMPLEMENTS_ADR_RE.source, IMPLEMENTS_ADR_RE.flags);
-    for (const match of content.matchAll(implementsRe)) claimed.add(match[1]);
+    const claimed = new Set<string>(findImplementsRefs(content));
 
     for (const number of [...claimed].sort()) {
       const status = statusByNumber.get(number);
@@ -840,6 +842,16 @@ export type LintScope = 'diff' | 'whole-corpus';
 
 export function coerceScope(value: string | null | undefined): LintScope | null {
   return value === 'diff' || value === 'whole-corpus' ? value : null;
+}
+
+// Resolve allow_author_self_review from its two sources with the CLI's precedence:
+// an env value (when set) wins, else the config-file value when boolean, else the
+// default false. Pure — the CLI reads the file/env and passes the raw values in, so
+// the precedence itself is unit-testable without touching the filesystem.
+export function coerceAllowAuthorSelfReview(fileValue: unknown, envValue: string | null | undefined): boolean {
+  if (envValue !== undefined && envValue !== null) return /^(1|true|yes|on)$/i.test(envValue.trim());
+  if (typeof fileValue === 'boolean') return fileValue;
+  return false;
 }
 
 // Every tracked file under the coverage paths -- the file set the gate scans in
@@ -1067,7 +1079,10 @@ export function lintAdrDir(
   // the source-changed-without-an-ADR coverage warning): in whole-corpus mode
   // the gate looks at every tracked source file, not just this push's diff.
   // Defaults to changedFiles so existing callers keep diff-scoped behavior.
-  gateFiles: string[] = changedFiles
+  gateFiles: string[] = changedFiles,
+  // When true, an author who also appears as reviewer/decider does not raise the
+  // self-ack-smell warning. Defaults to false so existing callers are unchanged.
+  allowAuthorSelfReview = false
 ): LintResult {
   const issues: Issue[] = [];
 
@@ -1109,7 +1124,7 @@ export function lintAdrDir(
     issues.push(...checkRequiredSections(content, file));
     issues.push(...checkYStatement(content, file));
     issues.push(...checkConsideredOptionsMinimum(content, file));
-    issues.push(...checkAuthorReviewersDeciders(content, file, status));
+    issues.push(...checkAuthorReviewersDeciders(content, file, status, allowAuthorSelfReview));
   }
 
   // Supersession symmetry + direction, binding for Accepted-lineage ADRs
@@ -1261,14 +1276,48 @@ export type EmbodimentState = 'Not started' | 'Specified' | 'Implemented' | 'Ver
 // both match since only the bold-marker + label + colon are anchored.
 export const SPEC_IMPLEMENTS_ADRS_RE = /\*\*Implements ADRs:?\*\*:?\s*[:|]?\s*([^\n|]+)/i;
 
-// Matches a code/test file's back-pointer comment, e.g. "// Implements: ADR-0042".
-export const CODE_IMPLEMENTS_RE = /\bImplements:\s*ADR-(\d{4})/g;
-export const CODE_VERIFIES_RE = /\bVerifies:\s*ADR-(\d{4})/g;
+// A back-pointer marker may list more than one ADR on a single line. We anchor on the
+// marker once, then pull every ADR-NNNN from the rest of that line, so each listed ADR
+// is credited. Examples (self-ignored by the scan so these illustrative markers aren't
+// counted as real evidence):
+//   Implements: ADR-0045, ADR-0050                  adr-scan:ignore-line
+//   Implements: ADR-0045 (Task Awards), ADR-0050    adr-scan:ignore-line
+// A bare ADR-NNNN inside a free-text annotation also counts as a back-pointer; keep
+// annotations free of bare ADR-NNNN values when they must not create one.
+const IMPLEMENTS_LINE_RE = /\bImplements:([^\n]*)/g;
+const VERIFIES_LINE_RE = /\bVerifies:([^\n]*)/g;
+// Word boundaries so only a complete four-digit ADR reference matches — ADR-00450 is
+// not read as ADR-0045.
+const ADR_REF_RE = /\bADR-(\d{4})\b/g;
+
+function findMarkerRefs(lineRe: RegExp, content: string): string[] {
+  const nums: string[] = [];
+  const lr = new RegExp(lineRe.source, 'g');
+  let line: RegExpExecArray | null;
+  while ((line = lr.exec(content)) !== null) {
+    const rr = new RegExp(ADR_REF_RE.source, 'g');
+    let ref: RegExpExecArray | null;
+    while ((ref = rr.exec(line[1])) !== null) nums.push(ref[1]);
+  }
+  return nums;
+}
+
+// Every ADR back-pointed by an "Implements:" marker, scanning each marker line's full
+// tail (see the note above). Order-preserving; duplicates kept (callers dedupe).
+export function findImplementsRefs(content: string): string[] {
+  return findMarkerRefs(IMPLEMENTS_LINE_RE, content);
+}
+
+// Every ADR back-pointed by a "Verifies:" marker (test back-pointers). Same whole-line
+// tail scan as findImplementsRefs.
+export function findVerifiesRefs(content: string): string[] {
+  return findMarkerRefs(VERIFIES_LINE_RE, content);
+}
 
 // A pure grep/regex scan can't tell "real evidence" apart from "a string that merely looks
-// like evidence" (a docstring example, a test fixture for the regex itself, sample text in a
-// README). This repo's own tooling hits that exact case: packages/adr's test fixtures for
-// CODE_IMPLEMENTS_RE/CODE_VERIFIES_RE necessarily contain literal "Implements: ADR-NNNN"
+// like evidence" (a docstring example, a test fixture for the parser itself, sample text in a
+// README). This repo's own tooling hits that exact case: packages/adr's test fixtures for the
+// back-pointer parser necessarily contain literal "Implements: ADR-NNNN"
 // text, and adr-audit.ts's whole-repo scan would otherwise count them as real. The fix is an
 // explicit out-of-band signal, not a scan-root exclusion (which would just as wrongly hide
 // genuine back-pointers elsewhere in the same file) or string-obfuscating the fixture (fragile,
@@ -1278,8 +1327,8 @@ export const ADR_SCAN_IGNORE_MARKER = 'adr-scan:ignore-line';
 
 // Blanks any line containing ADR_SCAN_IGNORE_MARKER before back-pointer scanning. Applied to
 // real file content read from disk (adr-audit.ts), never to an in-memory string passed
-// directly to a function under test — a test asserting what CODE_IMPLEMENTS_RE/
-// findCommentAdrRefs extracts from a string still gets the real, unblanked string; the marker
+// directly to a function under test — a test asserting what the back-pointer parser
+// extracts from a string still gets the real, unblanked string; the marker
 // only tells the *outer* whole-repo scan to skip that physical source line.
 export function stripIgnoredLines(content: string): string {
   return content
@@ -1467,13 +1516,7 @@ export function matchesAnyGlob(relPath: string, globs: string[]): boolean {
 // count as real embodiment evidence even though it's still worth flagging as a convention
 // violation — these are two different questions, not the same check reused.
 export function findCommentAdrRefs(content: string): string[] {
-  const nums = new Set<string>();
-  CODE_IMPLEMENTS_RE.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = CODE_IMPLEMENTS_RE.exec(content)) !== null) nums.add(m[1]);
-  CODE_VERIFIES_RE.lastIndex = 0;
-  while ((m = CODE_VERIFIES_RE.exec(content)) !== null) nums.add(m[1]);
-  return [...nums];
+  return [...new Set([...findImplementsRefs(content), ...findVerifiesRefs(content)])];
 }
 
 export interface AdrAuditEntry {

@@ -2,10 +2,11 @@
 
 import type { ArtifactResponse } from '@taskmarket/shared';
 import { AlertTriangle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
+  INTERACTIVE_HTML_ESCAPE_MESSAGE,
   MAX_INTERACTIVE_HTML_BYTES,
   buildSandboxedHtmlDocument,
   canRenderInteractiveHtml,
@@ -77,11 +78,13 @@ const DEFAULT_CLASS_NAMES: Required<InteractiveHtmlPreviewClassNames> = {
 export function InteractiveHtmlPreview({
   artifact,
   classNames,
+  onEscape,
   previewUrl,
   showWarning = true,
 }: {
   artifact: ArtifactResponse;
   classNames?: InteractiveHtmlPreviewClassNames;
+  onEscape?: () => void;
   previewUrl: string;
   showWarning?: boolean;
 }) {
@@ -89,8 +92,27 @@ export function InteractiveHtmlPreview({
   const [bodyExceedsLimit, setBodyExceedsLimit] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const declaredSizeExceedsLimit = !canRenderInteractiveHtml(artifact);
   const resolved = { ...DEFAULT_CLASS_NAMES, ...classNames };
+
+  useEffect(() => {
+    if (!onEscape) {
+      return;
+    }
+
+    const handleMessage = (event: MessageEvent<unknown>) => {
+      if (
+        event.data === INTERACTIVE_HTML_ESCAPE_MESSAGE &&
+        event.source === iframeRef.current?.contentWindow
+      ) {
+        onEscape();
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [onEscape]);
 
   useEffect(() => {
     if (declaredSizeExceedsLimit) {
@@ -158,6 +180,7 @@ export function InteractiveHtmlPreview({
       <iframe
         allow=""
         className={resolved.iframe}
+        ref={iframeRef}
         referrerPolicy="no-referrer"
         sandbox="allow-scripts"
         srcDoc={sandboxDocument}
