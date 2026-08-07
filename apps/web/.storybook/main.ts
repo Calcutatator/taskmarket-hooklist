@@ -4,6 +4,14 @@ import { fileURLToPath } from 'node:url';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Keep Storybook builds deterministic when CI cannot reach Google Fonts. Production Next.js
+// builds still download and self-host the real font; only the isolated catalogue uses this local
+// response and its existing CSS fallback stack.
+process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES ??= path.resolve(
+  dirname,
+  'next-font-mocked-responses.cjs'
+);
+
 const config: StorybookConfig = {
   addons: [
     '@storybook/addon-a11y',
