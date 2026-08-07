@@ -476,6 +476,64 @@ async function main() {
       );
     }
     ok('the transaction queued behind it mined', blockedHash);
+
+    // 5c. The foreign-transaction variant. Step 5b strands a nonce in 'recycled', which the
+    // replacement path already covers. This one strands a row in 'broadcast': a transaction
+    // sent with the same wallet from OUTSIDE the backend (a `forge script --broadcast` deploy
+    // is the real-world case) mines at a nonce the allocator had already issued. Our row's
+    // hash then never gets a receipt and every replacement is rejected 'nonce too low', so
+    // before the nonce-count check the row retried a doomed replacement forever.
+    log('5c', 'Injecting a nonce spent by a foreign transaction...');
+
+    const foreignNonce = await faultPublicClient.getTransactionCount({
+      address: serverAccount.address,
+      blockTag: 'pending',
+    });
+
+    // Keep ordinary traffic away from the nonce we are about to consume out of band.
+    await sql`
+      update server_wallet_nonces set next_nonce = ${foreignNonce + 1}
+      where lower(wallet_address) = ${wallet} and next_nonce <= ${foreignNonce}
+    `;
+
+    // The foreign transaction: same wallet, sent without going through the dispatcher.
+    const foreignHash = await faultWalletClient.sendTransaction({
+      nonce: foreignNonce,
+      to: serverAccount.address,
+      value: 0n,
+    });
+    await faultPublicClient.waitForTransactionReceipt({ hash: foreignHash });
+
+    // The row the dispatcher would have written for its own transaction at that same nonce.
+    // This hash was never broadcast, so no receipt for it will ever exist.
+    const orphanHash = `0x${'ee'.repeat(32)}`;
+    const orphanId = `smoke-nonce-foreign-${foreignNonce}`;
+    await sql`
+      insert into server_wallet_transactions
+        (id, wallet_address, chain_id, nonce, status, tx_hash, context, broadcast_at, updated_at)
+      values (${orphanId}, ${wallet}, ${chainId}, ${foreignNonce}, 'broadcast', ${orphanHash},
+        'smoke-nonce foreign transaction injection', now() - interval '1 hour',
+        now() - interval '1 hour')
+    `;
+    ok('foreign transaction mined at an allocated nonce', { foreignHash, foreignNonce });
+
+    const foreignDeadline = Date.now() + 120_000;
+    let settledStatus: string | undefined;
+    while (Date.now() < foreignDeadline) {
+      await sleep(5000);
+      const rows = await sql`
+        select status from server_wallet_transactions where id = ${orphanId}
+      `;
+      settledStatus = rows[0]?.status as string | undefined;
+      if (settledStatus && settledStatus !== 'broadcast') break;
+    }
+    if (settledStatus !== 'failed') {
+      throw new Error(
+        `The reconciler left the foreign-nonce row in '${settledStatus}' after 120s; it must ` +
+          `settle terminally as 'failed' rather than retry a replacement that can never succeed`
+      );
+    }
+    ok('reconciler settled the foreign-nonce row terminally', orphanId);
   } else if (deepChecks) {
     log('5b', `Skipping fault injection: ${faultInjection.reason}`);
   }
