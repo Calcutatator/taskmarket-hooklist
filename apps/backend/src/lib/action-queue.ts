@@ -9,7 +9,7 @@ import type {
 
 import { computePendingActions, type PendingActionTask } from './task';
 
-// Implements: ADR-0041 (the action queue derives from canonical pending actions)
+// Implements: ADR-0065 (the action queue derives from canonical pending actions)
 const SUPPRESSED_ACTIONS = new Set<PendingAction['action']>([
   // Suppressed until the pooled-escrow vulnerability tracked in issue #432 is fixed.
   'refund_expired',

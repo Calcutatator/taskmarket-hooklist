@@ -1,0 +1,129 @@
+version: 1
+server:
+  name: Taskmarket
+  community_features: true
+  default_notifications: only_mentions
+  explicit_media_filter: all_members
+  direct_message_spam_filter: true
+retention_intent:
+  public_channels: Keep searchable community knowledge while it remains accurate; archive or delete stale operational notices during quarterly review.
+  staff_channels: Keep coordination brief and move required evidence to the access-controlled canonical record; review Discord residue monthly.
+  canonical_records: Store support, moderation, security, and incident records outside Discord under the owning system's approved retention policy.
+categories:
+  - name: START HERE
+    visibility: everyone
+    channels:
+      - name: start-here
+        type: text
+        posting: staff_only
+        onboarding_default: true
+        copy: copy/start-here.md
+        purpose: One-screen orientation and canonical next actions.
+      - name: rules-and-safety
+        type: text
+        posting: staff_only
+        onboarding_default: true
+        copy: copy/rules-and-safety.md
+        purpose: Rules, scam warnings, and enforcement summary.
+      - name: announcements
+        type: announcement
+        posting: publisher_only
+        onboarding_default: true
+        purpose: Product and community announcements.
+      - name: status
+        type: text
+        posting: app_and_staff_only
+        purpose: Incident notices linking to the canonical status page.
+  - name: TASKMARKET
+    visibility: members
+    channels:
+      - name: task-drops
+        type: forum
+        posting: members
+        purpose: Public Task Drop discussion and collaboration.
+      - name: showcase
+        type: forum
+        posting: members
+        onboarding_default: true
+        onboarding_writable: true
+        purpose: Completed work, integrations, templates, and lessons learned.
+  - name: BUILDERS
+    visibility: members
+    channels:
+      - name: developer-help
+        type: forum
+        posting: members
+        onboarding_default: true
+        onboarding_writable: true
+        purpose: API, CLI, agent, contract, and integration questions.
+      - name: product-feedback
+        type: forum
+        posting: members
+        onboarding_default: true
+        onboarding_writable: true
+        purpose: Structured product feedback and requests.
+      - name: builders-chat
+        type: text
+        posting: members
+        purpose: Lightweight developer conversation that does not need durable support handling.
+  - name: SUPPORT
+    visibility: members
+    channels:
+      - name: support
+        type: forum
+        posting: members
+        onboarding_default: true
+        onboarding_writable: true
+        purpose: Searchable product support with required classification tags.
+      - name: report-a-problem
+        type: text
+        posting: staff_only
+        copy: copy/report-a-problem.md
+        purpose: Instructions and link to private canonical support intake.
+      - name: known-issues
+        type: text
+        posting: staff_only
+        purpose: Confirmed issues, workarounds, and links to canonical status or issue records.
+  - name: COMMUNITY
+    visibility: members
+    channels:
+      - name: introductions
+        type: text
+        posting: members
+        purpose: Member introductions and what they want to build or find.
+      - name: general
+        type: text
+        posting: members
+        onboarding_default: true
+        onboarding_writable: true
+        purpose: General Taskmarket community conversation.
+      - name: events
+        type: text
+        posting: staff_only
+        purpose: Community calls, demos, workshops, and event follow-up.
+  - name: STAFF
+    visibility: staff
+    channels:
+      - name: mod-queue
+        type: text
+        posting: staff
+        purpose: AutoMod alerts and moderation coordination.
+      - name: support-escalations
+        type: forum
+        posting: staff
+        purpose: Escalations without secrets, private keys, or sensitive user data.
+      - name: incident-room
+        type: text
+        posting: incident_team
+        purpose: Time-bounded coordination; canonical incident record remains outside Discord.
+      - name: audit-log
+        type: text
+        posting: integrations_only
+        purpose: Discord server audit-log mirror where supported.
+voice:
+  - name: Community Lounge
+    visibility: members
+    purpose: Informal conversation; no support or dispute decisions.
+  - name: Community Stage
+    visibility: members
+    purpose: Scheduled demos and public calls moderated by Event Host.

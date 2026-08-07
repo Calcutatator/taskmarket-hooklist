@@ -1,0 +1,23 @@
+version: 1
+approved_integrations:
+  - name: Taskmarket Public App
+    owner: Engineering
+    purpose: Signed HTTP interactions and read-only public Taskmarket lookups.
+    hosting: Railway
+    data_access: public_taskmarket_http_only
+    discord_scopes: [applications.commands]
+    privileged_intents: []
+    credentials: [discord_public_key, registration_bot_token]
+  - name: Discord Native AutoMod
+    owner: Community
+    purpose: Spam, phishing, and raid controls.
+webhooks:
+  policy: deny_by_default
+  owners: [Security Lead]
+  requirements: [named_owner, single_channel_scope, documented_secret_location, quarterly_rotation]
+prohibited:
+  - general-purpose moderation bots with unnecessary message access
+  - wallet verification bots
+  - bots that request seed phrases, signatures, or private keys
+  - integrations trained on private support or staff channels
+  - personal webhooks owned by individual staff accounts
