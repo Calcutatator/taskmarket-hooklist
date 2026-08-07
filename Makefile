@@ -135,6 +135,9 @@ deploy:
 
 upgrade:
 	@$(ENV_LOADER) && \
+	if [ "$(word 1,$(MAKECMDGOALS))" != "upgrade" ]; then \
+		exit 0; \
+	fi && \
 	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
 		cd packages/contracts && \
 		FORGE_DEV_PRIVATE_KEY="$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_TESTNET}" \
