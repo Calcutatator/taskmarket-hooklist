@@ -193,6 +193,11 @@ adrs:
     title: "Server-wallet transactions use a durable nonce allocator and outbox"
     status: Accepted
     date: "2026-08-03"
+  - number: "0041"
+    file: "0041-discord-public-app-runs-as-a-railway-http-interactions-service.md"
+    title: Discord public app runs as a Railway HTTP Interactions service
+    status: Accepted
+    date: "2026-08-05"
   - number: "0063"
     file: "0063-the-reconciler-settles-a-nonce-spent-by-a-foreign-transaction.md"
     title: The reconciler settles a nonce spent by a foreign transaction

@@ -1,0 +1,40 @@
+{
+  "name": "@taskmarket/discord-app",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "dev:stack": "tsx watch src/scripts/dev-stack.ts",
+    "build": "tsup",
+    "start": "node dist/server.js",
+    "clean": "rm -rf dist",
+    "lint:check": "eslint src/ test/",
+    "lint:write": "eslint src/ test/ --fix",
+    "format:check": "prettier --check .",
+    "format:write": "prettier --write .",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "commands:register": "tsx src/scripts/register-commands.ts",
+    "blueprint:check": "tsx src/scripts/validate-community-blueprint.ts"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@taskmarket/eslint-config": "workspace:*",
+    "@taskmarket/prettier-config": "workspace:*",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "@types/supertest": "^7.2.0",
+    "supertest": "^7.2.2",
+    "tsup": "^8.5.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^4.1.5",
+    "yaml": "^2.4.5"
+  },
+  "prettier": "@taskmarket/prettier-config"
+}

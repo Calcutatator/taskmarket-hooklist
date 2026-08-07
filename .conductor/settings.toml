@@ -14,3 +14,8 @@ icon = "monitor"
 available_in = [ "local", "cloud" ]
 command = "E2E_MOCK_API_PORT=$((CONDUCTOR_PORT + 1)) TASKMARKET_MOCK_WEB_PORT=$((CONDUCTOR_PORT + 2)) make ui-ci"
 icon = "test-tube"
+
+[scripts.run.discord-app]
+available_in = [ "local", "cloud" ]
+command = "DISCORD_APP_PORT=$((CONDUCTOR_PORT + 3)) DISCORD_MOCK_API_PORT=$((CONDUCTOR_PORT + 4)) DISCORD_PUBLIC_KEY=0000000000000000000000000000000000000000000000000000000000000000 DISCORD_ALLOWED_GUILD_IDS=1 DISCORD_ALLOWED_CHANNEL_IDS=1 DISCORD_SUPPORT_URL=https://github.com/daydreamsai/taskmarket/security/advisories/new DEPLOY_ENVIRONMENT=local make start discord-stack"
+icon = "terminal"

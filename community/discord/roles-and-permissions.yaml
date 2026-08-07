@@ -1,0 +1,104 @@
+version: 1
+principles:
+  - Deny Administrator except to two break-glass Owner accounts.
+  - Separate moderation, support, publishing, event, and integration capabilities.
+  - Require phishing-resistant multi-factor authentication for every staff account.
+  - Never grant permissions based only on contribution, wallet balance, or Taskmarket reputation.
+roles:
+  - name: Owner
+    count: 2
+    permissions: [administrator]
+    controls: [hardware_security_key, unique_account, quarterly_access_review]
+  - name: Security Lead
+    permissions: [view_audit_log, manage_integrations, manage_webhooks, manage_server]
+    exclusions: [administrator]
+  - name: Community Lead
+    permissions: [manage_channels, manage_roles, manage_events, view_audit_log]
+    controls: [may_manage_roles_below_self_only]
+    exclusions: [administrator, manage_integrations]
+  - name: Moderator
+    permissions: [manage_messages, moderate_members, kick_members, view_audit_log]
+    exclusions: [ban_members, manage_roles, manage_channels, mention_everyone]
+  - name: Senior Moderator
+    permissions: [manage_messages, moderate_members, kick_members, ban_members, view_audit_log]
+    exclusions: [administrator, manage_integrations]
+  - name: Support
+    permissions: [view_channel, send_messages, send_messages_in_threads, manage_threads]
+    controls: [support_category_overrides_only]
+    exclusions: [moderate_members, manage_roles, view_audit_log]
+  - name: Publisher
+    permissions: [send_messages, mention_everyone]
+    controls: [announcement_channel_overrides_only]
+    exclusions: [manage_server, manage_webhooks]
+  - name: Event Host
+    permissions: [manage_events, mute_members, move_members, request_to_speak]
+    exclusions: [manage_channels, manage_roles]
+  - name: Taskmarket App
+    type: managed_integration
+    permissions: [send_messages, embed_links]
+    exclusions: [administrator, manage_server, manage_roles, manage_webhooks, moderate_members]
+  - name: Member
+    permissions:
+      [view_channel, send_messages, send_messages_in_threads, create_public_threads, use_application_commands]
+  - name: New Member
+    permissions: [view_channel]
+    controls: [onboarding_defaults_only]
+  - name: Muted
+    permissions: [view_channel, read_message_history]
+    overrides: [deny_send_messages, deny_reactions, deny_voice_speak]
+  - name: Requester
+    type: self_selected_interest
+    permissions: []
+  - name: Worker
+    type: self_selected_interest
+    permissions: []
+  - name: Builder
+    type: self_selected_interest
+    permissions: []
+  - name: Contributor
+    type: self_selected_interest
+    permissions: []
+controls:
+  role_assignment:
+    staff_roles: Owner or Community Lead after identity verification and approval
+    cosmetic_roles: automation or self-selection
+  offboarding_sla_minutes: 30
+  bot_role_position: below_all_staff_roles
+  webhook_creation: Security Lead only
+channel_policy:
+  visibility:
+    everyone:
+      allow_everyone: [view_channel, read_message_history]
+    members:
+      allow_everyone: [view_channel, read_message_history]
+    staff:
+      deny_everyone: [view_channel]
+      allow_roles:
+        [Owner, Security Lead, Community Lead, Moderator, Senior Moderator, Support, Publisher]
+  posting:
+    members:
+      allow_everyone:
+        [send_messages, send_messages_in_threads, create_public_threads, add_reactions]
+    staff_only:
+      deny_everyone: [send_messages, send_messages_in_threads, create_public_threads]
+      allow_roles: [Owner, Security Lead, Community Lead, Moderator, Senior Moderator, Support]
+    publisher_only:
+      deny_everyone: [send_messages]
+      allow_roles: [Owner, Community Lead, Publisher]
+    app_and_staff_only:
+      deny_everyone: [send_messages]
+      allow_roles: [Owner, Security Lead, Community Lead, Publisher, Taskmarket App]
+    app_only:
+      deny_everyone: [send_messages]
+      allow_roles: [Taskmarket App]
+    staff:
+      deny_everyone: [send_messages, send_messages_in_threads, create_public_threads]
+      allow_roles:
+        [Owner, Security Lead, Community Lead, Moderator, Senior Moderator, Support, Publisher]
+    incident_team:
+      deny_everyone: [send_messages]
+      allow_roles: [Owner, Security Lead, Community Lead]
+    integrations_only:
+      deny_everyone: [send_messages]
+      allow_roles: [Owner, Security Lead]
+      allow_managed_integrations: true

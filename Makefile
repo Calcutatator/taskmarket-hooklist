@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start storybook storybook-ci storybook-image storybook-image-smoke storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check contract ci-quality-js ui-ci ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli dither-kit
+.PHONY: help init install build dev start storybook storybook-ci storybook-image storybook-image-smoke storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check discord-blueprint-check adr-audit contract ci-quality-js ui-ci ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli discord disable register signed-smoke dither-kit
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -14,9 +14,11 @@ help:
 	@echo "  make install              - Same as init"
 	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet|preview)"
 	@echo "  make release              - Tag and push a production release (deploys backend + frontend)"
-	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|shared|contracts|storybook|all); 'contracts' also regenerates abi/TaskMarket.json"
+	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|discord-app|shared|contracts|storybook|all); 'contracts' also regenerates abi/TaskMarket.json"
 	@echo "  make dev [storybook]      - Start all dev servers, optionally with Storybook"
-	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|mock-api|mock-web|docs|anvil|storybook)"
+	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|discord-app|discord-stack|mock-api|mock-web|docs|anvil|storybook)"
+	@echo "  make discord <register|disable|smoke|signed-smoke> - Manage commands and verify Discord app seams"
+	@echo "  make discord-blueprint-check - Validate Discord operating YAML and Markdown"
 	@echo "  make storybook            - Start the component library on port 6006"
 	@echo "  make storybook-ci         - Check catalogue coverage, build, and test every story"
 	@echo "  make storybook-image      - Build the production Storybook container"
@@ -34,6 +36,7 @@ help:
 	@echo "  make skill-export SKILLS_MARKET_OUTPUT=<dir> - Export the canonical skills.sh package"
 	@echo "  make docs-og-check        - Check docs pages have required og/twitter meta tags"
 	@echo "  make lint-check adr       - Check docs/adr/ ADRs follow numbering/status rules"
+	@echo "  make adr-audit            - Regenerate ADR/RFC indexes and embodiment audit reports"
 	@echo "  make lint-check specs     - Check docs/specs/ follow the Spec-lite structural template"
 	@echo "  make test adr             - Run the adr package's own unit test suite (also covers spec-lint)"
 	@echo "  make contract <cmd>       - Contract tools (audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci)"
@@ -59,6 +62,16 @@ init:
 	git submodule update --init --recursive
 
 install: init
+
+adr-audit:
+	$(ENV_LOADER) && pnpm --filter @taskmarket/adr run adr-audit
+
+discord-blueprint-check:
+	$(ENV_LOADER) && \
+	pnpm --filter @taskmarket/discord-app blueprint:check && \
+	cd apps/docs && pnpm exec markdownlint \
+		--config $$(node -p "require.resolve('@taskmarket/markdownlint-config/.markdownlint.json')") \
+		../../community/discord/
 
 deploy:
 	@$(ENV_LOADER) && \
@@ -290,7 +303,7 @@ release:
 build:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make build <backend|frontend|web|docs|shared|contracts|storybook|all>"; \
+		echo "Usage: make build <backend|frontend|web|docs|discord-app|shared|contracts|storybook|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo build; \
@@ -304,6 +317,8 @@ build:
 		pnpm --filter @taskmarket/web storybook:build; \
 	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
 		pnpm --filter @taskmarket/docs build; \
+	elif [ "$(word 1,$(ARGS))" = "discord-app" ]; then \
+		pnpm --filter @taskmarket/discord-app build; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		pnpm --filter @taskmarket/shared build; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
@@ -317,7 +332,7 @@ open('abi/TaskMarket.json','w').write(json.dumps(merged,indent=2)+'\n'); \
 print(f'ABI: {len(merged)} entries -> abi/TaskMarket.json')"; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make build <backend|frontend|web|docs|shared|contracts|storybook|all>"; \
+		echo "Usage: make build <backend|frontend|web|docs|discord-app|shared|contracts|storybook|all>"; \
 		exit 1; \
 	fi
 
@@ -354,17 +369,23 @@ start:
 		pnpm --filter @taskmarket/web dev; \
 	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
 		pnpm --filter @taskmarket/docs dev; \
+	elif [ "$(word 1,$(ARGS))" = "discord-app" ]; then \
+		PORT="$${DISCORD_APP_PORT:-3005}" pnpm --filter @taskmarket/discord-app dev; \
+	elif [ "$(word 1,$(ARGS))" = "discord-stack" ]; then \
+		PORT="$${DISCORD_APP_PORT:-3005}" \
+		DISCORD_MOCK_API_PORT="$${DISCORD_MOCK_API_PORT:-3006}" \
+		pnpm --filter @taskmarket/discord-app dev:stack; \
 	elif [ "$(word 1,$(ARGS))" = "anvil" ]; then \
 		anvil; \
 	else \
-		echo "Usage: make start <db|backend|frontend|web|mock-api|mock-web|docs|anvil>"; \
+		echo "Usage: make start <db|backend|frontend|web|discord-app|discord-stack|mock-api|mock-web|docs|anvil>"; \
 		exit 1; \
 	fi
 
 lint-check:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make lint-check <backend|frontend|web|docs|shared|contracts|email-worker|adr|specs|all>"; \
+		echo "Usage: make lint-check <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|adr|specs|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo lint:check; \
@@ -376,14 +397,14 @@ lint-check:
 		cd packages/$(word 1,$(ARGS)) && pnpm lint:check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make lint-check <backend|frontend|web|docs|shared|contracts|email-worker|adr|specs|all>"; \
+		echo "Usage: make lint-check <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|adr|specs|all>"; \
 		exit 1; \
 	fi
 
 lint-fix:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make lint-fix <backend|frontend|web|docs|shared|contracts|all>"; \
+		echo "Usage: make lint-fix <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo lint:write; \
@@ -401,16 +422,18 @@ lint-fix:
 		cd packages/contracts && pnpm run format:write; \
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm lint:write; \
+	elif [ "$(word 1,$(ARGS))" = "discord-app" ]; then \
+		cd apps/discord-app && pnpm lint:write; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make lint-fix <backend|frontend|web|docs|shared|contracts|email-worker|all>"; \
+		echo "Usage: make lint-fix <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|all>"; \
 		exit 1; \
 	fi
 
 format-check:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make format-check <backend|frontend|web|docs|shared|contracts|all>"; \
+		echo "Usage: make format-check <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo format:check; \
@@ -428,16 +451,18 @@ format-check:
 		cd packages/contracts && pnpm run format:check; \
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm format:check; \
+	elif [ "$(word 1,$(ARGS))" = "discord-app" ]; then \
+		cd apps/discord-app && pnpm format:check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make format-check <backend|frontend|web|docs|shared|contracts|email-worker|all>"; \
+		echo "Usage: make format-check <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|all>"; \
 		exit 1; \
 	fi
 
 format-fix:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make format-fix <backend|frontend|web|docs|shared|contracts|all>"; \
+		echo "Usage: make format-fix <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo format:write; \
@@ -455,16 +480,18 @@ format-fix:
 		cd packages/contracts && pnpm run format:write; \
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm format:write; \
+	elif [ "$(word 1,$(ARGS))" = "discord-app" ]; then \
+		cd apps/discord-app && pnpm format:write; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make format-fix <backend|frontend|web|docs|shared|contracts|email-worker|all>"; \
+		echo "Usage: make format-fix <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|all>"; \
 		exit 1; \
 	fi
 
 type-check:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make type-check <backend|frontend|web|shared|all>"; \
+		echo "Usage: make type-check <backend|frontend|web|shared|email-worker|cli|discord-app|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo type-check; \
@@ -480,9 +507,11 @@ type-check:
 		cd apps/email-worker && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "cli" ]; then \
 		cd apps/cli && pnpm type-check; \
+	elif [ "$(word 1,$(ARGS))" = "discord-app" ]; then \
+		cd apps/discord-app && pnpm type-check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make type-check <backend|frontend|web|shared|email-worker|cli|all>"; \
+		echo "Usage: make type-check <backend|frontend|web|shared|email-worker|cli|discord-app|all>"; \
 		exit 1; \
 	fi
 
@@ -672,7 +701,8 @@ ci-quality-js:
 	pnpm turbo lint:check --filter='!@taskmarket/contracts' && \
 	pnpm turbo format:check --filter='!@taskmarket/contracts' && \
 	pnpm turbo type-check --filter='!@taskmarket/contracts' && \
-	pnpm turbo test --filter='!@taskmarket/contracts' --filter='!@taskmarket/docs'
+	pnpm turbo test --filter='!@taskmarket/contracts' --filter='!@taskmarket/docs' && \
+	$(MAKE) discord-blueprint-check
 
 ui-ci:
 	$(MAKE) storybook-ci
@@ -763,6 +793,9 @@ db:
 
 smoke:
 	@$(ENV_LOADER) && \
+	if [ "$(word 1,$(MAKECMDGOALS))" = "discord" ]; then \
+		exit 0; \
+	fi && \
 	if [ "$(word 2,$(ARGS))" = "testnet" ]; then \
 		SMOKE_API_URL="$$TESTNET_API_URL"; \
 		SMOKE_REWARD_HOOK_ADDRESS="$$FORGE_DREAMS_HOOK_ADDRESS_TESTNET"; \
@@ -906,6 +939,27 @@ cli:
 	if [ -n "$(ARGS)" ]; then \
 		node apps/cli/dist/index.js $(ARGS); \
 	fi
+
+discord:
+	@export NVM_DIR="$${NVM_DIR:-$$HOME/.nvm}"; \
+	if [ -s "$$NVM_DIR/nvm.sh" ]; then . "$$NVM_DIR/nvm.sh" && nvm install && nvm use; fi && \
+	if [ "$(word 1,$(ARGS))" = "register" ]; then \
+		pnpm --filter @taskmarket/discord-app commands:register; \
+	elif [ "$(word 1,$(ARGS))" = "disable" ]; then \
+		DISCORD_COMMAND_MODE=disabled pnpm --filter @taskmarket/discord-app commands:register; \
+	elif [ "$(word 1,$(ARGS))" = "smoke" ]; then \
+		bash scripts/smoke-discord-deployment.sh; \
+	elif [ "$(word 1,$(ARGS))" = "signed-smoke" ]; then \
+		pnpm --filter @taskmarket/discord-app exec vitest run test/app.test.ts test/interaction-security.test.ts; \
+	else \
+		echo "Usage: make discord <register|disable|smoke|signed-smoke>"; \
+		exit 1; \
+	fi
+
+# These are arguments to the multiword `make discord ...` dispatcher. Make also
+# treats each argument as a goal, so keep the secondary goals as explicit no-ops.
+disable register signed-smoke:
+	@:
 
 pre-commit:
 	@echo "Running pre-commit checks..."
