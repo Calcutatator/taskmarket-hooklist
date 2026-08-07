@@ -35,7 +35,8 @@ afterEach(() => {
   cleanup();
 });
 
-const SKILL_COMMAND = 'curl -fsSL https://taskmarket.dev/skill.md -o skill.md';
+const SKILL_COMMAND =
+  'npx skills add https://github.com/daydreamsai/skills-market --skill taskmarket';
 
 function renderState(state: 'upcoming' | 'live' | 'judging' | 'finished') {
   return render(<DropPageView drop={sampleDrop} tasks={sampleDropTasks(state)} />);
@@ -223,6 +224,7 @@ describe('DropPageView', () => {
     render(<DropPageView drop={sampleDrop} tasks={sampleDropTasks('live')} />);
 
     expect(screen.getAllByText(SKILL_COMMAND)).toHaveLength(1);
+    expect(screen.queryByText('curl -fsSL https://taskmarket.dev/skill.md -o skill.md')).toBeNull();
     expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
   });
 

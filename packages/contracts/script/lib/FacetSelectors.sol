@@ -21,6 +21,28 @@ import { RegistryFacet } from "../../src/facets/RegistryFacet.sol";
 ///      upgrade path) have no fresh-deploy equivalent and stay local to
 ///      DiamondFullUpgrade.s.sol.
 library FacetSelectors {
+    /// @dev Rev018 kept the pre-rev018 nine-parameter `createTask` routed alongside the
+    ///      evaluator-aware struct-form one, so off-chain callers can be migrated after the
+    ///      facet cut rather than in lockstep with it. It has no `.selector` expression available
+    ///      -- `CoreFacet.createTask` is overloaded, so the compiler cannot resolve which one is
+    ///      meant -- hence the explicit signature hash, the same idiom the constant getters above
+    ///      and DiamondFullUpgrade's historical selectors already use. Rev019 removes this entry
+    ///      and the shim behind it once nothing encodes the old signature any more.
+    bytes4 internal constant LEGACY_CREATE_TASK = bytes4(
+        keccak256(
+            "createTask(uint256,uint256,bytes4,uint256,uint256,bytes4,(bool,uint16),(address[],bytes),(bytes32,string,bytes32[]))"
+        )
+    );
+
+    /// @dev Rev018's evaluator-aware `createTask`, whose task-shape scalars are grouped into
+    ///      ITMPCore.TaskConfig. Spelled out for the same reason as LEGACY_CREATE_TASK: with two
+    ///      overloads in scope, `CoreFacet.createTask.selector` no longer compiles.
+    bytes4 internal constant CREATE_TASK = bytes4(
+        keccak256(
+            "createTask((uint256,uint256,bytes4,uint256,uint256,bytes4),(bool,uint16),(address[],bytes),(bytes32,string,bytes32[]),(address,uint256,uint16,uint32,uint32,address))"
+        )
+    );
+
     function cutFacetSelectors() internal pure returns (bytes4[] memory s) {
         s = new bytes4[](1);
         s[0] = DiamondCutFacet.diamondCut.selector;
@@ -38,7 +60,7 @@ library FacetSelectors {
     function adminFacetSelectors() internal pure returns (bytes4[] memory s) {
         // initialize is NOT included -- it is called once via the Diamond constructor's
         // _init delegatecall, never added as a routable selector.
-        s = new bytes4[](17);
+        s = new bytes4[](19);
         s[0] = AdminFacet.paused.selector;
         s[1] = AdminFacet.pause.selector;
         s[2] = AdminFacet.unpause.selector;
@@ -56,10 +78,14 @@ library FacetSelectors {
         s[14] = AdminFacet.getDefaultHooks.selector;
         s[15] = AdminFacet.diamondVersion.selector;
         s[16] = AdminFacet.setDiamondVersion.selector;
+        // rev017: the appeal-window floor is admin-settable state, so both its getter and its
+        // setter must route through the Diamond.
+        s[17] = AdminFacet.minAppealWindowSecs.selector;
+        s[18] = AdminFacet.setMinAppealWindowSecs.selector;
     }
 
     function coreFacetSelectors() internal pure returns (bytes4[] memory s) {
-        s = new bytes4[](21);
+        s = new bytes4[](22);
         // public constant getters -- must use keccak256; .selector syntax does not apply to constants
         s[0] = bytes4(keccak256("BOUNTY()"));
         s[1] = bytes4(keccak256("CLAIM()"));
@@ -71,7 +97,7 @@ library FacetSelectors {
         s[7] = bytes4(keccak256("AUCTION_REVERSE_DUTCH()"));
         s[8] = bytes4(keccak256("AUCTION_REVERSE_ENGLISH()"));
         s[9] = bytes4(keccak256("MAX_BIDS_PER_TASK()"));
-        s[10] = CoreFacet.createTask.selector;
+        s[10] = CREATE_TASK;
         s[11] = CoreFacet.claimTask.selector;
         s[12] = CoreFacet.selectWorker.selector;
         s[13] = CoreFacet.submitPitch.selector;
@@ -82,6 +108,7 @@ library FacetSelectors {
         s[18] = CoreFacet.updateTask.selector;
         s[19] = CoreFacet.refundExpired.selector;
         s[20] = CoreFacet.rejectSubmission.selector;
+        s[21] = LEGACY_CREATE_TASK;
     }
 
     function auctionFacetSelectors() internal pure returns (bytes4[] memory s) {

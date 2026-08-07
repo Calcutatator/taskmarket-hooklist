@@ -9,6 +9,7 @@ import { ProgressRail } from '@/components/taskdrop/progress-rail';
 import { ProofCarousel } from '@/components/taskdrop/proof-carousel';
 import { ScrollSnapShell } from '@/components/taskdrop/scroll-snap-shell';
 import { buildPageMetadata } from '@/lib/seo';
+import { skillNpxInstallCommand } from '@/lib/skill';
 
 // Single scroll-snap switch: set to true to snap each screen to the viewport.
 // Off after a laptop-size read-through: the page settled between screens about as often as on
@@ -22,7 +23,7 @@ const LIVE_DROP_PATH = '/live' satisfies Route;
 const SKILL_URL = 'https://taskmarket.dev/skill.md';
 const DISCORD_URL = 'https://discord.gg/daydreamsagents';
 const DROP_ALERTS_ANCHOR = '#alerts';
-const SKILL_COMMAND = 'curl -fsSL https://taskmarket.dev/skill.md -o skill.md';
+const SKILL_COMMAND = skillNpxInstallCommand();
 
 const bebas = Bebas_Neue({
   subsets: ['latin'],

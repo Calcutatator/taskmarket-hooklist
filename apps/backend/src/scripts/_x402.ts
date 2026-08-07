@@ -370,3 +370,193 @@ export function getAccounts() {
     worker: privateKeyToAccount(workerKey),
   };
 }
+
+// -----------------------------------------------------------------------------
+// Minimum appeal window (rev017)
+// -----------------------------------------------------------------------------
+
+const adminAppealWindowAbi = parseAbi([
+  'function minAppealWindowSecs() view returns (uint32)',
+  'function setMinAppealWindowSecs(uint32 newMinimum)',
+]);
+
+export type AppealWindowOverride = {
+  /** The floor actually in force for this run. Size appeal windows and sleeps from this. */
+  effectiveSecs: number;
+  /** True if this process lowered the floor and therefore owes a restore. */
+  lowered: boolean;
+  /** Human-readable explanation, printed by the caller either way. */
+  reason: string;
+  /** Idempotent, and safe to call in a `finally` even when nothing was lowered. */
+  restore: () => Promise<void>;
+};
+
+function firstLine(err: unknown): string {
+  return String(err instanceof Error ? err.message : err).split('\n')[0];
+}
+
+/**
+ * Temporarily lower the protocol-wide minimum appeal window (rev017) so a smoke test can use a
+ * short window instead of waiting out the production floor.
+ *
+ * MUTATES PROTOCOL CONFIGURATION. `setMinAppealWindowSecs` is `onlyOwner` and checks
+ * `msg.sender` directly -- there is no forwarder path -- so this needs the diamond owner's key
+ * (`UPGRADE_OWNER_KEY` or `FORGE_DEV_PRIVATE_KEY`, the same pair smoke-upgrade.ts uses), and
+ * that account must hold ETH for gas. Every other smoke-test key only ever signs off-chain,
+ * which is why this is the one helper here that sends a transaction of its own.
+ *
+ * Callers must restore in a `finally`, not on the happy path: a run that throws partway and
+ * leaves the floor lowered hands the next run a weakened guard with nothing to signal it.
+ */
+export async function lowerMinAppealWindow(desiredSecs: number): Promise<AppealWindowOverride> {
+  const address = process.env.CONTRACT_ADDRESS as `0x${string}` | undefined;
+  const rpcUrl = process.env.BASE_RPC_URL ?? 'http://127.0.0.1:8545';
+  const chainId = parseInt(process.env.CHAIN_ID ?? '84532', 10);
+  const chain: Chain = chainId === 31337 ? anvil : baseSepolia;
+  const noop = async () => {};
+
+  if (!address) {
+    return {
+      effectiveSecs: desiredSecs,
+      lowered: false,
+      reason: 'CONTRACT_ADDRESS is not set -- cannot read or set the floor',
+      restore: noop,
+    };
+  }
+
+  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+  const readFloor = async (): Promise<number> =>
+    Number(
+      await publicClient.readContract({
+        address,
+        abi: adminAppealWindowAbi,
+        functionName: 'minAppealWindowSecs',
+      })
+    );
+
+  let currentSecs: number;
+  try {
+    currentSecs = await readFloor();
+  } catch (err) {
+    // A pre-rev017 diamond does not route this selector at all. That is not a failure: such a
+    // chain enforces no floor, so the caller's short window is already legal there.
+    return {
+      effectiveSecs: desiredSecs,
+      lowered: false,
+      reason: `minAppealWindowSecs is not readable (${firstLine(err)}) -- pre-rev017 diamond, no floor enforced`,
+      restore: noop,
+    };
+  }
+
+  if (currentSecs <= desiredSecs) {
+    return {
+      effectiveSecs: currentSecs,
+      lowered: false,
+      reason: `on-chain floor is already ${currentSecs}s, at or below the ${desiredSecs}s this run needs`,
+      restore: noop,
+    };
+  }
+
+  const ownerKey = (process.env.UPGRADE_OWNER_KEY ?? process.env.FORGE_DEV_PRIVATE_KEY) as
+    | `0x${string}`
+    | undefined;
+  if (!ownerKey) {
+    return {
+      effectiveSecs: currentSecs,
+      lowered: false,
+      reason:
+        'no diamond-owner key available -- set UPGRADE_OWNER_KEY or FORGE_DEV_PRIVATE_KEY to the ' +
+        'account that deployed the diamond (cloud-env-setup.sh already exports it locally)',
+      restore: noop,
+    };
+  }
+
+  const ownerWallet = createWalletClient({
+    account: privateKeyToAccount(ownerKey),
+    chain,
+    transport: http(rpcUrl),
+  });
+  const write = async (secs: number): Promise<void> => {
+    const hash = await ownerWallet.writeContract({
+      address,
+      abi: adminAppealWindowAbi,
+      functionName: 'setMinAppealWindowSecs',
+      args: [secs],
+    });
+    await publicClient.waitForTransactionReceipt({ hash });
+  };
+
+  try {
+    await write(desiredSecs);
+  } catch (err) {
+    return {
+      effectiveSecs: currentSecs,
+      lowered: false,
+      reason: `setMinAppealWindowSecs reverted (${firstLine(err)}) -- the key is probably not the diamond owner`,
+      restore: noop,
+    };
+  }
+
+  let restored = false;
+  return {
+    effectiveSecs: desiredSecs,
+    lowered: true,
+    reason: `lowered ${currentSecs}s -> ${desiredSecs}s for this run`,
+    restore: async () => {
+      if (restored) return;
+      restored = true;
+      await write(currentSecs);
+      // Verify rather than assume. A restore that silently failed leaves the protocol floor
+      // weakened for everyone else on a shared chain -- exactly the state nobody would think
+      // to go looking for.
+      const after = await readFloor();
+      if (after !== currentSecs) {
+        throw new Error(
+          `FAILED TO RESTORE minAppealWindowSecs: expected ${currentSecs}s, chain reports ${after}s. ` +
+            'The protocol floor is left weakened -- restore it manually.'
+        );
+      }
+      console.log(`  [appeal-window] restored minAppealWindowSecs to ${currentSecs}s`);
+    },
+  };
+}
+
+/**
+ * As lowerMinAppealWindow, but for scripts whose runtime is dominated by waiting out the appeal
+ * window. If the floor could not be lowered, this SKIPS the run loudly and exits rather than
+ * silently proceeding against a floor that would make the script take many minutes.
+ *
+ * The skip is deliberately noisy, and exits non-zero. A silently skipped check reads as a pass,
+ * which is the worse failure -- the same argument smoke-nonce.ts makes about its own fault
+ * injection. Set SMOKE_APPEAL_WINDOW_SLOW=1 to run anyway against the real floor; that path
+ * tests strictly more, it is only slow, so it is the right choice when you have the time.
+ */
+export async function requireShortAppealWindow(desiredSecs: number): Promise<AppealWindowOverride> {
+  const override = await lowerMinAppealWindow(desiredSecs);
+  if (override.lowered || override.effectiveSecs <= desiredSecs) {
+    console.log(`  [appeal-window] ${override.reason}`);
+    return override;
+  }
+
+  if (process.env.SMOKE_APPEAL_WINDOW_SLOW === '1') {
+    console.warn(
+      `\n!!! [appeal-window] could not lower the floor: ${override.reason}\n` +
+        `!!! SMOKE_APPEAL_WINDOW_SLOW=1 -- running against the real ${override.effectiveSecs}s floor.\n` +
+        '!!! Every appeal-window wait in this run will take that long.\n'
+    );
+    return override;
+  }
+
+  const rule = '='.repeat(72);
+  console.error(
+    `\n${rule}\nSKIPPED -- this smoke test did NOT run. Nothing was verified.\n${rule}\n` +
+      `Reason: ${override.reason}.\n` +
+      `The on-chain minimum appeal window is ${override.effectiveSecs}s, but this test needs ` +
+      `${desiredSecs}s to\nfinish in reasonable time, and lowering it needs the diamond owner's key.\n\n` +
+      'Fix by either:\n' +
+      '  - setting UPGRADE_OWNER_KEY (or FORGE_DEV_PRIVATE_KEY) to the diamond owner, or\n' +
+      '  - setting SMOKE_APPEAL_WINDOW_SLOW=1 to run against the real floor (correct, but slow).\n' +
+      `${rule}\n`
+  );
+  process.exit(1);
+}

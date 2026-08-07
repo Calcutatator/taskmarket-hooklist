@@ -78,6 +78,18 @@ const KNOWN_ERRORS: Record<string, string> = {
   '0x49b38860': 'DuplicateHookAddress',
   '0xaa5be784': 'InvalidHookAddress',
   '0xbc47aba9': 'HookCheckFundRejected',
+  // Errors declared by contract revisions not yet deployed (rev016 escrow liability,
+  // rev017 escrow/hook security). Mapped ahead of the upgrade on purpose: an unmapped
+  // revert resolves to "unknown revert", which classifyRelayFailure treats as transient,
+  // so the relayer hands the intent back and re-sends a call that can only revert again --
+  // ADR-0047's unbounded loop, re-entered through a missing map entry. An entry for an
+  // error the deployed Diamond cannot yet throw is inert, so it is safe to land first.
+  '0xe6ac7a63': 'TaskAlreadyRefunded',
+  '0x9a3bfd2b': 'NoRewardChange',
+  '0x565a2ce0': 'EvaluatorCannotBeRequester',
+  '0x1c8df436': 'DisputeResolverCannotBeRequester',
+  '0x0c9b2c20': 'AppealWindowTooShort',
+  '0x1a53131e': 'InvalidMinAppealWindow',
   // TaskMarketForwarder errors -- these come from relay() itself, before the call
   // ever reaches the Diamond, so they're exactly as reachable on any relayed call as
   // the Diamond-side errors above. FORWARDER_ABI (below) declares only the relay()
@@ -150,8 +162,6 @@ const KNOWN_ERRORS: Record<string, string> = {
   // re-send a call that can only ever revert again -- ADR-0047's unbounded loop, re-entered
   // through a missing map entry. Decoded, the same revert is deterministic and terminal on the
   // first attempt.
-  '0xe6ac7a63': 'TaskAlreadyRefunded',
-  '0x9a3bfd2b': 'NoRewardChange',
   // Settlement/payout invariant failures -- internal transfer failures during
   // acceptance, cancellation, dispute resolution, or expiry refund.
   '0x56886241': 'WorkerPaymentFailed',

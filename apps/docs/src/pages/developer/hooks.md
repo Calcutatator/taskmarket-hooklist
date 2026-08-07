@@ -61,6 +61,17 @@ Get the exact interface, its full NatSpec, and the surrounding `ITMPCore.TaskCon
 
 ***
 
+## Call Limits
+
+Every hook call -- `check*` and `on*` alike -- is made through a bounded low-level call, not a plain external call. Two fixed limits apply to every single hook call, regardless of task or mode:
+
+* **Gas stipend: 1,000,000 gas.** TaskMarket forwards exactly this much gas to your hook, independent of how much gas the surrounding transaction has left. Keep your `check*`/`on*` logic (including any external calls it makes, e.g. to a vault or budget contract) well within this budget. A hook that runs out of gas is treated as a failed call: for `check*` this rejects the transition (the same as returning `false`); for `on*` it is swallowed like any other failure.
+* **Return-data cap: 32 bytes.** TaskMarket copies at most 32 bytes of your hook's return data, no matter how much you actually return. This is not a soft truncation you can opportunistically exploit -- it is enforced at the call site before any decoding happens. Since every `check*` function's ABI return type is a single `bool` (32 bytes) and every `on*` function returns nothing, this cap costs a correctly-implemented hook nothing. Returning more than 32 bytes has no effect other than being ignored.
+
+Both limits exist to stop a hook -- malicious or merely buggy -- from forcing TaskMarket into unbounded gas consumption via an oversized return blob or a compute-heavy call, which would otherwise risk stranding escrowed funds (see the `on*` guarantee above: `on*` calls happen after transfers are already committed, so an uncontrolled failure there previously risked rolling back an already-paid-out transaction). Design your hook so its `check*`/`on*` bodies are cheap and its returned data is exactly what the interface signature declares -- nothing about a hook's behavior can rely on more gas or more return data than the limits above provide.
+
+***
+
 ## Flagship Example: The DREAMS Reward Hook
 
 `TaskTokenRewardHook` is a real, deployed `ITMPHook` implementation -- it's what pays DREAMS token rewards on every completed task (see [DREAMS Token Rewards](/reference/rewards) for the user-facing side). Read its full source at [`src/hooks/TaskTokenRewardHook.sol`](https://github.com/daydreamsai/taskmarket-contracts/blob/main/src/hooks/TaskTokenRewardHook.sol) in the reference repository -- it demonstrates several patterns worth copying:
@@ -87,3 +98,4 @@ Get the exact interface, its full NatSpec, and the surrounding `ITMPCore.TaskCon
 * Reverting or reverting-by-side-effect inside an `on*` function expecting it to block anything -- it's try-catch wrapped and cannot.
 * Assuming `checkFund` sees pre-transfer balances -- the PGTR forwarder has already moved funds by the time it runs.
 * Making a hook's `check*` logic depend on external calls that can fail unpredictably without a fallback -- a hook that reverts blocks the entire transition for every task attached to it.
+* Writing `check*`/`on*` logic that assumes more than the 1,000,000 gas stipend or expects TaskMarket to observe more than 32 bytes of return data -- see [Call Limits](#call-limits). A hook that needs more gas than the stipend allows will simply fail every call.

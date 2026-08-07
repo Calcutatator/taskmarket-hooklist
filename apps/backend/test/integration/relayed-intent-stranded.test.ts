@@ -158,6 +158,9 @@ async function strandIntent(options: {
     );
 
   const reconcile = createServerTransactionReconciler({
+    // Below the row's nonce, so settleNonceSpentElsewhere stands down and the pre-existing
+    // stuck-nonce path runs -- this test is about the hashless case, not the foreign-spend one.
+    getLatestNonceCount: vi.fn().mockResolvedValue(0),
     getReceiptStatus: vi.fn().mockResolvedValue(null),
     // Something already occupies the nonce, and it is not anything we can name.
     sendReplacement: vi.fn().mockRejectedValue(new Error('nonce too low')),

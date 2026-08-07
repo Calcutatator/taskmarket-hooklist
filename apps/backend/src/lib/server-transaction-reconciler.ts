@@ -71,6 +71,16 @@ export type ReplacementBroadcast = {
 };
 
 export type ServerTransactionReconcilerOptions = {
+  /**
+   * The wallet's transaction count at the `latest` block -- the number of nonces the chain has
+   * already consumed. A row whose nonce is below this has had its nonce spent by something.
+   *
+   * Optional, and absence is treated exactly as a failed read: no evidence either way, so the
+   * foreign-spend check stands down and the ordinary replacement path runs. A caller that omits
+   * it loses that recovery, never correctness -- which is what lets a test exercising some other
+   * branch leave it out rather than stub a number it does not care about.
+   */
+  getLatestNonceCount?: () => Promise<number>;
   /** Resolves to the receipt status, or null when the transaction is still unmined. */
   getReceiptStatus: (hash: Hex) => Promise<'success' | 'reverted' | null>;
   /** Optional: absent in contexts with no intent layer, e.g. focused unit tests. */
@@ -106,10 +116,12 @@ const MAX_ROWS_PER_PASS = 25;
  *     row abandoned by a process that died between allocating and broadcasting. Either would
  *     otherwise hold up every higher nonce indefinitely, which is the failure mode from
  *     issue #54 -- with the difference that recovery no longer needs an operator restart.
+ *   - End a 'broadcast' row whose nonce was spent by a transaction sent from outside this
+ *     backend, which no replacement can ever clear (see settleNonceSpentElsewhere).
  */
 export function createServerTransactionReconciler(options: ServerTransactionReconcilerOptions) {
   const stuckAfterMs = options.stuckAfterMs ?? DEFAULT_STUCK_AFTER_MS;
-  const { getReceiptStatus, intents, sendReplacement, store } = options;
+  const { getLatestNonceCount, getReceiptStatus, intents, sendReplacement, store } = options;
 
   async function settleIntent(
     outcome: 'confirmed' | 'failed',
@@ -196,8 +208,11 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
         transactionId: id,
       });
     } catch (error) {
-      // A replacement rejected because the original already landed is the good case: the next
-      // pass reads the receipt and settles the row normally.
+      // A rejection here means the nonce is no longer replaceable, usually because something
+      // already occupied it. That is only self-healing when the occupant was our own
+      // transaction, in which case the next pass reads its receipt and settles the row. When a
+      // transaction sent from outside this backend took the nonce, no receipt for our hash will
+      // ever appear -- settleNonceSpentElsewhere below is what ends that row, not this catch.
       logger.warn('Server wallet replacement transaction failed', {
         error: error instanceof Error ? error.message : String(error),
         nonce,
@@ -220,6 +235,105 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
         });
       }
     }
+  }
+
+  /**
+   * End a row whose nonce was consumed by a transaction this backend did not send.
+   *
+   * The dispatcher assumes it is the only writer for the server wallet, but a deploy or an
+   * operator script run with the same key breaks that assumption: the foreign transaction mines
+   * at a nonce the allocator had already issued, our transaction at that nonce is dropped, and
+   * no receipt for its hash will ever exist. Before this check the row sat in 'broadcast'
+   * forever, re-sending a replacement every pass that the provider rejects as 'nonce too low'.
+   *
+   * The evidence is the chain's `latest` transaction count having passed the row's nonce while
+   * the row's own hash still has no receipt. The count alone is NOT sufficient: our own
+   * transaction mining advances the count too, so acting on the count by itself would mark
+   * successful transactions failed. The receipt has to be the tiebreaker.
+   *
+   * That leaves a read ordering concern. A load-balanced RPC endpoint can serve the count from
+   * a node ahead of the one that serves the receipt, so a transaction that genuinely mined can
+   * briefly present as "count advanced, receipt missing". Two things make that safe here:
+   * the receipt is re-read AFTER the count is observed (so the second read is never the older
+   * view of the pair we reason about), and the whole branch only runs once the row is past the
+   * stuck threshold -- 90s by default, orders of magnitude beyond replica lag. A row that
+   * survives both is one the chain has moved past and that has had no receipt for a minute and
+   * a half; treating it as terminal is correct, and the nonce is already spent, so ending it
+   * creates no gap for the allocator to fill.
+   *
+   * Returns true when the row was settled and needs no replacement.
+   */
+  async function settleNonceSpentElsewhere(row: {
+    id: string;
+    nonce: number;
+    txHash: string | null;
+  }): Promise<boolean> {
+    if (!row.txHash) return false;
+
+    if (!getLatestNonceCount) return false;
+
+    let latestNonceCount: number;
+    try {
+      latestNonceCount = await getLatestNonceCount();
+    } catch (error) {
+      // No evidence either way, so fall through to the existing replacement path.
+      logger.warn('Server wallet nonce count lookup failed', {
+        error: error instanceof Error ? error.message : String(error),
+        transactionId: row.id,
+      });
+      return false;
+    }
+
+    // The count is the number of nonces consumed, so nonce N is spent once the count exceeds N.
+    if (latestNonceCount <= row.nonce) return false;
+
+    let recheck: 'success' | 'reverted' | null;
+    try {
+      recheck = await getReceiptStatus(row.txHash as Hex);
+    } catch {
+      return false;
+    }
+
+    // Each terminal branch below settles the intent under the row as well as the row itself.
+    // ADR-0063 introduced this function against a backend that had no intents, where setting
+    // the outbox row was the whole job. Here it is not: an outbox row that ends without its
+    // intent ending leaves a paid caller with a write that never completes and never refunds.
+    if (recheck === 'success') {
+      await store.setStatus(row.id, 'confirmed', { hash: row.txHash });
+      await settleIntent('confirmed', row.id, row.txHash as Hex, '');
+      return true;
+    }
+    if (recheck === 'reverted') {
+      await store.setStatus(row.id, 'failed', { hash: row.txHash });
+      await settleIntent('failed', row.id, null, 'transaction reverted on chain');
+      return true;
+    }
+
+    logger.error('Server wallet nonce was spent by a transaction from outside this backend', {
+      latestNonceCount,
+      nonce: row.nonce,
+      transactionId: row.id,
+      txHash: row.txHash,
+    });
+    await store.setStatus(row.id, 'failed', {
+      error: new Error(
+        `nonce ${row.nonce} was consumed by a transaction this backend did not send ` +
+          `(chain nonce count ${latestNonceCount}); this transaction can never mine`
+      ),
+    });
+    // Refundable, unlike the no-hash case ADR-0069 deliberately leaves open. That one is
+    // guarded by `!row.txHash`, where the nonce's occupant may have been the intent's own
+    // transaction, so refunding could pay for work that landed. This branch returns early
+    // unless a hash exists, and the finding is that *our* transaction was dropped and can
+    // never mine -- positive evidence the work did not happen, which is the standard
+    // ADR-0045 sets for a refund.
+    await settleIntent(
+      'failed',
+      row.id,
+      null,
+      'the nonce this transaction held was consumed by a transaction sent from outside this backend, so it can never mine'
+    );
+    return true;
   }
 
   return async function reconcileOnce(now: Date = new Date()): Promise<void> {
@@ -333,9 +447,14 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
         continue;
       }
 
-      if (row.broadcastAt && row.broadcastAt < stuckBefore) {
-        await replaceStuckNonce(row);
-      }
+      if (!row.broadcastAt || row.broadcastAt >= stuckBefore) continue;
+
+      // Before spending effort on a replacement: a nonce consumed by a transaction this
+      // backend never sent can never be cleared by replacing ours, so that row is settled
+      // here instead (ADR-0063).
+      if (await settleNonceSpentElsewhere(row)) continue;
+
+      await replaceStuckNonce(row);
     }
 
     // Safety net for intents whose transaction confirmed without anyone completing them. Last,

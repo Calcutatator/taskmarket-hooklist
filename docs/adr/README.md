@@ -255,6 +255,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0038 — Rate limiting lives in one shared module, not bespoke per-feature logic — with two distinct check shapes, not one forced abstraction](0038-rate-limiting-is-a-shared-module-not-per-feature-bespoke-logic.md)
 - [0039 — Singleton RPC gateway owns runtime clients and transport accounting](0039-singleton-rpc-gateway-owns-runtime-clients-and-transport-accounting.md)
 - [0040 — Server-wallet transactions use a durable nonce allocator and outbox](0040-server-wallet-transactions-use-a-database-coordinated-dispatcher.md)
+- [0041 — Discord public app runs as a Railway HTTP Interactions service](0041-discord-public-app-runs-as-a-railway-http-interactions-service.md)
 - [0045 — Relayed writes are durable intents, not request-scoped transactions](0045-relayed-writes-are-durable-intents-not-request-scoped-transactions.md)
 - [0046 — Relayed intents chain follow-on writes rather than relaying inside handlers](0046-relayed-intents-chain-follow-on-writes.md)
 - [0047 — Evaluator assignment is its own intent, and the chaining subsystem is withdrawn](0047-evaluator-assignment-is-its-own-intent-and-chaining-is-withdrawn.md)
@@ -272,6 +273,8 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0059 — An intent is readable by the address recorded as having initiated it](0059-an-intent-is-readable-by-the-address-recorded-as-having-initiated-it.md)
 - [0060 — A relayed payload is sufficient, and a broadcaster is pure](0060-a-relayed-payload-is-sufficient-and-a-broadcaster-is-pure.md)
 - [0061 — A reused idempotency key with different arguments is refused](0061-a-reused-idempotency-key-with-different-arguments-is-refused.md)
+- [0063 — The reconciler settles a nonce spent by a foreign transaction](0063-the-reconciler-settles-a-nonce-spent-by-a-foreign-transaction.md)
+- [0064 — Deploy and owner operations use a separate EOA from the relayer](0064-deploy-and-owner-operations-use-a-separate-eoa-from-the-relayer.md)
 - [0065 — The backend decodes chain events from the generated ABI, and CI keeps that artifact current](0065-the-backend-decodes-chain-events-from-the-generated-abi.md)
 - [0066 — Replacement stops at the cap, and a single self-transfer clears the nonce](0066-replacement-stops-at-the-cap-and-one-self-transfer-clears-the-nonce.md)
 - [0067 — An intent is reserved when the request arrives, before the payment challenge](0067-an-intent-is-reserved-before-the-payment-challenge.md)
@@ -279,6 +282,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0069 — The outbox row is an intent's evidence that a nonce may be spent](0069-the-outbox-row-is-the-intents-evidence-that-a-nonce-was-spent.md)
 - [0070 — A reason that asserts a fact carries it, rather than leaving a reader to guess](0070-a-reason-that-asserts-a-fact-carries-it.md)
 - [0071 — An intent asks the chain whether its own receipt was consumed](0071-an-intent-asks-the-chain-whether-its-own-receipt-was-consumed.md)
+- [0072 — A foreign-spent nonce is evidence for the intent under it, not just for the outbox row](0072-a-foreign-spent-nonce-is-evidence-for-the-intent-under-it.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

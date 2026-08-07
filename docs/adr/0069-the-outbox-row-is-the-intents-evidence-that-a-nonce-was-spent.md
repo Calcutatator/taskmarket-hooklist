@@ -19,7 +19,7 @@
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
 - **Amends / Amended-by:** Amends ADR-0040; amends ADR-0045; amended by ADR-0071
-- **Pending Amends / Amended-by:** —
+- **Pending Amends / Amended-by:** Pending amended by ADR-0072
 
 ## Context
 

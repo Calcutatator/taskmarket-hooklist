@@ -64,6 +64,10 @@ const REQUESTER = '0xRequester0000000000000000000000000000001';
 const TASK_ID = '0xtask0000000000000000000000000000000001';
 const EVALUATOR = '0xEvaluator000000000000000000000000000001';
 const WORKER = '0xWorker000000000000000000000000000000001';
+// The contract rejects disputeResolver == requester (self-assignment guard), so a task
+// whose resolver is its own requester is unreachable on chain -- resolveDispute fixtures
+// use a genuinely third address rather than borrowing the requester's.
+const RESOLVER = '0xResolver00000000000000000000000000000001';
 
 function makeTask(overrides: Record<string, unknown> = {}) {
   return {
@@ -384,11 +388,11 @@ describe('evaluations router', () => {
 
   describe('resolveDispute', () => {
     it('persists the lead award worker selected onchain', async () => {
-      const ctx = createIntentCtx(REQUESTER);
+      const ctx = createIntentCtx(RESOLVER);
       const updateChain = ctx.updateChain(tasks);
       ctx.db.select.mockReturnValueOnce(
         makeChain([
-          makeTask({ status: 'disputed', disputeResolver: REQUESTER, claimedBy: EVALUATOR }),
+          makeTask({ status: 'disputed', disputeResolver: RESOLVER, claimedBy: EVALUATOR }),
         ])
       );
       // Not mockReturnValueOnce: the first UPDATE of a relayed write is now the intent's
@@ -407,10 +411,10 @@ describe('evaluations router', () => {
     });
 
     it('records task_awards synchronously instead of relying on the async indexer', async () => {
-      const ctx = createIntentCtx(REQUESTER);
+      const ctx = createIntentCtx(RESOLVER);
       ctx.db.select.mockReturnValueOnce(
         makeChain([
-          makeTask({ status: 'disputed', disputeResolver: REQUESTER, claimedBy: EVALUATOR }),
+          makeTask({ status: 'disputed', disputeResolver: RESOLVER, claimedBy: EVALUATOR }),
         ])
       );
       // The settlement is projected from the confirmed transaction's own logs by the

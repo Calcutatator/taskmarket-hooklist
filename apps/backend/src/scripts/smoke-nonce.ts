@@ -44,6 +44,20 @@
  * Without DATABASE_URL the durable assertions are skipped and the API-level behavior is
  * still checked, so the test degrades usefully against a remote deployment.
  *
+ * MUTATES PROTOCOL CONFIGURATION. Its finalizable tasks need an appeal window short enough to
+ * wait out, and rev017 enforces a protocol-wide floor on that window (300s by default), so this
+ * lowers the floor for the duration of the run and restores it in a `finally`, including when
+ * the run throws. That needs the diamond owner's key (UPGRADE_OWNER_KEY or
+ * FORGE_DEV_PRIVATE_KEY); without it the run skips loudly rather than pretending to have
+ * verified anything. Free on a disposable Anvil chain; on a shared testnet, a run killed hard
+ * enough to skip the `finally` leaves the floor lowered until someone puts it back.
+ *
+ * EvaluatorFacet.assignEvaluator rejects evaluator == requester and disputeResolver ==
+ * requester (self-assignment guard, rev017), so the tasks here are created with a distinct
+ * EVALUATOR_PRIVATE_KEY account, and this test signs evaluate() as that evaluator (the
+ * assigned evaluator is the only account evaluate() accepts). Any freshly generated key
+ * works: the backend relays and pays gas, so the evaluator only signs off-chain.
+ *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-nonce.ts
@@ -65,6 +79,7 @@ import {
   pollTaskStatus,
   pollUntil,
   post,
+  requireShortAppealWindow,
   sleep,
   x402Post,
 } from './_x402';
@@ -80,6 +95,23 @@ const RELAY_TABLES = [
   'server_wallet_transactions',
   'relayed_intents',
 ] as const;
+
+// Re-derived in main() from the floor actually in force, so the SMOKE_APPEAL_WINDOW_SLOW path
+// (real floor, no lowering) works unchanged.
+const WANTED_APPEAL_WINDOW_SECS = 5;
+let appealWindowSecs = WANTED_APPEAL_WINDOW_SECS;
+
+const nonceEvaluatorKey = process.env.EVALUATOR_PRIVATE_KEY as `0x${string}` | undefined;
+if (!nonceEvaluatorKey) {
+  console.error(
+    'Missing EVALUATOR_PRIVATE_KEY.\n' +
+      'assignEvaluator rejects evaluator == requester and disputeResolver == requester\n' +
+      '(self-assignment guard) -- set EVALUATOR_PRIVATE_KEY to a distinct account. Any\n' +
+      'freshly generated key works; this test never signs with it.'
+  );
+  process.exit(1);
+}
+const nonceEvaluator = privateKeyToAccount(nonceEvaluatorKey);
 
 // Matches the CLI's withdraw command (apps/cli/src/commands/withdraw.ts) so the smoke test
 // signs the same authorization a real client would.
@@ -296,10 +328,10 @@ async function setupFinalizableTask(
       duration: 300,
       mode: 'claim',
       tags: ['smoke-nonce'],
-      evaluator: requester.address,
-      disputeResolver: requester.address,
+      evaluator: nonceEvaluator.address,
+      disputeResolver: nonceEvaluator.address,
       evaluationWindowHours: 0.00139, // ~5 seconds
-      appealWindowHours: 0.00139, // ~5 seconds
+      appealWindowHours: appealWindowSecs / 3600,
     },
     requester
   )) as { taskId: string };
@@ -333,7 +365,7 @@ async function setupFinalizableTask(
   await x402Post(
     `/api/tasks/${taskId}/evaluate`,
     { taskId, verdict: 'approve', score: 900, confidence: 950 },
-    requester
+    nonceEvaluator
   );
   await pollTaskStatus<{ status: string }>(taskId, ['appealing'], { timeoutMs: 45_000 });
 
@@ -378,7 +410,7 @@ function faultInjectionEnabled(): { enabled: boolean; reason: string } {
       };
 }
 
-async function main() {
+async function runChecks() {
   const { requester, worker } = getAccounts();
   const wallet = serverWalletAddress();
   const sql = openDatabase();
@@ -606,7 +638,7 @@ async function main() {
 
   // 5. Concurrency: distinct nonces, not one-at-a-time.
   log('5/9', `Waiting for appeal windows, then finalizing ${CONCURRENCY} verdicts concurrently...`);
-  await sleep(8000);
+  await sleep((appealWindowSecs + 3) * 1000);
   const results = await Promise.all(
     taskIds.map((taskId) => post(`/api/tasks/${taskId}/finalize-verdict`, { taskId }))
   );
@@ -1027,6 +1059,64 @@ async function main() {
       );
     }
     ok('no refund was issued for work that landed', landedIntent.payment_tx_hash);
+
+    // 5c. The foreign-transaction variant. Step 5b strands a nonce in 'recycled', which the
+    // replacement path already covers. This one strands a row in 'broadcast': a transaction
+    // sent with the same wallet from OUTSIDE the backend (a `forge script --broadcast` deploy
+    // is the real-world case) mines at a nonce the allocator had already issued. Our row's
+    // hash then never gets a receipt and every replacement is rejected 'nonce too low', so
+    // before the nonce-count check the row retried a doomed replacement forever.
+    log('5c', 'Injecting a nonce spent by a foreign transaction...');
+
+    const foreignNonce = await faultPublicClient.getTransactionCount({
+      address: serverAccount.address,
+      blockTag: 'pending',
+    });
+
+    // Keep ordinary traffic away from the nonce we are about to consume out of band.
+    await sql`
+      update server_wallet_nonces set next_nonce = ${foreignNonce + 1}
+      where lower(wallet_address) = ${wallet} and next_nonce <= ${foreignNonce}
+    `;
+
+    // The foreign transaction: same wallet, sent without going through the dispatcher.
+    const foreignHash = await faultWalletClient.sendTransaction({
+      nonce: foreignNonce,
+      to: serverAccount.address,
+      value: 0n,
+    });
+    await faultPublicClient.waitForTransactionReceipt({ hash: foreignHash });
+
+    // The row the dispatcher would have written for its own transaction at that same nonce.
+    // This hash was never broadcast, so no receipt for it will ever exist.
+    const orphanHash = `0x${'ee'.repeat(32)}`;
+    const orphanId = `smoke-nonce-foreign-${foreignNonce}`;
+    await sql`
+      insert into server_wallet_transactions
+        (id, wallet_address, chain_id, nonce, status, tx_hash, context, broadcast_at, updated_at)
+      values (${orphanId}, ${wallet}, ${chainId}, ${foreignNonce}, 'broadcast', ${orphanHash},
+        'smoke-nonce foreign transaction injection', now() - interval '1 hour',
+        now() - interval '1 hour')
+    `;
+    ok('foreign transaction mined at an allocated nonce', { foreignHash, foreignNonce });
+
+    const foreignDeadline = Date.now() + 120_000;
+    let settledStatus: string | undefined;
+    while (Date.now() < foreignDeadline) {
+      await sleep(5000);
+      const rows = await sql`
+        select status from server_wallet_transactions where id = ${orphanId}
+      `;
+      settledStatus = rows[0]?.status as string | undefined;
+      if (settledStatus && settledStatus !== 'broadcast') break;
+    }
+    if (settledStatus !== 'failed') {
+      throw new Error(
+        `The reconciler left the foreign-nonce row in '${settledStatus}' after 120s; it must ` +
+          `settle terminally as 'failed' rather than retry a replacement that can never succeed`
+      );
+    }
+    ok('reconciler settled the foreign-nonce row terminally', orphanId);
   } else {
     // Always announce the skip, including when the deep checks themselves are off. A step that
     // vanishes from the output is indistinguishable from a step that passed, and this script's
@@ -1116,6 +1206,20 @@ async function main() {
 
   await sql?.end();
   console.log('\n=== Server wallet relay path smoke test passed ===');
+}
+
+async function main() {
+  // Skips loudly if the floor cannot be lowered -- see requireShortAppealWindow.
+  const appealWindow = await requireShortAppealWindow(WANTED_APPEAL_WINDOW_SECS);
+  appealWindowSecs = appealWindow.effectiveSecs;
+  try {
+    await runChecks();
+  } finally {
+    // Restore in `finally`, not on the happy path: this test deliberately injects faults and
+    // strands nonces, so it is more likely than most to throw partway -- and a throw must still
+    // put the protocol floor back rather than leave the next run a weakened guard.
+    await appealWindow.restore();
+  }
 }
 
 main().catch(async (err) => {

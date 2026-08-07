@@ -3,11 +3,16 @@
  * window, assigns an evaluator, worker claims and submits, requester accepts
  * (→ review), waits for evaluation window to expire, then triggers evaluator timeout.
  *
+ * The evaluator here never signs anything (the whole point of this test is that it
+ * never acts), but EvaluatorFacet.assignEvaluator still rejects evaluator == requester
+ * (self-assignment guard), so a distinct EVALUATOR_PRIVATE_KEY address is required.
+ *
  * Usage:
- *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
+ *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... EVALUATOR_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-evaluator-timeout.ts
  */
 import { createHash } from 'crypto';
+import { privateKeyToAccount } from 'viem/accounts';
 import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, API_URL, pollTaskStatus, sleep } from './_x402';
 
@@ -15,12 +20,25 @@ function contentHash(payload: string): string {
   return createHash('sha256').update(Buffer.from(payload)).digest('hex');
 }
 
+const evaluatorKey = process.env.EVALUATOR_PRIVATE_KEY as `0x${string}` | undefined;
+if (!evaluatorKey) {
+  console.error(
+    'Missing EVALUATOR_PRIVATE_KEY.\n' +
+      'assignEvaluator now rejects evaluator == requester (self-assignment guard) -- set\n' +
+      'EVALUATOR_PRIVATE_KEY to a distinct account. Any freshly generated key works, same\n' +
+      'as WORKER_B_PRIVATE_KEY -- this test never signs with it.'
+  );
+  process.exit(1);
+}
+const evaluator = privateKeyToAccount(evaluatorKey);
+
 async function main() {
   const { requester, worker } = getAccounts();
 
   console.log('=== Taskmarket Smoke Test — Evaluator Timeout ===');
   console.log('requester:', requester.address);
   console.log('worker:   ', worker.address);
+  console.log('evaluator:', evaluator.address);
   console.log('api:      ', API_URL);
 
   // 1. Create claim task with evaluator assigned and a 5-second evaluation window.
@@ -33,7 +51,7 @@ async function main() {
       duration: 300,
       mode: 'claim',
       tags: ['smoke-evaluator-timeout'],
-      evaluator: requester.address,
+      evaluator: evaluator.address,
       evaluationWindowHours: 0.00139, // ~5 seconds
       appealWindowHours: 1,
     },

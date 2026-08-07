@@ -83,6 +83,8 @@ export function startServerWalletReconciler(): NodeJS.Timeout {
   const publicClient = getPublicClient();
 
   const reconcileOnce = createServerTransactionReconciler({
+    getLatestNonceCount: () =>
+      publicClient.getTransactionCount({ address: wallet.address, blockTag: 'latest' }),
     // Settles the durable intent behind each transaction once the chain has answered, and is
     // the only route to a refund (ADR-0045).
     intents: createRelayedIntentSettlement(),

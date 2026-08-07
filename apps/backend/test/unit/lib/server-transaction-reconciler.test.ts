@@ -574,4 +574,88 @@ describe('server transaction reconciler', () => {
     expect(sendReplacement).toHaveBeenCalledWith(expect.objectContaining({ nonce: 10 }));
     expect(state.rows[0]).toMatchObject({ status: 'broadcast' });
   });
+
+  it('ends a row whose nonce was spent by a transaction from outside the backend', async () => {
+    // A `forge script --broadcast` deploy run with the same wallet mines at nonce 10. Our
+    // transaction at 10 is dropped, so its hash never gets a receipt, and every replacement is
+    // rejected 'nonce too low' because the nonce is already spent. Without the nonce-count
+    // check the row retries that rejected replacement on every pass forever.
+    const { state, store } = createMemoryServerTransactionStore(10);
+    await broadcastOne(store);
+
+    const sendReplacement = vi.fn().mockRejectedValue(new Error('nonce too low'));
+    const reconcile = createServerTransactionReconciler({
+      getLatestNonceCount: vi.fn().mockResolvedValue(11),
+      getReceiptStatus: vi.fn().mockResolvedValue(null),
+      sendReplacement,
+      store,
+      stuckAfterMs: STUCK_AFTER_MS,
+    });
+    await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 2));
+
+    expect(state.rows[0]).toMatchObject({ status: 'failed' });
+    // The nonce is already spent on chain, so burning gas on a replacement is pointless.
+    expect(sendReplacement).not.toHaveBeenCalled();
+  });
+
+  it('confirms rather than fails when the advanced nonce count was our own transaction', async () => {
+    // The count advancing is ambiguous on its own -- our transaction mining advances it too.
+    // A lagging RPC replica can report the advanced count before the receipt is visible, so the
+    // receipt is re-read after the count and it, not the count, decides the outcome.
+    const { state, store } = createMemoryServerTransactionStore(10);
+    await broadcastOne(store);
+
+    const getReceiptStatus = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce('success');
+    const sendReplacement = vi.fn();
+    const reconcile = createServerTransactionReconciler({
+      getLatestNonceCount: vi.fn().mockResolvedValue(11),
+      getReceiptStatus,
+      sendReplacement,
+      store,
+      stuckAfterMs: STUCK_AFTER_MS,
+    });
+    await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 2));
+
+    expect(state.rows[0]).toMatchObject({ status: 'confirmed' });
+    expect(sendReplacement).not.toHaveBeenCalled();
+  });
+
+  it('falls back to replacement when the nonce count cannot be read', async () => {
+    // No evidence either way must not change behaviour: the pre-existing stuck-nonce path runs.
+    const { store } = createMemoryServerTransactionStore(10);
+    await broadcastOne(store);
+
+    const sendReplacement = vi.fn().mockResolvedValue(REPLACEMENT_HASH);
+    const reconcile = createServerTransactionReconciler({
+      getLatestNonceCount: vi.fn().mockRejectedValue(new Error('rpc unavailable')),
+      getReceiptStatus: vi.fn().mockResolvedValue(null),
+      sendReplacement,
+      store,
+      stuckAfterMs: STUCK_AFTER_MS,
+    });
+    await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 2));
+
+    expect(sendReplacement).toHaveBeenCalledWith(expect.objectContaining({ nonce: 10 }));
+  });
+
+  it('does not touch a row still within the stuck threshold even once the nonce has passed', async () => {
+    // Right after a normal broadcast the count may already have advanced past the nonce while
+    // the receipt is still propagating. Acting that early would fail a healthy transaction.
+    const { state, store } = createMemoryServerTransactionStore(10);
+    await broadcastOne(store);
+
+    const reconcile = createServerTransactionReconciler({
+      getLatestNonceCount: vi.fn().mockResolvedValue(11),
+      getReceiptStatus: vi.fn().mockResolvedValue(null),
+      sendReplacement: vi.fn(),
+      store,
+      stuckAfterMs: STUCK_AFTER_MS,
+    });
+    await reconcile();
+
+    expect(state.rows[0]).toMatchObject({ status: 'broadcast' });
+  });
 });
