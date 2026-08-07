@@ -183,8 +183,17 @@ Cover every meaningful branch, not just the happy path:
 - `REQUESTER_PRIVATE_KEY` — task creator / requester
 - `WORKER_PRIVATE_KEY` — primary worker
 - `WORKER_B_PRIVATE_KEY` — second worker (required for ranked-payout, optional for competitive auction). Any freshly generated key works — the backend's `SERVER_PRIVATE_KEY` relays and pays gas for every on-chain call via the forwarder, so worker/requester keys only ever sign off-chain EIP-712 messages and never need ETH or USDC of their own.
-- `EVALUATOR_PRIVATE_KEY` — external evaluator (optional; requester can act as evaluator if not set)
+- `EVALUATOR_PRIVATE_KEY` — external evaluator, required for any smoke test that assigns an evaluator or dispute resolver. `EvaluatorFacet.assignEvaluator` rejects `evaluator == requester` and `disputeResolver == requester` (self-assignment guard), so the requester can no longer act as evaluator -- any freshly generated key works, same as `WORKER_B_PRIVATE_KEY`.
 - `DEV_PRIVATE_KEY` — fallback if specific keys not set
+- `UPGRADE_OWNER_KEY` / `FORGE_DEV_PRIVATE_KEY` — the diamond owner's key. Needed only by smoke tests that mutate protocol configuration (see below). Unlike every other key here, this one sends transactions directly and must hold ETH for gas, because owner-only functions check `msg.sender` and have no forwarder path.
+
+### Smoke tests that mutate protocol configuration
+
+`smoke-evaluator.ts`, `smoke-concurrent-tasks.ts` and `smoke-nonce.ts` spend most of their runtime waiting out a task's appeal window, and rev017 enforces a protocol-wide floor on that window (300s by default). Rather than have every run wait five minutes, each lowers the floor via `AdminFacet.setMinAppealWindowSecs` for the duration of the run and restores it in a `finally` — including when the run throws — asserting afterwards that the value actually went back.
+
+This means those three tests need `UPGRADE_OWNER_KEY` (or `FORGE_DEV_PRIVATE_KEY`) set to the diamond owner. `scripts/cloud-env-setup.sh` already exports it locally and in the sandbox, so this is only a consideration when pointing a smoke run at a chain you did not provision. Without the key the run **skips loudly and exits non-zero** rather than silently verifying nothing; set `SMOKE_APPEAL_WINDOW_SLOW=1` to run against the real floor instead, which tests strictly more but takes minutes per appeal window.
+
+On a disposable Anvil chain this is free. On a shared testnet, a run killed hard enough to skip its `finally` leaves the floor lowered until someone puts it back — the restore failure message says so explicitly.
 
 ### Verifying contract facts before writing
 

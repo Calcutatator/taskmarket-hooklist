@@ -19,7 +19,7 @@ taskmarket task create \
   --dispute-resolver <address>
 ```
 
-Confirm all assigned addresses and windows before funding. Assignment affects the onchain completion path.
+Confirm all assigned addresses and windows before funding. Assignment affects the onchain completion path. `--evaluator` and `--dispute-resolver` must each be distinct from the requester -- the contract rejects self-assignment. `--appeal-window` must be at least the protocol minimum, five minutes by default; a zero-length window would close the worker's only appeal recourse before it could ever fire. The exact floor is set onchain and readable via the diamond's `minAppealWindowSecs()`.
 
 ## Review
 

@@ -26,6 +26,20 @@
  * Without DATABASE_URL the allocator assertions are skipped and the API-level behavior is
  * still checked, so the test degrades usefully against a remote deployment.
  *
+ * MUTATES PROTOCOL CONFIGURATION. Its finalizable tasks need an appeal window short enough to
+ * wait out, and rev017 enforces a protocol-wide floor on that window (300s by default), so this
+ * lowers the floor for the duration of the run and restores it in a `finally`, including when
+ * the run throws. That needs the diamond owner's key (UPGRADE_OWNER_KEY or
+ * FORGE_DEV_PRIVATE_KEY); without it the run skips loudly rather than pretending to have
+ * verified anything. Free on a disposable Anvil chain; on a shared testnet, a run killed hard
+ * enough to skip the `finally` leaves the floor lowered until someone puts it back.
+ *
+ * EvaluatorFacet.assignEvaluator rejects evaluator == requester and disputeResolver ==
+ * requester (self-assignment guard, rev017), so the tasks here are created with a distinct
+ * EVALUATOR_PRIVATE_KEY account, and this test signs evaluate() as that evaluator (the
+ * assigned evaluator is the only account evaluate() accepts). Any freshly generated key
+ * works: the backend relays and pays gas, so the evaluator only signs off-chain.
+ *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-nonce.ts
@@ -38,7 +52,18 @@ import postgres from 'postgres';
 import { createPublicClient, createWalletClient, defineChain, http, toHex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { buildSetWithdrawalAddressMessage, buildSubmitMessage } from '@taskmarket/shared';
-import { API_URL, get, getAccounts, log, ok, pollTaskStatus, post, sleep, x402Post } from './_x402';
+import {
+  API_URL,
+  get,
+  getAccounts,
+  log,
+  ok,
+  pollTaskStatus,
+  post,
+  requireShortAppealWindow,
+  sleep,
+  x402Post,
+} from './_x402';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATION_FILE = join(
@@ -46,6 +71,23 @@ const MIGRATION_FILE = join(
   '../../drizzle/migrations/0041_add_server_wallet_transactions.sql'
 );
 const CONCURRENCY = 3;
+
+// Re-derived in main() from the floor actually in force, so the SMOKE_APPEAL_WINDOW_SLOW path
+// (real floor, no lowering) works unchanged.
+const WANTED_APPEAL_WINDOW_SECS = 5;
+let appealWindowSecs = WANTED_APPEAL_WINDOW_SECS;
+
+const nonceEvaluatorKey = process.env.EVALUATOR_PRIVATE_KEY as `0x${string}` | undefined;
+if (!nonceEvaluatorKey) {
+  console.error(
+    'Missing EVALUATOR_PRIVATE_KEY.\n' +
+      'assignEvaluator rejects evaluator == requester and disputeResolver == requester\n' +
+      '(self-assignment guard) -- set EVALUATOR_PRIVATE_KEY to a distinct account. Any\n' +
+      'freshly generated key works; this test never signs with it.'
+  );
+  process.exit(1);
+}
+const nonceEvaluator = privateKeyToAccount(nonceEvaluatorKey);
 
 // Matches the CLI's withdraw command (apps/cli/src/commands/withdraw.ts) so the smoke test
 // signs the same authorization a real client would.
@@ -112,10 +154,10 @@ async function setupFinalizableTask(
       duration: 300,
       mode: 'claim',
       tags: ['smoke-nonce'],
-      evaluator: requester.address,
-      disputeResolver: requester.address,
+      evaluator: nonceEvaluator.address,
+      disputeResolver: nonceEvaluator.address,
       evaluationWindowHours: 0.00139, // ~5 seconds
-      appealWindowHours: 0.00139, // ~5 seconds
+      appealWindowHours: appealWindowSecs / 3600,
     },
     requester
   )) as { taskId: string };
@@ -149,7 +191,7 @@ async function setupFinalizableTask(
   await x402Post(
     `/api/tasks/${taskId}/evaluate`,
     { taskId, verdict: 'approve', score: 900, confidence: 950 },
-    requester
+    nonceEvaluator
   );
   await pollTaskStatus<{ status: string }>(taskId, ['appealing'], { timeoutMs: 45_000 });
 
@@ -194,7 +236,7 @@ function faultInjectionEnabled(): { enabled: boolean; reason: string } {
       };
 }
 
-async function main() {
+async function runChecks() {
   const { requester, worker } = getAccounts();
   const wallet = serverWalletAddress();
   const sql = openDatabase();
@@ -357,7 +399,7 @@ async function main() {
 
   // 5. Concurrency: distinct nonces, not one-at-a-time.
   log('5/6', `Waiting for appeal windows, then finalizing ${CONCURRENCY} verdicts concurrently...`);
-  await sleep(8000);
+  await sleep((appealWindowSecs + 3) * 1000);
   const results = await Promise.all(
     taskIds.map((taskId) => post(`/api/tasks/${taskId}/finalize-verdict`, { taskId }))
   );
@@ -586,6 +628,20 @@ async function main() {
 
   await sql?.end();
   console.log('\n=== Nonce management smoke test passed ===');
+}
+
+async function main() {
+  // Skips loudly if the floor cannot be lowered -- see requireShortAppealWindow.
+  const appealWindow = await requireShortAppealWindow(WANTED_APPEAL_WINDOW_SECS);
+  appealWindowSecs = appealWindow.effectiveSecs;
+  try {
+    await runChecks();
+  } finally {
+    // Restore in `finally`, not on the happy path: this test deliberately injects faults and
+    // strands nonces, so it is more likely than most to throw partway -- and a throw must still
+    // put the protocol floor back rather than leave the next run a weakened guard.
+    await appealWindow.restore();
+  }
 }
 
 main().catch(async (err) => {
