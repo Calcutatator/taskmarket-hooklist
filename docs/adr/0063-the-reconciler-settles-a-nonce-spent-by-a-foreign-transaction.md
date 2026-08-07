@@ -18,8 +18,8 @@
 - **Deciders:** (pending — required before Status may become Accepted)
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** Amends ADR-0040
-- **Pending Amends / Amended-by:** Pending amended by ADR-0072
+- **Amends / Amended-by:** Amends ADR-0040; amended by ADR-0072
+- **Pending Amends / Amended-by:** —
 
 ## Context
 

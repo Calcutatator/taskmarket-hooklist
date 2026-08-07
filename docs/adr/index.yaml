@@ -331,5 +331,5 @@ adrs:
   - number: "0072"
     file: "0072-a-foreign-spent-nonce-is-evidence-for-the-intent-under-it.md"
     title: "A foreign-spent nonce is evidence for the intent under it, not just for the outbox row"
-    status: Proposed
+    status: Accepted
     date: "2026-08-07"

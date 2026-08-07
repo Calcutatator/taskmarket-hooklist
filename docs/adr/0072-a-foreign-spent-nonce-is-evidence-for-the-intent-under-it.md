@@ -9,16 +9,16 @@
 > achieve one rule for what ends an intent rather than one per code path, accepting that the
 > refund is only sound while a single backend instance broadcasts for the wallet.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-07
 - **Embodiment:** Not started
 - **Last audited:** `[unaudited]`
 - **Author:** Claude Code (drafted for review)
-- **Deciders:** (pending — Beau)
-- **Reviewers:** (pending — no independent reviewer recorded)
+- **Deciders:** Beau Williams
+- **Reviewers:** Beau Williams — self-attested; no independent reviewer recorded
 - **Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Amends ADR-0063; amends ADR-0069
+- **Amends / Amended-by:** Amends ADR-0063; amends ADR-0069
+- **Pending Amends / Amended-by:** —
 
 ## Context
 

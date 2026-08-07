@@ -327,6 +327,13 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
     // unless a hash exists, and the finding is that *our* transaction was dropped and can
     // never mine -- positive evidence the work did not happen, which is the standard
     // ADR-0045 sets for a refund.
+    //
+    // SINGLE-INSTANCE ASSUMPTION (ADR-0072). "Foreign" here means "not sent by this backend",
+    // and that is only the same as "not this intent's work" while one instance broadcasts for
+    // this wallet. Run a second, and it could broadcast this very intent at this very nonce
+    // under a different hash -- which this branch would read as a foreign spend and refund,
+    // paying back work that landed. Before the backend is ever scaled past one broadcasting
+    // replica, this branch has to stop refunding on its own authority.
     await settleIntent(
       'failed',
       row.id,
