@@ -988,6 +988,36 @@ describe('tasks router', () => {
       expect(result!.reward).toBe('5000000');
     });
 
+    it('sends the unchanged-reward sentinel when a caller restates the current reward', async () => {
+      // CoreFacet.updateTask reverts NoRewardChange() when a named reward equals the current
+      // one -- deliberately, because the forwarder pulls the delta before the Diamond executes
+      // and cannot return it, so a silent no-op would keep the money. But a client restating
+      // the task's own fields alongside a real change is the documented raw-REST shape, and
+      // passing their literal reward through would revert the whole call and lose the expiry
+      // extension they actually asked for.
+      //
+      // 0 is the contract's "leave unchanged" sentinel, so a restated reward must arrive as 0.
+      const ctx = createMockCtx(PAYER);
+      const newExpiry = Math.floor(Date.now() / 1000) + 96 * 60 * 60;
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([openBountyRow]))
+        .mockReturnValueOnce(
+          makeChain([{ ...openBountyRow, expiryTime: new Date(newExpiry * 1000) }])
+        )
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      await tasksRouter.createCaller(ctx).update({
+        taskId: '0xabc',
+        reward: openBountyRow.reward,
+        expiryTime: newExpiry,
+      });
+
+      expect(contractUpdateTask).toHaveBeenCalledOnce();
+      // Third argument is newReward: the sentinel, not the restated value.
+      expect(vi.mocked(contractUpdateTask).mock.calls[0]![2]).toBe(0n);
+    });
+
     it('refunds and never persists the reward change when the on-chain update fails', async () => {
       // Regression test for the payment-orphan review finding: this handler's catch
       // block must `return` out of the mutation on failure, not just call
