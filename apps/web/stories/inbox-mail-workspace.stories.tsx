@@ -156,6 +156,8 @@ export const ReviewAndSelectSubmission: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole('heading', { name: 'Review 3 submissions' })).toBeVisible();
 
+    const backButton = canvas.queryByRole('button', { name: /back to inbox/i });
+    if (backButton) await userEvent.click(backButton);
     await userEvent.click(canvas.getByRole('button', { name: /submit your work/i }));
 
     await expect(canvas.getByRole('heading', { name: 'Submit your work' })).toBeVisible();
@@ -180,15 +182,27 @@ export const MobileSelectAndReturn: Story = {
   },
 };
 
+export const MobileInboxList: Story = {
+  args: { startOnList: true },
+  parameters: { viewport: { defaultViewport: 'mobile' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('navigation', { name: /inbox messages/i })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: /review 3 submissions/i })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: /submit your work/i })).toBeVisible();
+    await expect(canvas.getByRole('button', { name: /rate 2 workers/i })).toBeVisible();
+  },
+};
+
 export const SwitchToWaitingView: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const backButton = canvas.queryByRole('button', { name: /back to inbox/i });
+    if (backButton) await userEvent.click(backButton);
     await userEvent.click(canvas.getByRole('button', { name: /waiting 1/i }));
 
-    await expect(canvas.getByText('No action is needed from you right now.')).toBeVisible();
-    await expect(
-      canvas.getByRole('button', { name: /create a launch illustration system/i })
-    ).toBeVisible();
+    await expect(canvas.getByText('Next checkpoint')).toBeVisible();
+    await expect(canvas.getByText('Aug 14')).toBeVisible();
     await expect(canvas.queryByRole('button', { name: /review 3 submissions/i })).toBeNull();
   },
 };
@@ -212,7 +226,9 @@ export const LongContent: Story = {
     const canvas = within(canvasElement);
     const detail = within(canvas.getByRole('article', { name: 'Review 3 submissions' }));
     await expect(
-      detail.getByText(/audit the complete settlement workflow across requester/i)
+      detail.getByText(
+        'Audit the complete settlement workflow across requester, worker, evaluator, appeal, timeout, and payout states without losing the decision context'
+      )
     ).toBeVisible();
   },
 };
@@ -241,7 +257,7 @@ export const LightTheme: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole('heading', { name: 'Review 3 submissions' })).toBeVisible();
-    await expect(canvas.getByRole('navigation', { name: /inbox messages/i })).toBeVisible();
+    await expect(canvas.getByText('Why this needs you')).toBeVisible();
   },
 };
 
@@ -279,8 +295,9 @@ export const ErrorAndRetry: Story = {
 export const AllCaughtUp: Story = {
   args: { messages: [] },
   play: async ({ canvasElement }) => {
-    await expect(
-      within(canvasElement).getByRole('heading', { name: /all caught up/i })
-    ).toBeVisible();
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole('heading', { name: /all caught up/i })).toBeVisible();
+    await expect(canvas.getByRole('link', { name: /browse tasks/i })).toBeVisible();
+    await expect(canvas.getAllByRole('link', { name: /market activity/i })[0]).toBeVisible();
   },
 };

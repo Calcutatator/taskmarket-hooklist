@@ -23,7 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { formatUsdcUnits } from '@/lib/format';
 import { taskActionHref, taskActionTitle } from '@/lib/market/task-action-presentation';
-import { taskTitle } from '@/lib/market/task-title';
+import { taskFullTitle, taskTitle } from '@/lib/market/task-title';
 import { cn } from '@/lib/utils';
 
 type PrototypeActionIntent = 'rate_workers' | 'review_work' | 'submit_work';
@@ -154,11 +154,11 @@ function DetailHeader({ message }: { message: InboxMailPrototypeMessage }) {
   const dueLabel = messageDueLabel(message);
 
   return (
-    <header className="grid gap-4 border-b border-border/58 px-5 py-5 sm:px-7 sm:py-6">
+    <header className="grid shrink-0 gap-3 border-b border-border/58 px-5 py-4 sm:px-7 sm:py-5">
       <div className="grid gap-1.5">
         <h2 className="font-mono text-sm font-bold text-primary">{messageSubject(message)}</h2>
-        <p className="max-w-4xl font-display text-2xl font-semibold leading-tight text-foreground sm:text-3xl">
-          {taskTitle(message.task)}
+        <p className="max-w-4xl font-display text-2xl font-semibold leading-tight text-foreground xl:text-3xl">
+          {taskFullTitle(message.task)}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -188,9 +188,7 @@ function ReviewDetail({
   return (
     <div className="grid gap-4">
       <div className="grid gap-1.5">
-        <h3 className="font-mono text-xs font-bold uppercase tracking-wide text-primary">
-          Why this needs you
-        </h3>
+        <h3 className="font-display text-sm font-semibold text-foreground">Why this needs you</h3>
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
           Three workers submitted evidence. Review each delivery before accepting, rejecting, or
           releasing payment.
@@ -206,7 +204,7 @@ function ReviewDetail({
           return (
             <article
               className={cn(
-                'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border p-2 transition-[background-color,border-color] motion-reduce:transition-none',
+                'grid items-center gap-2 rounded-md border p-2 transition-[background-color,border-color] motion-reduce:transition-none sm:grid-cols-[minmax(0,1fr)_auto]',
                 selected
                   ? 'border-primary/64 bg-primary/8'
                   : 'border-border/58 bg-background/32 hover:border-primary/36'
@@ -250,7 +248,11 @@ function ReviewDetail({
                   </span>
                 </span>
               </button>
-              <Button className="min-h-11" type="button" variant="ghost">
+              <Button
+                className="min-h-11 justify-start sm:justify-center"
+                type="button"
+                variant="ghost"
+              >
                 View evidence
                 <ArrowRightIcon aria-hidden="true" />
               </Button>
@@ -281,13 +283,27 @@ function DetailFooter({
     const reward = formatUsdcUnits(message.task.reward);
 
     return (
-      <footer className="flex flex-wrap items-center gap-3 border-t border-border/58 bg-card/44 px-5 py-4 sm:px-7">
-        <p className="mr-auto flex max-w-sm items-start gap-2 text-xs leading-5 text-muted-foreground">
+      <footer className="sticky bottom-0 z-10 mt-auto flex shrink-0 items-center justify-end gap-2 border-t border-border/58 bg-card/95 px-3 py-3 backdrop-blur-sm sm:px-7 xl:static">
+        <p className="mr-auto hidden max-w-sm items-start gap-2 text-xs leading-5 text-muted-foreground sm:flex">
           <AlertCircleIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-destructive" />
           {selectedWorker
             ? `Accepting completes the task and releases ${reward} to ${selectedWorker}.`
             : 'Select a submission before accepting or rejecting work.'}
         </p>
+        <Button asChild className="min-h-11" variant="ghost">
+          <Link href={href}>Full task</Link>
+        </Button>
+        <Button
+          aria-label={
+            selectedWorker ? `Reject ${selectedWorker}` : 'Select a submission before rejecting'
+          }
+          disabled={!selectedWorker}
+          className="min-h-11"
+          type="button"
+          variant="outline"
+        >
+          Reject
+        </Button>
         <Button
           aria-label={
             selectedWorker
@@ -295,25 +311,10 @@ function DetailFooter({
               : 'Select a submission first'
           }
           disabled={!selectedWorker}
+          className="min-h-11"
           type="button"
         >
-          {selectedWorker ? `Accept ${selectedWorker}` : 'Select a submission'}
-        </Button>
-        <Button
-          aria-label={
-            selectedWorker ? `Reject ${selectedWorker}` : 'Select a submission before rejecting'
-          }
-          disabled={!selectedWorker}
-          type="button"
-          variant="outline"
-        >
-          {selectedWorker ? `Reject ${selectedWorker}` : 'Reject'}
-        </Button>
-        <Button asChild variant="link">
-          <Link href={href}>
-            Open full task
-            <ArrowRightIcon aria-hidden="true" />
-          </Link>
+          {selectedWorker ? 'Accept' : 'Select submission'}
         </Button>
       </footer>
     );
@@ -321,27 +322,26 @@ function DetailFooter({
 
   if (isActionMessage(message) && message.intent === 'submit_work') {
     return (
-      <footer className="flex flex-wrap items-center gap-3 border-t border-border/58 bg-card/44 px-5 py-4 sm:px-7">
-        <Button type="button">Submit work</Button>
-        <Button asChild variant="link">
-          <Link href={href}>
-            Open full task
-            <ArrowRightIcon aria-hidden="true" />
-          </Link>
-        </Button>
-        <p className="basis-full text-xs text-muted-foreground">
+      <footer className="sticky bottom-0 z-10 mt-auto flex shrink-0 items-center justify-end gap-2 border-t border-border/58 bg-card/95 px-3 py-3 backdrop-blur-sm sm:px-7 xl:static">
+        <p className="mr-auto hidden max-w-sm text-xs leading-5 text-muted-foreground sm:block">
           This item remains in your Inbox until the submission is recorded.
         </p>
+        <Button asChild className="min-h-11" variant="ghost">
+          <Link href={href}>Full task</Link>
+        </Button>
+        <Button className="min-h-11" type="button">
+          Submit work
+        </Button>
       </footer>
     );
   }
 
   if (isActionMessage(message)) {
     return (
-      <footer className="border-t border-border/58 bg-card/44 px-5 py-4 sm:px-7">
-        <Button asChild variant="link">
+      <footer className="sticky bottom-0 z-10 mt-auto flex shrink-0 justify-end border-t border-border/58 bg-card/95 px-5 py-3 backdrop-blur-sm sm:px-7 xl:static">
+        <Button asChild className="min-h-11" variant="ghost">
           <Link href={href}>
-            Open full task
+            Full task
             <ArrowRightIcon aria-hidden="true" />
           </Link>
         </Button>
@@ -350,10 +350,10 @@ function DetailFooter({
   }
 
   return (
-    <footer className="border-t border-border/58 bg-card/44 px-5 py-4 sm:px-7">
-      <Button asChild variant="link">
+    <footer className="sticky bottom-0 z-10 mt-auto flex shrink-0 justify-end border-t border-border/58 bg-card/95 px-5 py-3 backdrop-blur-sm sm:px-7 xl:static">
+      <Button asChild className="min-h-11" variant="ghost">
         <Link href={href}>
-          Open full task
+          Full task
           <ArrowRightIcon aria-hidden="true" />
         </Link>
       </Button>
@@ -365,9 +365,7 @@ function SubmitDetail() {
   return (
     <div className="grid gap-5">
       <div className="grid gap-1.5">
-        <h3 className="font-mono text-xs font-bold uppercase tracking-wide text-primary">
-          Why this needs you
-        </h3>
+        <h3 className="font-display text-sm font-semibold text-foreground">Why this needs you</h3>
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
           You are assigned to deliver the responsive launch-page implementation before the task
           deadline.
@@ -375,7 +373,7 @@ function SubmitDetail() {
       </div>
       <section aria-labelledby="delivery-checklist-heading" className="grid gap-2">
         <h3
-          className="font-mono text-xs font-bold uppercase tracking-wide text-primary"
+          className="font-display text-sm font-semibold text-foreground"
           id="delivery-checklist-heading"
         >
           Task brief and checklist
@@ -396,7 +394,7 @@ function SubmitDetail() {
       </section>
       <section aria-labelledby="upload-evidence-heading" className="grid gap-2">
         <h3
-          className="font-mono text-xs font-bold uppercase tracking-wide text-primary"
+          className="font-display text-sm font-semibold text-foreground"
           id="upload-evidence-heading"
         >
           Upload evidence
@@ -424,7 +422,7 @@ function SubmitDetail() {
             <p className="text-xs text-muted-foreground">48.2 MB · Added just now</p>
           </div>
         </div>
-        <label className="mt-2 grid gap-2 font-mono text-xs font-bold uppercase tracking-wide text-primary">
+        <label className="mt-2 grid gap-2 text-sm font-semibold text-foreground">
           Evidence notes (optional)
           <Textarea
             className="font-sans font-normal normal-case tracking-normal"
@@ -440,9 +438,7 @@ function RatingDetail() {
   return (
     <div className="grid gap-5">
       <div className="grid gap-1.5">
-        <h3 className="font-mono text-xs font-bold uppercase tracking-wide text-primary">
-          Why this needs you
-        </h3>
+        <h3 className="font-display text-sm font-semibold text-foreground">Why this needs you</h3>
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
           Settlement is complete. Two payout recipients still need feedback before this relationship
           is fully wrapped up.
@@ -477,26 +473,19 @@ function RatingDetail() {
 
 function WaitingDetail() {
   return (
-    <div className="grid gap-5">
+    <div className="flex max-w-2xl items-start gap-4">
+      <span className="grid size-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+        <Clock3Icon aria-hidden="true" className="size-5" />
+      </span>
       <div className="grid gap-1.5">
-        <h3 className="font-mono text-xs font-bold uppercase tracking-wide text-primary">
-          Current state
-        </h3>
-        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-          This task is waiting for submissions. No action is needed from you right now.
+        <h3 className="font-display text-sm font-semibold text-foreground">Next checkpoint</h3>
+        <time className="font-mono text-lg font-semibold text-foreground" dateTime="2026-08-14">
+          Aug 14
+        </time>
+        <p className="text-sm leading-6 text-muted-foreground">
+          No action is needed now. This message stays in Waiting so you can track the task without
+          adding to your action count.
         </p>
-      </div>
-      <div className="rounded-lg border border-border/58 bg-background/32 p-5">
-        <div className="flex items-start gap-3">
-          <Clock3Icon aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-primary" />
-          <div>
-            <p className="font-display font-semibold text-foreground">Waiting for submissions</p>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              The next checkpoint is Aug 14. This message remains visible but does not contribute to
-              the Inbox action count.
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -517,29 +506,33 @@ function MessageDetail({
 
   return (
     <article
-      className="flex min-h-0 flex-1 flex-col bg-card/44"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-card/72 xl:overflow-hidden"
       aria-label={messageSubject(message)}
     >
-      <div className="border-b border-border/58 px-4 py-3 md:hidden">
-        <Button ref={backButtonRef} onClick={onBack} size="sm" type="button" variant="ghost">
+      <div className="shrink-0 border-b border-border/58 px-3 py-2 xl:hidden">
+        <Button
+          className="min-h-11"
+          ref={backButtonRef}
+          onClick={onBack}
+          type="button"
+          variant="ghost"
+        >
           <ArrowLeftIcon aria-hidden="true" />
           Back to Inbox
         </Button>
       </div>
       <DetailHeader message={message} />
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="px-5 py-5 sm:px-7 sm:py-6">
-          {isActionMessage(message) && message.intent === 'review_work' ? (
-            <ReviewDetail onSelectWorker={setSelectedWorker} selectedWorker={selectedWorker} />
-          ) : isActionMessage(message) && message.intent === 'submit_work' ? (
-            <SubmitDetail />
-          ) : isActionMessage(message) ? (
-            <RatingDetail />
-          ) : (
-            <WaitingDetail />
-          )}
-        </div>
-      </ScrollArea>
+      <div className="px-5 py-5 sm:px-7 sm:py-6 xl:min-h-0 xl:flex-1 xl:overflow-y-auto">
+        {isActionMessage(message) && message.intent === 'review_work' ? (
+          <ReviewDetail onSelectWorker={setSelectedWorker} selectedWorker={selectedWorker} />
+        ) : isActionMessage(message) && message.intent === 'submit_work' ? (
+          <SubmitDetail />
+        ) : isActionMessage(message) ? (
+          <RatingDetail />
+        ) : (
+          <WaitingDetail />
+        )}
+      </div>
       <DetailFooter message={message} selectedWorker={selectedWorker} />
     </article>
   );
@@ -605,10 +598,15 @@ export function InboxMailWorkspacePrototype({
         className="mx-auto flex h-full w-full max-w-[96rem] flex-col overflow-hidden rounded-lg border border-border/58 bg-surface/44"
         role="group"
       >
-        <div className="flex min-h-16 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/58 bg-card/44 px-4 py-3 sm:px-6">
+        <div
+          className={cn(
+            'min-h-16 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/58 bg-card/72 px-4 py-2 sm:px-6',
+            selected ? 'hidden xl:flex' : 'flex'
+          )}
+        >
           <button
             aria-pressed={activeView === 'action'}
-            className="border-b-2 border-transparent px-3 py-3 font-mono text-xs font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none aria-pressed:border-primary aria-pressed:text-primary"
+            className="min-h-11 border-b-2 border-transparent px-3 py-2 font-mono text-xs font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none aria-pressed:border-primary aria-pressed:text-primary"
             onClick={() => selectView('action')}
             type="button"
           >
@@ -616,20 +614,20 @@ export function InboxMailWorkspacePrototype({
           </button>
           <button
             aria-pressed={activeView === 'waiting'}
-            className="border-b-2 border-transparent px-3 py-3 font-mono text-xs font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none aria-pressed:border-primary aria-pressed:text-primary"
+            className="min-h-11 border-b-2 border-transparent px-3 py-2 font-mono text-xs font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none aria-pressed:border-primary aria-pressed:text-primary"
             onClick={() => selectView('waiting')}
             type="button"
           >
             Waiting <span className="ml-2">{waitingMessages.length}</span>
           </button>
-          <Button asChild className="ml-auto" size="sm" variant="ghost">
+          <Button asChild className="ml-auto min-h-11" variant="ghost">
             <Link href="/dashboard/inbox?tab=news">Market activity</Link>
           </Button>
         </div>
         {currentStatus === 'loading' ? (
           <div
             aria-label="Loading Inbox workspace"
-            className="grid min-h-0 flex-1 gap-5 p-5 md:grid-cols-[minmax(14rem,0.8fr)_minmax(0,1.2fr)] sm:p-7"
+            className="grid min-h-0 flex-1 gap-5 p-5 sm:p-7 xl:grid-cols-[minmax(22rem,26rem)_minmax(0,1fr)]"
             role="region"
           >
             <div className="grid content-start gap-3">
@@ -637,7 +635,7 @@ export function InboxMailWorkspacePrototype({
               <Skeleton className="h-32 w-full motion-reduce:animate-none" />
               <Skeleton className="h-32 w-full motion-reduce:animate-none" />
             </div>
-            <div className="hidden content-start gap-5 md:grid">
+            <div className="hidden content-start gap-5 xl:grid">
               <Skeleton className="h-20 w-3/4 motion-reduce:animate-none" />
               <Skeleton className="h-4 w-full motion-reduce:animate-none" />
               <Skeleton className="h-4 w-5/6 motion-reduce:animate-none" />
@@ -684,8 +682,8 @@ export function InboxMailWorkspacePrototype({
           </div>
         ) : messages.length === 0 ? (
           <div className="grid min-h-0 flex-1 place-items-center p-6 text-center">
-            <div className="grid max-w-md justify-items-center gap-4 rounded-lg border border-border/58 bg-card/44 p-7">
-              <span className="grid size-12 place-items-center rounded-md border border-primary/36 bg-primary/8 text-primary">
+            <div className="grid max-w-md justify-items-center gap-5 px-4 py-8">
+              <span className="grid size-12 place-items-center rounded-full bg-primary/10 text-primary">
                 <CircleCheckIcon aria-hidden="true" className="size-6" />
               </span>
               <div className="grid gap-2">
@@ -697,27 +695,25 @@ export function InboxMailWorkspacePrototype({
                   when they are ready.
                 </p>
               </div>
-              <Button asChild variant="outline">
-                <Link href="/dashboard/tasks">Browse tasks</Link>
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button asChild className="min-h-11" variant="outline">
+                  <Link href="/dashboard/tasks">Browse tasks</Link>
+                </Button>
+                <Button asChild className="min-h-11" variant="ghost">
+                  <Link href="/dashboard/inbox?tab=news">Market activity</Link>
+                </Button>
+              </div>
             </div>
           </div>
         ) : (
-          <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(14rem,0.8fr)_minmax(0,1.2fr)]">
+          <div className="grid min-h-0 flex-1 xl:grid-cols-[minmax(22rem,26rem)_minmax(0,1fr)]">
             <nav
               aria-label="Inbox messages"
               className={cn(
-                'min-h-0 flex-col border-border/58 bg-background/32 md:flex md:border-r',
+                'min-h-0 flex-col border-border/58 bg-background xl:flex xl:border-r',
                 selected ? 'hidden' : 'flex'
               )}
             >
-              <div className="border-b border-border/58 px-4 py-3">
-                <p className="text-xs leading-5 text-muted-foreground">
-                  {activeView === 'action'
-                    ? 'Finish these actions to clear your Inbox.'
-                    : 'No action is needed from you right now.'}
-                </p>
-              </div>
               <ScrollArea className="min-h-0 flex-1">
                 <ul className="divide-y divide-border/58">
                   {visibleMessages.map((message) => (
@@ -735,7 +731,7 @@ export function InboxMailWorkspacePrototype({
                 </ul>
               </ScrollArea>
             </nav>
-            <div className={cn('min-h-0 flex-col', selected ? 'flex' : 'hidden md:flex')}>
+            <div className={cn('min-h-0 flex-col', selected ? 'flex' : 'hidden xl:flex')}>
               {selected ? (
                 <MessageDetail
                   backButtonRef={backButtonRef}
