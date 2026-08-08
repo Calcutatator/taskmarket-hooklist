@@ -343,3 +343,8 @@ adrs:
     title: "An undecodable relay failure is reported as in flight, not as a rejection"
     status: Accepted
     date: "2026-08-08"
+  - number: "0075"
+    file: "0075-a-relay-retry-is-spent-only-where-a-later-attempt-could-answer-differently.md"
+    title: A relay retry is spent only where a later attempt could answer differently
+    status: Accepted
+    date: "2026-08-08"

@@ -1,4 +1,5 @@
 // Implements: ADR-0055
+// Implements: ADR-0075
 import {
   parseAbi,
   parseAbiItem,
@@ -12,7 +13,7 @@ import {
 import { TRPCError } from '@trpc/server';
 import { createServerWallet, dispatchServerWalletTransaction } from '../lib/wallet';
 import { ServerTransactionPendingError } from '../lib/server-transaction-dispatcher';
-import { UndeterminedRelayError } from '../lib/relay-failure';
+import { UndeterminedRelayError, classifyRelayFailure } from '../lib/relay-failure';
 import { getPublicClient, runWithRpcApplicationAttempt } from '../lib/rpc-gateway';
 import { getServerConfig } from '../config/env';
 import { SETTLEMENT_READ_ABI, TASK_COMPLETED_EVENT } from './settlement-contract';
@@ -383,11 +384,22 @@ const TX_RECEIPT_TIMEOUT = 60_000; // 1 minute
 const SERVER_TX_RECEIPT_TIMEOUT = 60_000;
 const GAS_MULTIPLIER = 2n;
 // Receipt validity window for relay calls (5 minutes)
-// Retry config for relay simulation failures (RPC read-after-write lag).
-// 6 attempts, 5 gaps of 6s = ~30s total retry window -- sized against Base's
-// ~12s block time. Only helps if the failure is transient lag; a persistent
-// revert still fails after exhausting the window.
+// Retry config for relay failures (ADR-0075).
+//
+// The window exists for RPC read-after-write lag: a node that has confirmed a receipt but whose
+// simulation still reads pre-transaction state, so a call that will succeed reverts for a reason
+// that is true only right now.
+//
+// The sizing note this comment used to carry said "~12s block time" and was wrong -- that is
+// Ethereum L1. Base is OP Stack at ~2s blocks (and the sandbox's Anvil runs at --block-time 1),
+// so one 6s gap is about three block boundaries and the full budget below is about fifteen.
+// Lag that outlives fifteen blocks is a broken node, not lag.
 const RELAY_MAX_RETRIES = 6;
+// A decoded revert is the chain answering on its own terms, so a later attempt can only differ if
+// the answer itself was a product of lag. One gap (~3 blocks) covers that; more only spends
+// nonces and wall-clock reaching a verdict already in hand (ADR-0075). Not 1: that would be no
+// retry at all, which removes the recovery this loop exists for.
+const RELAY_DETERMINISTIC_MAX_RETRIES = 2;
 const RELAY_RETRY_DELAY_MS = 6000;
 
 function resolveForwarderAddress(): `0x${string}` {
@@ -664,6 +676,18 @@ async function relayThroughForwarderResult(
       // work that lands on chain anyway (ADR-0045, ADR-0048).
       if (err instanceof ServerTransactionPendingError) throw err;
       lastError = err;
+      // How many attempts this failure is worth, decided from the failure itself (ADR-0075).
+      //
+      // Read from the most recent attempt rather than fixed for the call: a first failure that
+      // was a timeout and a second that is a decoded revert are different evidence, and the
+      // later one is the relevant one. A decoded revert is the chain answering on its own
+      // terms, so the only way a further attempt differs is if that answer was itself a product
+      // of read-after-write lag -- which one gap covers.
+      const budget =
+        classifyRelayFailure(err) === 'deterministic'
+          ? RELAY_DETERMINISTIC_MAX_RETRIES
+          : RELAY_MAX_RETRIES;
+      if (attempt + 1 >= budget) break;
       continue;
     }
 

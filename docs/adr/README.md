@@ -285,6 +285,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0072 — A foreign-spent nonce is evidence for the intent under it, not just for the outbox row](0072-a-foreign-spent-nonce-is-evidence-for-the-intent-under-it.md)
 - [0073 — A terminal outbox row settles the intent beneath it, whoever wrote it](0073-a-terminal-outbox-row-settles-the-intent-beneath-it.md)
 - [0074 — An undecodable relay failure is reported as in flight, not as a rejection](0074-an-undecodable-relay-failure-is-reported-as-in-flight-not-as-a-rejection.md)
+- [0075 — A relay retry is spent only where a later attempt could answer differently](0075-a-relay-retry-is-spent-only-where-a-later-attempt-could-answer-differently.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting
