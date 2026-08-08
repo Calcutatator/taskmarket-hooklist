@@ -336,5 +336,5 @@ adrs:
   - number: "0073"
     file: "0073-a-terminal-outbox-row-settles-the-intent-beneath-it.md"
     title: "A terminal outbox row settles the intent beneath it, whoever wrote it"
-    status: Proposed
+    status: Accepted
     date: "2026-08-08"

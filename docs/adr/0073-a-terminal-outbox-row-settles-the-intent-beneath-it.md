@@ -10,16 +10,16 @@
 > a new terminal branch cannot bypass, accepting a second-long settlement latency for the
 > in-request case and one more query per worker pass.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-08
 - **Embodiment:** Verified
 - **Last audited:** `[unaudited]`
 - **Author:** Claude Code (drafted for review)
-- **Deciders:** (pending — Beau)
-- **Reviewers:** (pending)
+- **Deciders:** Beau Williams
+- **Reviewers:** Beau Williams — self-attested; no independent reviewer recorded
 - **Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Amends ADR-0040; amends ADR-0045; amends ADR-0072
+- **Amends / Amended-by:** Amends ADR-0040; amends ADR-0045; amends ADR-0072
+- **Pending Amends / Amended-by:** —
 
 ## Context
 
