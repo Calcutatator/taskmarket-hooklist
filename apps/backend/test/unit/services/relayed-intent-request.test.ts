@@ -1,10 +1,11 @@
 // Verifies: ADR-0045, ADR-0050, ADR-0052
-// Verifies: ADR-0058, ADR-0070
+// Verifies: ADR-0058, ADR-0070, ADR-0074
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiErrorEnvelopeOf, isInFlightApiError } from '@taskmarket/shared';
 import { stubServerEnvironment } from '../../helpers/server-environment';
 
 import { envelopeForError } from '../../../src/lib/api-error';
+import { UndeterminedRelayError } from '../../../src/lib/relay-failure';
 import { ServerTransactionPendingError } from '../../../src/lib/server-transaction-dispatcher';
 
 const restoreServerEnvironment = stubServerEnvironment();
@@ -181,6 +182,54 @@ describe('runRelayedIntent', () => {
     // The hash is linked before the answer goes out, so the reconciler owns the outcome
     // whatever the caller does next.
     expect(persisted).toEqual([{ intentId: 'intent-1', txHash: TX_HASH }]);
+  });
+
+  it('answers an undecodable relay failure the same way, not as a rejection', async () => {
+    // The sandbox defect. `relayThroughForwarderResult` could not decode a revert reason and
+    // threw `Contract call rejected: unknown revert` anyway -- a 400 asserting the chain had
+    // refused a write that completed with a successful receipt thirty seconds later. Nothing
+    // had established a rejection, so nothing may claim one (ADR-0070); the write is in
+    // ADR-0049's third state and is answered with the same envelope a receipt timeout gets.
+    recorded.mockReturnValue(row());
+    const undetermined = new UndeterminedRelayError(
+      'Contract call did not reach a decodable outcome and may still be landing',
+      TX_HASH
+    );
+
+    const error = await run(vi.fn().mockRejectedValue(undetermined)).catch((e: unknown) => e);
+
+    expect(envelopeForError(error)).toEqual({
+      reason: 'intent_in_flight',
+      intentId: 'intent-1',
+      intentStatus: 'broadcast',
+      operation: 'tasks.create',
+      idempotencyKey: KEY,
+      txHash: TX_HASH,
+    });
+    expect(isInFlightApiError(envelopeForError(error))).toBe(true);
+    expect(String(error)).not.toMatch(/Contract call rejected/);
+    expect(persisted).toEqual([{ intentId: 'intent-1', txHash: TX_HASH }]);
+  });
+
+  it('answers in flight with no hash when no transaction was ever seen', async () => {
+    // The retry loop exhausting: six attempts, no answer from the node, no hash. Absent
+    // evidence is not evidence of absence -- a transaction may still exist -- so the intent
+    // stays 'recorded' for the sweep and no hash is invented for the envelope (ADR-0069).
+    recorded.mockReturnValue(row());
+    const undetermined = new UndeterminedRelayError(
+      'Contract call did not reach a decodable outcome and may still be landing'
+    );
+
+    const error = await run(vi.fn().mockRejectedValue(undetermined)).catch((e: unknown) => e);
+
+    expect(envelopeForError(error)).toEqual({
+      reason: 'intent_in_flight',
+      intentId: 'intent-1',
+      intentStatus: 'recorded',
+      operation: 'tasks.create',
+      idempotencyKey: KEY,
+    });
+    expect(persisted).toEqual([]);
   });
 
   it('tells a duplicate submission which intent it collided with and what state it is in', async () => {

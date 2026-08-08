@@ -338,3 +338,8 @@ adrs:
     title: "A terminal outbox row settles the intent beneath it, whoever wrote it"
     status: Accepted
     date: "2026-08-08"
+  - number: "0074"
+    file: "0074-an-undecodable-relay-failure-is-reported-as-in-flight-not-as-a-rejection.md"
+    title: "An undecodable relay failure is reported as in flight, not as a rejection"
+    status: Proposed
+    date: "2026-08-08"

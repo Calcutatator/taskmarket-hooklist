@@ -9,6 +9,7 @@ import { orphanedPayments, serverWalletTransactions } from '../db/schema';
 import { contractRefundOrphanedPayment } from './contract';
 import { STANDARD_X402_ACTION_AMOUNT } from '../config/payments';
 import { ServerTransactionPendingError } from '../lib/server-transaction-dispatcher';
+import { UndeterminedRelayError } from '../lib/relay-failure';
 // Deliberately console.error, not lib/logger: logger.ts calls getServerConfig() at
 // module load time, and this module is imported by every X402-gated router (tasks,
 // bids, pitches, proofs, identity, ...). Pulling that in transitively broke unit
@@ -390,7 +391,15 @@ export async function handlePostPaymentFailure(input: {
   // can pay the requester back for work that then lands on chain anyway, leaving the escrow
   // funded from the server wallet. Settlement waits for confirmed evidence (ADR-0045); this
   // is the single choke point every paid path funnels through, so the rule holds everywhere.
-  if (input.error instanceof ServerTransactionPendingError) {
+  // The same rule for the other in-flight signal. An `UndeterminedRelayError` is a relay that
+  // established no verdict at all -- no decoded revert, and where there is a hash, a failed
+  // receipt a replay of the same envelope could not reproduce. Refunding on that pays the
+  // requester back for work that may still land, which is exactly the confirmed-evidence rule
+  // ADR-0045 states and ADR-0048 gives settlement sole authority over.
+  if (
+    input.error instanceof ServerTransactionPendingError ||
+    input.error instanceof UndeterminedRelayError
+  ) {
     throw input.error;
   }
 

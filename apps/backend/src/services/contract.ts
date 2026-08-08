@@ -12,6 +12,7 @@ import {
 import { TRPCError } from '@trpc/server';
 import { createServerWallet, dispatchServerWalletTransaction } from '../lib/wallet';
 import { ServerTransactionPendingError } from '../lib/server-transaction-dispatcher';
+import { UndeterminedRelayError } from '../lib/relay-failure';
 import { getPublicClient, runWithRpcApplicationAttempt } from '../lib/rpc-gateway';
 import { getServerConfig } from '../config/env';
 import { SETTLEMENT_READ_ABI, TASK_COMPLETED_EVENT } from './settlement-contract';
@@ -211,7 +212,16 @@ const KNOWN_ERRORS: Record<string, string> = {
   // relay(), so decodeRelayRevert (used only for relayed calls) can never see them.
 };
 
-function decodeRelayRevert(err: unknown): string {
+/**
+ * The revert reason this failure names, or `null` when none could be decoded.
+ *
+ * `null` rather than the old `'unknown revert'` string. That string was read by two different
+ * audiences with two different meanings -- a caller saw it as the contract's stated reason, and
+ * `classifyRelayFailure` saw it as the token meaning "no verdict, retry" -- and a value that
+ * means both cannot be right for either. Here the absence of a reason is an absence, and each
+ * caller says in its own words what it does about it.
+ */
+function decodeRelayRevert(err: unknown): string | null {
   if (err instanceof BaseError) {
     const revertError = err.walk((e) => e instanceof ContractFunctionRevertedError);
     if (revertError instanceof ContractFunctionRevertedError) {
@@ -239,7 +249,26 @@ function decodeRelayRevert(err: unknown): string {
       if (KNOWN_ERRORS[sel]) return KNOWN_ERRORS[sel];
     }
   }
-  return 'unknown revert';
+  return null;
+}
+
+/** The message a decoded revert reaches a caller and `classifyRelayFailure` under. */
+function relayRevertMessage(reason: string): string {
+  return `Contract call rejected: ${reason}`;
+}
+
+/** How an undecodable failure describes itself, without asserting a rejection nobody saw. */
+function undeterminedRelayMessage(detail: string): string {
+  return (
+    'Contract call did not reach a decodable outcome and may still be landing; ' +
+    `poll the intent rather than resubmitting (${detail}).`
+  );
+}
+
+/** The detail half of the message above, for a failure that is an error rather than a receipt. */
+function relayFailureDetail(err: unknown): string {
+  if (err === undefined) return 'every attempt failed without an answer from the node';
+  return `last attempt: ${err instanceof Error ? err.message : String(err)}`;
 }
 
 const ERC20_ABI = parseAbi([
@@ -641,7 +670,7 @@ async function relayThroughForwarderResult(
     if (receipt.status !== 'success') {
       // Replay via eth_call to decode the actual revert reason (e.g. SubmissionNotFound),
       // so callers that catch specific revert names see the same message format as pre-send failures.
-      let revertReason = 'unknown revert';
+      let revertReason: string | null = null;
       try {
         // Replay the transaction that actually failed, argument for argument -- the same
         // `validBefore` and the same `receiptNonce` the send used, not fresh ones.
@@ -650,13 +679,12 @@ async function relayThroughForwarderResult(
         // over an expired deadline or a spent nonce on its way to the "real" revert. That reads
         // backwards: an expired deadline and a spent nonce ARE real reverts, and they are the two
         // this replay is least able to afford losing. A relay that failed ReceiptExpired or
-        // ReceiptAlreadyUsed cannot reproduce under a fresh envelope -- the replay succeeds, no
-        // revert is decoded, and `revertReason` stays at its initialised 'unknown revert'.
-        //
-        // That string is not inert. classifyRelayFailure reads it as transient, so a permanent
-        // failure arriving by this path was indistinguishable from a retryable one and got
-        // retried until it aged out. Replaying the original envelope is what makes the two
-        // separable.
+        // ReceiptAlreadyUsed cannot reproduce under a fresh envelope -- the replay succeeds and
+        // no revert is decoded, which used to leave `revertReason` at a literal 'unknown revert'
+        // that classifyRelayFailure read as transient, so a permanent failure arriving by this
+        // path was indistinguishable from a retryable one and got retried until it aged out.
+        // Replaying the original envelope is what makes the two separable, and it is still the
+        // only thing that does.
         //
         // This remains a read-only eth_call. simulateContract never signs and never broadcasts,
         // so reusing the original nonce cannot spend it or re-send anything; the node evaluates
@@ -673,17 +701,42 @@ async function relayThroughForwarderResult(
       } catch (simErr) {
         revertReason = decodeRelayRevert(simErr);
       }
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: `Contract call rejected: ${revertReason}`,
-      });
+      // A decoded reason is the contract's own verdict, and it is the case this replay exists
+      // for: callers match on `SubmissionNotFound` and the rest, and classifyRelayFailure reads
+      // the prefix as deterministic. Unchanged.
+      if (revertReason !== null) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: relayRevertMessage(revertReason) });
+      }
+
+      // No reason came back, so the replay reproduced nothing and this code has established
+      // nothing. Saying "Contract call rejected" here asserted a fact it did not have -- and
+      // asserted it, twice on one sandbox run, about a write that went on to complete with a
+      // successful receipt thirty seconds later. That is ADR-0049's third state, not a failure:
+      // the transaction is live under `hash`, settlement owns its outcome, and the caller is
+      // owed the handle and an instruction to poll rather than a 400 telling them the chain
+      // refused them (ADR-0070). `relayed-intent-request.ts` turns this into the same
+      // `intent_in_flight` envelope a receipt timeout produces.
+      throw new UndeterminedRelayError(
+        undeterminedRelayMessage(
+          `transaction ${hash} returned a failed receipt that a replay of the same envelope did not reproduce`
+        ),
+        hash
+      );
     }
     return { txHash: hash, blockNumber: receipt.blockNumber, logs: receipt.logs };
   }
-  throw new TRPCError({
-    code: 'BAD_REQUEST',
-    message: `Contract call rejected: ${decodeRelayRevert(lastError)}`,
-  });
+  // The loop is exhausted. Six attempts at RELAY_RETRY_DELAY_MS apart is a fixed wall-clock cost,
+  // which is why this throw arrived at the same thirty-second mark on every observed run -- the
+  // one detail that identified it as the loop timing out rather than anything about the write.
+  const exhaustedReason = decodeRelayRevert(lastError);
+  if (exhaustedReason !== null) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: relayRevertMessage(exhaustedReason) });
+  }
+
+  // Same rule as the replay above: nothing decoded, so nothing is established. No hash is passed
+  // because none was ever returned here -- and that is not evidence one does not exist, only
+  // that this code never saw it (ADR-0069).
+  throw new UndeterminedRelayError(undeterminedRelayMessage(relayFailureDetail(lastError)));
 }
 
 async function relayThroughForwarder(
