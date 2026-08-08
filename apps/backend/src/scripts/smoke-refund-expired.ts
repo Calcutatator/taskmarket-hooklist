@@ -152,6 +152,43 @@ async function createBounty(
   return taskId;
 }
 
+/**
+ * Slack allowed on top of a task's own window before its expiry is called a failure.
+ *
+ * The window itself is known exactly (it is what the task was created with), so the only
+ * unknown is how long the API takes to report the window closed -- indexer poll interval plus
+ * one `get` round trip. A minute covers that with room to spare on a slow stack.
+ */
+const EXPIRY_POLL_HEADROOM_MS = 60_000;
+
+/**
+ * How long to wait for a task created with a `windowSecs` window to expire.
+ *
+ * Derived from the task's own window rather than fixed, because a fixed budget is only ever
+ * correct by accident: a bystander with a 120s or 150s window is waited on at the END of its
+ * scenario, so a flat 90s left the whole wait dependent on the preceding steps happening to
+ * burn more than 30s (or 60s) first. That is not slack, it is a race the script loses the same
+ * way on every run. Sizing from the window makes the wait sufficient no matter how fast the
+ * steps before it ran; if any time has already elapsed, the poll just returns sooner.
+ */
+function expiryTimeoutMs(windowSecs: number): number {
+  return windowSecs * 1000 + EXPIRY_POLL_HEADROOM_MS;
+}
+
+/**
+ * A bystander task carried together with the window it was created with, so the wait for its
+ * expiry can never be sized from a number that has drifted away from the creation call.
+ */
+type Bystander = { taskId: string; windowSecs: number };
+
+async function createBystander(
+  requester: Account,
+  description: string,
+  windowSecs: number
+): Promise<Bystander> {
+  return { taskId: await createBounty(requester, description, windowSecs), windowSecs };
+}
+
 async function waitForExpiry(taskId: string, timeoutMs = 90_000): Promise<void> {
   await pollUntil(
     () => get(`/api/tasks/${taskId}`) as Promise<TaskResponse>,
@@ -182,10 +219,11 @@ async function waitForExpiredStatus(taskId: string): Promise<void> {
  */
 async function assertBystanderStillRefundable(
   label: string,
-  taskId: string,
+  bystander: Bystander,
   requester: Account
 ): Promise<void> {
-  await waitForExpiry(taskId);
+  const { taskId } = bystander;
+  await waitForExpiry(taskId, expiryTimeoutMs(bystander.windowSecs));
   const requesterBefore = await usdcBalanceOf(requester.address);
   const escrowBefore = await escrowBalance();
 
@@ -406,8 +444,8 @@ async function main() {
   // still un-refunded when the repeats happen -- it has to be a live claim on the pool at that
   // moment, not an already-settled one.
   log('D1/6', 'Funding a bystander bounty that must survive every repeat attempt below...');
-  const bystanderD = await createBounty(requester, 'Refund-expired bystander (scenario D)', 120);
-  ok('bystander taskId (D)', bystanderD);
+  const bystanderD = await createBystander(requester, 'Refund-expired bystander (scenario D)', 120);
+  ok('bystander taskId (D)', bystanderD.taskId);
 
   log('D2/6', 'Creating and refunding a bounty task normally...');
   const taskD = await createBounty(requester, 'Refund-expired repeat guard (scenario D)', 1);
@@ -481,8 +519,8 @@ async function main() {
   // above exercises it -- scenario A's tasks are all bounties, which take the other branch.
 
   log('E1/5', 'Funding a bystander bounty for the auction branch...');
-  const bystanderE = await createBounty(requester, 'Refund-expired bystander (scenario E)', 150);
-  ok('bystander taskId (E)', bystanderE);
+  const bystanderE = await createBystander(requester, 'Refund-expired bystander (scenario E)', 150);
+  ok('bystander taskId (E)', bystanderE.taskId);
 
   log('E2/5', 'Creating an auction task (20s bid window, 60s expiry)...');
   const { taskId: taskE } = (await x402Post(
