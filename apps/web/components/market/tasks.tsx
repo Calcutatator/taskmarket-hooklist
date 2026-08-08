@@ -44,6 +44,7 @@ import { CountdownTimer } from '@/components/market/motion/countdown-timer';
 import { RelativeTime } from '@/components/market/motion/relative-time';
 import { LiveStatusBanner } from './tasks/live-status-banner';
 import { PublishedCelebration } from '@/components/market/tasks/published-celebration';
+import { PublishedHtmlResult } from '@/components/market/published-html-result';
 import { TaskActionsPanel } from '@/components/market/task-actions-panel';
 import { TaskParticipationModule } from '@/components/market/task-participation-module';
 import { TaskDescriptionDisclosure } from '@/components/market/task-description-disclosure';
@@ -102,6 +103,7 @@ import type { MarketStats } from '@/lib/api/server';
 import { explorerTxUrl } from '@/lib/explorer';
 import { compactAddress, formatDateTime, formatUsdcUnits } from '@/lib/format';
 import { MODE_TOOLTIPS } from '@/lib/market/status-config';
+import { selectPublishedHtmlArtifacts } from '@/lib/market/published-html';
 import {
   TASK_TAG_BADGE_VARIANT,
   resolvedAwardCount,
@@ -2797,12 +2799,16 @@ function TaskBrief({ body }: { body: string }) {
 
 export function TaskDetailPanel({
   backHref = '/dashboard/tasks',
+  htmlSubmissions = [],
+  initialArtifactId,
   marketStats,
   modeData,
   profileBasePath = '/dashboard/agents',
   task,
 }: {
   backHref?: string;
+  htmlSubmissions?: SubmissionResponse[];
+  initialArtifactId?: string;
   marketStats?: MarketStats | null;
   modeData?: TaskModeData;
   profileBasePath?: string;
@@ -2863,6 +2869,17 @@ export function TaskDetailPanel({
   const detailTags = taskDetailTags(task);
   const bonusSummary = dreamsBonusSummary(task);
   const dashboardDetail = backHref.startsWith('/dashboard');
+  const publishedHtmlArtifacts =
+    task.taskVisibility === 'private'
+      ? []
+      : selectPublishedHtmlArtifacts(htmlSubmissions, task.primaryAward?.workerAddress);
+  const requestedHtmlArtifact = initialArtifactId
+    ? publishedHtmlArtifacts.find((entry) => entry.artifact.id === initialArtifactId)
+    : undefined;
+  const publishedHtmlArtifact = requestedHtmlArtifact ?? publishedHtmlArtifacts[0];
+  const publishedHtmlHref = publishedHtmlArtifact
+    ? `/tasks/${encodeURIComponent(task.id)}?artifact=${encodeURIComponent(publishedHtmlArtifact.artifact.id)}`
+    : null;
   const participationModule = participationAction ? (
     <TaskParticipationModule action={participationAction} task={task} />
   ) : null;
@@ -2923,14 +2940,27 @@ export function TaskDetailPanel({
         </section>
         <LiveStatusBanner marketStats={marketStats} modeData={modeData} task={task} />
         <SettlementPayoutsPanel profileBasePath={profileBasePath} task={task} />
-        {descriptionBody || detailTags.length > 0 ? (
+        {descriptionBody || detailTags.length > 0 || publishedHtmlArtifact ? (
           <section
             className="grid gap-4 border-t border-border/58 pt-5"
             data-testid="task-description-surface"
           >
-            {descriptionBody ? (
-              <TaskDescriptionDisclosure>
-                <TaskBrief body={descriptionBody} />
+            {descriptionBody || publishedHtmlArtifact ? (
+              <TaskDescriptionDisclosure
+                leadingContent={
+                  publishedHtmlArtifact && publishedHtmlHref ? (
+                    <PublishedHtmlResult
+                      artifact={publishedHtmlArtifact.artifact}
+                      artifactCount={publishedHtmlArtifacts.length}
+                      href={publishedHtmlHref}
+                      initiallyOpen={Boolean(requestedHtmlArtifact)}
+                      taskId={task.id}
+                      taskTitle={title}
+                    />
+                  ) : undefined
+                }
+              >
+                {descriptionBody ? <TaskBrief body={descriptionBody} /> : undefined}
               </TaskDescriptionDisclosure>
             ) : null}
             {detailTags.length > 0 ? (
