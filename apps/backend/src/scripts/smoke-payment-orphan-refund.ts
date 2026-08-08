@@ -63,7 +63,20 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia, anvil } from 'viem/chains';
-import { log, ok, get, x402Post, getAccounts, API_URL, type Account } from './_x402';
+import { eq } from 'drizzle-orm';
+import { closeDatabase, db } from '../db/client';
+import { orphanedPayments, relayedIntents } from '../db/schema';
+import {
+  log,
+  ok,
+  get,
+  x402Post,
+  getAccounts,
+  newIdempotencyKey,
+  pollUntil,
+  API_URL,
+  type Account,
+} from './_x402';
 
 const ERC20_ABI = parseAbi(['function balanceOf(address) view returns (uint256)']);
 
@@ -87,6 +100,94 @@ async function usdcBalance(rpcUrl: string, chain: Chain, usdc: string, address: 
     functionName: 'balanceOf',
     args: [getAddress(address)],
   });
+}
+
+// How long to wait for the refund to land in the ledger. Settlement runs on the next
+// worker pass (ADR-0073), and observed end-to-end times are 8-11s; 30s is comfortably
+// clear of that without letting a genuinely stuck refund pass as a slow one.
+const REFUND_TIMEOUT_MS = 30_000;
+// The intent row is written by the request itself, so its payment reference appears
+// almost immediately -- this only absorbs commit latency.
+const INTENT_TIMEOUT_MS = 15_000;
+
+/**
+ * Assert that the payment made under `idempotencyKey` was really refunded, by reading the
+ * ledger rather than the error text.
+ *
+ * DO NOT REPLACE THIS WITH A STRING MATCH ON THE ERROR MESSAGE. It used to assert that the
+ * caller's error mentioned "automatically refunded", and that assertion was worthless twice
+ * over. Under ADR-0073 settlement happens on a later worker pass, so at response time there
+ * is by construction nothing to report and the phrase can never appear -- and before that, the
+ * check passed on a run where no refund happened at all, because reading prose only ever
+ * proves what the backend said, never what it did. The property this smoke is named for is a
+ * state transition in `orphaned_payments`, so that is what gets read.
+ *
+ * The row is located by payment reference, not by "the newest row for this payer": the intent
+ * recorded under this exact idempotency key (globally unique, minted per call here) carries
+ * the settled `payment_tx_hash`, and `orphaned_payments.payment_tx_hash` is unique, so the
+ * join identifies one specific payment and cannot be satisfied by some other run's refund.
+ */
+async function assertPaymentRefunded(payer: string, idempotencyKey: string) {
+  const intent = await pollUntil(
+    async () => {
+      const rows = await db
+        .select({
+          id: relayedIntents.id,
+          operation: relayedIntents.operation,
+          payer: relayedIntents.payer,
+          paymentTxHash: relayedIntents.paymentTxHash,
+        })
+        .from(relayedIntents)
+        .where(eq(relayedIntents.idempotencyKey, idempotencyKey))
+        .limit(1);
+      return rows[0];
+    },
+    (row) => Boolean(row?.paymentTxHash),
+    {
+      intervalMs: 1000,
+      timeoutMs: INTENT_TIMEOUT_MS,
+      label: `a settled payment reference on the intent for idempotency key ${idempotencyKey}`,
+    }
+  );
+  const paymentTxHash = intent!.paymentTxHash!;
+  if ((intent!.payer ?? '').toLowerCase() !== payer.toLowerCase()) {
+    throw new Error(
+      `Intent ${intent!.id} records payer ${intent!.payer}, expected the failing caller ${payer}`
+    );
+  }
+  ok('settled payment reference', `${paymentTxHash} (operation ${intent!.operation})`);
+
+  const orphan = await pollUntil(
+    async () => {
+      const rows = await db
+        .select({
+          id: orphanedPayments.id,
+          payer: orphanedPayments.payer,
+          context: orphanedPayments.context,
+          refundStatus: orphanedPayments.refundStatus,
+          refundTxHash: orphanedPayments.refundTxHash,
+        })
+        .from(orphanedPayments)
+        .where(eq(orphanedPayments.paymentTxHash, paymentTxHash))
+        .limit(1);
+      return rows[0];
+    },
+    (row) => row?.refundStatus === 'refunded' && Boolean(row?.refundTxHash),
+    {
+      intervalMs: 2000,
+      timeoutMs: REFUND_TIMEOUT_MS,
+      label: `orphaned payment ${paymentTxHash} to reach refund_status=refunded with a refund tx hash`,
+    }
+  );
+
+  // The ledger row must belong to the payer whose money moved -- a refund recorded against
+  // anyone else is a defect the status alone would not show.
+  if (orphan!.payer.toLowerCase() !== payer.toLowerCase()) {
+    throw new Error(
+      `Orphaned payment ${orphan!.id} is recorded against ${orphan!.payer}, expected ${payer}`
+    );
+  }
+  ok('orphaned payment refunded on chain', `${orphan!.refundTxHash} (context ${orphan!.context})`);
 }
 
 /** Scenario 1: a genuine on-chain race, no privileged keys required. */
@@ -124,8 +225,14 @@ async function smokeAuctionAcceptRace(
     : null;
 
   log('2/4', 'Firing auction-accept from both workers at the same moment...');
+  // One key per worker, held so the loser's settled payment can be located afterwards.
+  const idempotencyKeys = workers.map(() => newIdempotencyKey());
   const outcomes = await Promise.allSettled(
-    workers.map((w) => x402Post(`/api/tasks/${taskId}/bids/accept`, { taskId }, w))
+    workers.map((w, i) =>
+      x402Post(`/api/tasks/${taskId}/bids/accept`, { taskId }, w, {
+        idempotencyKey: idempotencyKeys[i],
+      })
+    )
   );
 
   const winners = outcomes.filter((r) => r.status === 'fulfilled');
@@ -164,16 +271,8 @@ async function smokeAuctionAcceptRace(
     return;
   }
 
-  log('3/4', 'Verifying the loser was told about an automatic refund...');
-  if (
-    !/automatically refunded/i.test(loserReason.message) &&
-    !/flagged for manual review/i.test(loserReason.message)
-  ) {
-    throw new Error(
-      `Expected the losing auction-accept to mention a refund outcome, got: ${loserReason.message}`
-    );
-  }
-  ok('refund outcome present in error', true);
+  log('3/4', "Verifying the loser's settled payment was actually refunded (ledger, not prose)...");
+  await assertPaymentRefunded(loser.address, idempotencyKeys[loserIndex]);
 
   log('4/4', 'Verifying the task is claimed by exactly the winner...');
   const claimedTask = (await get(`/api/tasks/${taskId}`)) as { status: string; claimedBy: string };
@@ -279,8 +378,11 @@ async function smokeDiamondSelectorMissing(requester: Account, rpcUrl: string, c
       'Cancelling through the normal backend flow (payment settles, on-chain call has nowhere to go)...'
     );
     let cancelError: Error | undefined;
+    const cancelIdempotencyKey = newIdempotencyKey();
     try {
-      await x402Post(`/api/tasks/${taskId}/cancel`, { taskId }, requester);
+      await x402Post(`/api/tasks/${taskId}/cancel`, { taskId }, requester, {
+        idempotencyKey: cancelIdempotencyKey,
+      });
     } catch (err) {
       cancelError = err as Error;
     }
@@ -290,15 +392,7 @@ async function smokeDiamondSelectorMissing(requester: Account, rpcUrl: string, c
       );
     }
     console.log('  cancel error:', cancelError.message);
-    if (
-      !/automatically refunded/i.test(cancelError.message) &&
-      !/flagged for manual review/i.test(cancelError.message)
-    ) {
-      throw new Error(
-        `Expected the failed cancel to mention a refund outcome, got: ${cancelError.message}`
-      );
-    }
-    ok('refund outcome present in error', true);
+    await assertPaymentRefunded(requester.address, cancelIdempotencyKey);
 
     const task = (await get(`/api/tasks/${taskId}`)) as { status: string };
     if (task.status === 'cancelled') {
@@ -371,8 +465,14 @@ async function main() {
   console.log('api:      ', API_URL);
   console.log('rpc:      ', rpcUrl);
 
-  await smokeAuctionAcceptRace(requester, worker, workerB, rpcUrl, chain, usdc);
-  await smokeDiamondSelectorMissing(requester, rpcUrl, chain);
+  try {
+    await smokeAuctionAcceptRace(requester, worker, workerB, rpcUrl, chain, usdc);
+    await smokeDiamondSelectorMissing(requester, rpcUrl, chain);
+  } finally {
+    // The refund assertions read the ledger directly, so this script opens a connection
+    // pool. Without closing it the process stays alive after a successful run.
+    await closeDatabase();
+  }
 
   console.log('\n=== Payment-orphan auto-refund smoke test passed ===');
 }
