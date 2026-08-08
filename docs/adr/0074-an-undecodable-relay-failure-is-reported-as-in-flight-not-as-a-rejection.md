@@ -7,19 +7,17 @@
 > achieve a response that never asserts an outcome nobody established, accepting that a caller
 > whose write genuinely did fail now learns so from settlement rather than from the request.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-08
 - **Embodiment:** Verified
 - **Last audited:** `[unaudited]`
 - **Author:** Claude (agent), directed by Beau
-- **Reviewers:** (pending — no independent reviewer recorded)
-- **Deciders:** (pending — Beau)
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Pending amends
-  [ADR-0049](0049-in-flight-paid-writes-are-observable-through-a-dedicated-intent-status-surface.md),
-  Pending amends [ADR-0058](0058-every-api-error-carries-a-machine-readable-reason.md)
+- **Amends / Amended-by:** Amends ADR-0049; amends ADR-0058
+- **Pending Amends / Amended-by:** —
 
 ## Context
 
@@ -132,7 +130,8 @@ Concretely:
 
 ## References
 
-- [ADR-0045 — durable writes follow the chain call](0050-durable-writes-follow-the-chain-call-and-unbroadcast-intents-are-retried-before-refund.md)
+- [ADR-0045 — relayed writes are durable intents, not request-scoped transactions](0045-relayed-writes-are-durable-intents-not-request-scoped-transactions.md)
+- [ADR-0050 — durable writes follow the chain call, and an unbroadcast intent is retried before it is refunded](0050-durable-writes-follow-the-chain-call-and-unbroadcast-intents-are-retried-before-refund.md)
 - [ADR-0047 — evaluator assignment is its own intent](0047-evaluator-assignment-is-its-own-intent-and-chaining-is-withdrawn.md)
 - [ADR-0048 — orphaning a payment is decided only by intent settlement](0048-orphaning-a-payment-is-decided-only-by-intent-settlement.md)
 - [ADR-0049 — in-flight paid writes are observable through a dedicated intent status surface](0049-in-flight-paid-writes-are-observable-through-a-dedicated-intent-status-surface.md)
