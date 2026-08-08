@@ -4,6 +4,7 @@
 import type { db as DbType } from '../db/client';
 import type { RelayedIntent } from '../db/schema';
 import { apiError, intentStatusOf } from '../lib/api-error';
+import { UndeterminedRelayError } from '../lib/relay-failure';
 import { ServerTransactionPendingError } from '../lib/server-transaction-dispatcher';
 import { registerRelayedIntentHandlers } from './intents/register';
 import { withRelayEnvelope } from './relay-envelope';
@@ -221,6 +222,33 @@ export async function runRelayedIntent(
         operation: claimed.operation,
         idempotencyKey: claimed.idempotencyKey,
         txHash: error.hash,
+        message: error.message,
+      });
+    }
+
+    // The same answer, reached from the other direction. `ServerTransactionPendingError` means a
+    // receipt did not arrive in time; `UndeterminedRelayError` means one arrived, or none of six
+    // attempts did, and neither established a verdict the caller can act on. Both are ADR-0049's
+    // third state, and the reason they must agree is what the sandbox run showed: this branch
+    // used to answer a 400 reading `Contract call rejected: unknown revert` for a write that
+    // completed with a successful receipt thirty seconds later. A reason may not assert
+    // something untrue (ADR-0070), and "the contract rejected you" was the opposite of what
+    // happened.
+    if (error instanceof UndeterminedRelayError) {
+      // Only when a hash exists. Persisting one is what stops the rebroadcast sweep re-sending
+      // work already live; inventing one where none was seen would be the same mistake in the
+      // other direction, so an intent with no hash simply stays 'recorded' and the sweep keeps
+      // it (ADR-0069).
+      if (error.txHash) {
+        await persistIntentBroadcast({ db: input.db, intentId: claimed.id, txHash: error.txHash });
+      }
+      throw apiError({
+        reason: 'intent_in_flight',
+        intentId: claimed.id,
+        intentStatus: error.txHash ? 'broadcast' : 'recorded',
+        operation: claimed.operation,
+        idempotencyKey: claimed.idempotencyKey,
+        txHash: error.txHash,
         message: error.message,
       });
     }

@@ -32,14 +32,43 @@ export class DeterministicRelayError extends Error {
 }
 
 /**
- * Text `services/contract.ts` puts in front of every decoded revert, and the value it uses
- * when it could not decode one. An undecodable failure is treated as transient: the retry
- * loop in `relayThroughForwarderResult` exhausts into this same message when the RPC never
- * answered, so "unknown revert" is at least as often a network story as a contract one, and
- * guessing deterministic there would fail intents that only needed a second attempt.
+ * A relay attempt that reached no verdict at all, stated outright rather than inferred.
+ *
+ * The sibling of `DeterministicRelayError`, for the opposite end of the same question. A relay
+ * whose attempts all failed without a decodable revert, or whose failed receipt could not be
+ * reproduced by a replay, has established nothing: the write may still be landing, and the
+ * transaction under it -- if there is one -- is owned by settlement. Callers translate this into
+ * ADR-0049's third state (`intent_in_flight`) rather than into a failure.
+ *
+ * `txHash` is present only when a transaction is known to exist. Its absence is not evidence
+ * that none does; it means only that this code never saw a hash (ADR-0069).
+ */
+export class UndeterminedRelayError extends Error {
+  readonly txHash?: `0x${string}`;
+
+  constructor(message: string, txHash?: `0x${string}`) {
+    super(message);
+    this.name = 'UndeterminedRelayError';
+    this.txHash = txHash;
+  }
+}
+
+/**
+ * Text `services/contract.ts` puts in front of a decoded revert, and only in front of one.
+ *
+ * The prefix used to do two jobs. It also fronted the string `unknown revert`, which
+ * `services/contract.ts` produced whenever it could not decode a reason -- so one message both
+ * told a caller "the contract rejected this call" and told this classifier "no verdict, retry".
+ * Those are different facts, and neither reading was safe while they shared a string: the prose
+ * asserted a rejection nothing had established (ADR-0070), and a permanent failure arriving with
+ * an undecodable reason was retried until it aged out.
+ *
+ * They are separate now. A message carrying this prefix carries a reason that was actually
+ * decoded, which makes it deterministic with no further test. An attempt that decoded nothing
+ * does not use this prefix at all: it raises `UndeterminedRelayError`, which is transient by the
+ * default below and says so in its own name rather than inside a revert reason.
  */
 const REVERT_PREFIX = 'contract call rejected: ';
-const UNDECODED_REVERT = 'unknown revert';
 
 /**
  * Classify a relay failure so a caller can tell "try again" from "this will never work".
@@ -59,6 +88,10 @@ export function classifyRelayFailure(error: unknown): RelayFailureKind {
   // message, so no amount of text matching below should be able to talk it back into a retry.
   if (error instanceof DeterministicRelayError) return 'deterministic';
 
+  // Also a verdict stated outright, and the one that must not be talked *into* a verdict: an
+  // attempt that established nothing is retryable, and no text below may conclude otherwise.
+  if (error instanceof UndeterminedRelayError) return 'transient';
+
   // A decoded revert carried by viem itself, e.g. from a simulate() that was never retried.
   if (error instanceof BaseError) {
     const reverted = error.walk((e) => e instanceof ContractFunctionRevertedError);
@@ -72,18 +105,17 @@ export function classifyRelayFailure(error: unknown): RelayFailureKind {
   // transport words -- `SubmissionRateLimited`, `EvaluatorTimeout`, `DeadlineExceeded` all read
   // like network trouble -- which is why the verdict is taken from the prefix's presence rather
   // than from anything found in the message text.
-  const prefixAt = message.indexOf(REVERT_PREFIX);
-  if (prefixAt !== -1) {
-    const reason = message.slice(prefixAt + REVERT_PREFIX.length).trim();
-    return reason.startsWith(UNDECODED_REVERT) ? 'transient' : 'deterministic';
-  }
+  if (message.includes(REVERT_PREFIX)) return 'deterministic';
 
   // No decoded reason, so nothing has spoken for the contract and the transport is the only
   // thing left that could have. There is deliberately no list of transport substrings here:
   // every one of them would return the same verdict this line already returns, so a scan could
   // only ever agree with the default while implying that failing to match it meant something.
   // The two ways of *not* being transient are both handled above, by evidence rather than by
-  // vocabulary -- a decoded revert, or a `DeterministicRelayError` stated outright.
+  // vocabulary -- a decoded revert, or a `DeterministicRelayError` stated outright. Reaching
+  // here now means the same thing an `UndeterminedRelayError` says explicitly; the class exists
+  // so a producer that *knows* it established nothing can say so instead of relying on this
+  // default being read correctly by everything downstream.
   return 'transient';
 }
 

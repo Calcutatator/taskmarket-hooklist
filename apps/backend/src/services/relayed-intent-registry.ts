@@ -2,7 +2,11 @@
 import type { db as DbType } from '../db/client';
 import type { RelayedIntent } from '../db/schema';
 import { logger } from '../lib/logger';
-import { classifyRelayFailure, relayFailureReason } from '../lib/relay-failure';
+import {
+  classifyRelayFailure,
+  relayFailureReason,
+  UndeterminedRelayError,
+} from '../lib/relay-failure';
 import { ServerTransactionPendingError } from '../lib/server-transaction-dispatcher';
 import { withRelayEnvelope } from './relay-envelope';
 import {
@@ -276,6 +280,16 @@ export async function dispatchRelayedIntent(input: {
     // the whole job here -- rebroadcasting would spend a second nonce on the same work.
     if (error instanceof ServerTransactionPendingError) {
       await persistIntentBroadcast({ db: input.db, intentId: claimed.id, txHash: error.hash });
+      return 'broadcast';
+    }
+
+    // Same rule where the hash arrives on the other in-flight signal. An `UndeterminedRelayError`
+    // carrying a hash is a transaction this pass put on chain and could not get a verdict for;
+    // classifying it below would call it transient and hand the intent back to the sweep, which
+    // would spend a second nonce on work already live (ADR-0045, ADR-0050). Without a hash there
+    // is nothing to record and the transient default is the correct answer, so it falls through.
+    if (error instanceof UndeterminedRelayError && error.txHash) {
+      await persistIntentBroadcast({ db: input.db, intentId: claimed.id, txHash: error.txHash });
       return 'broadcast';
     }
 
