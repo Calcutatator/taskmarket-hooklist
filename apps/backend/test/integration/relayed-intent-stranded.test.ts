@@ -22,7 +22,11 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { relayedIntents, serverWalletTransactions } from '../../src/db/schema';
+import {
+  relayedIntents,
+  serverWalletNonces,
+  serverWalletTransactions,
+} from '../../src/db/schema';
 import { createIsolatedMigratedDatabase } from '../helpers/integration-database';
 import { stubServerEnvironment } from '../helpers/server-environment';
 
@@ -123,26 +127,19 @@ async function strandIntent(options: {
     status: 'recorded',
   });
 
-  const nonce = Math.floor(Math.random() * 1_000_000);
   const dispatch = createServerTransactionDispatcher({
-    // Two reads, deliberately different, because the dispatcher makes two for different
-    // reasons. The first seeds the allocator. The second asks whether the allocated nonce is
-    // still free now that the send has failed, and must answer no -- that is the case with no
-    // answer at all, where the transaction can neither be proven sent nor proven unsent, and
-    // it is the only branch that leaves the row linked and hashless.
+    // Two reads, and the dispatcher makes them for different reasons: the first seeds the
+    // allocator, the second asks whether the allocated nonce is still free now that the send
+    // has failed. The second must answer no. That is the case with no answer at all -- the
+    // transaction can be proven neither sent nor unsent -- and it is the only branch that
+    // leaves the row linked and hashless, which is the state this file is about.
     //
-    // A single mocked value collapses the two into `pending === allocated`, which the
-    // dispatcher reads as positive evidence the nonce is free: it recycles the row, releases
-    // the link, and the stranded state this file is about never forms.
-    //
-    // The second value is unreachably large rather than `nonce + 1` because the allocator
-    // outlives any one call. Seeding only happens once, so later intents in this file draw
-    // from the sequence that call started, and a value chosen relative to this call's `nonce`
-    // would be below theirs -- making the branch taken depend on test order.
-    getPendingNonce: vi
-      .fn()
-      .mockResolvedValueOnce(nonce)
-      .mockResolvedValue(Number.MAX_SAFE_INTEGER),
+    // This holds only because the allocator is cleared between tests (see afterEach), so
+    // `seed` reads on every intent rather than just the first. Without that the same mocked
+    // value lands in a different question depending on call order, and no fixed pair can
+    // satisfy both: once the first test seeds the allocator, later allocations start from
+    // that value, so nothing the check returns is reliably above them.
+    getPendingNonce: vi.fn().mockResolvedValueOnce(1_000).mockResolvedValue(1_001),
     store: store(),
   });
   const link = intentOutboxLink(database as never, intentId);
@@ -222,6 +219,9 @@ describeWithDatabase('an intent whose send never returned a hash', () => {
     // tests happen to run in.
     await database.delete(relayedIntents);
     await database.delete(serverWalletTransactions);
+    // Also the allocator: `seed` is a no-op once its row exists, and every mocked nonce
+    // above assumes it reads.
+    await database.delete(serverWalletNonces);
   });
 
   it('reaches the stranded state through the dispatcher and the reconciler', async () => {
