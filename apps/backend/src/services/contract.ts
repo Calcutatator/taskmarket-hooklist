@@ -539,6 +539,8 @@ async function relayThroughForwarderResult(
             hash,
             timeout: SERVER_TX_RECEIPT_TIMEOUT,
           }),
+        // A reverted receipt is not a confirmation; the outbox row must say so (ADR-0073).
+        succeeded: (receipt) => receipt.status === 'success',
       });
       assertSuccess(receipt, 'approve');
     }
@@ -617,6 +619,8 @@ async function relayThroughForwarderResult(
               timeout: SERVER_TX_RECEIPT_TIMEOUT,
             })
           ),
+        // A reverted receipt is not a confirmation; the outbox row must say so (ADR-0073).
+        succeeded: (receipt) => receipt.status === 'success',
       });
       hash = result.hash;
       receipt = result.receipt;
@@ -1220,6 +1224,8 @@ export async function contractTransferWithAuthorization(
         hash: transactionHash,
         timeout: SERVER_TX_RECEIPT_TIMEOUT,
       }),
+    // A reverted receipt is not a confirmation; the outbox row must say so (ADR-0073).
+    succeeded: (receipt) => receipt.status === 'success',
   });
   assertSuccess(receipt, 'transferWithAuthorization');
   return hash;
@@ -1258,6 +1264,8 @@ export async function contractRefundOrphanedPayment(
         hash: transactionHash,
         timeout: SERVER_TX_RECEIPT_TIMEOUT,
       }),
+    // A reverted receipt is not a confirmation; the outbox row must say so (ADR-0073).
+    succeeded: (receipt) => receipt.status === 'success',
   });
   assertSuccess(receipt, 'refund transfer');
   return hash;
@@ -1380,6 +1388,8 @@ export async function contractRegisterIdentityTx(): Promise<`0x${string}`> {
         hash: transactionHash,
         timeout: SERVER_TX_RECEIPT_TIMEOUT,
       }),
+    // A reverted receipt is not a confirmation; the outbox row must say so (ADR-0073).
+    succeeded: (receipt) => receipt.status === 'success',
   });
   assertSuccess(receipt, 'registerIdentity');
   return hash;
@@ -1482,6 +1492,8 @@ export async function contractWithdrawDreamsRewards(
         hash: transactionHash,
         timeout: SERVER_TX_RECEIPT_TIMEOUT,
       }),
+    // A reverted receipt is not a confirmation; the outbox row must say so (ADR-0073).
+    succeeded: (receipt) => receipt.status === 'success',
   });
   assertSuccess(receipt, 'withdrawFor');
   return hash;

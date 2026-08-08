@@ -18,7 +18,7 @@
 - **Reviewers:** Beau Williams — self-attested; no independent reviewer recorded
 - **Supersedes / Superseded-by:** —
 - **Amends / Amended-by:** Amends ADR-0063; amends ADR-0069
-- **Pending Amends / Amended-by:** —
+- **Pending Amends / Amended-by:** Amended by ADR-0073
 
 ## Context
 

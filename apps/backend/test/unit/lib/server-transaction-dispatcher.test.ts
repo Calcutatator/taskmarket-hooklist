@@ -12,6 +12,7 @@ const HASH = `0x${'ab'.repeat(32)}` as const;
 function okRequest() {
   return {
     confirm: vi.fn().mockResolvedValue({ status: 'success' }),
+    succeeded: (receipt: unknown) => (receipt as { status?: string })?.status === 'success',
     send: vi.fn().mockResolvedValue(HASH),
     simulate: vi.fn().mockResolvedValue(undefined),
   };
@@ -44,6 +45,7 @@ describe('server transaction dispatcher', () => {
       dispatch({
         confirm,
         send,
+        succeeded: () => true,
         simulate: vi.fn().mockRejectedValue(new Error('ERC20: transfer amount exceeds balance')),
       })
     ).rejects.toThrow('ERC20: transfer amount exceeds balance');
@@ -56,6 +58,28 @@ describe('server transaction dispatcher', () => {
     expect(state.rows).toEqual([]);
   });
 
+  // Verifies: ADR-0073
+  it('marks a reverted receipt failed rather than confirmed', async () => {
+    const { state, store } = createMemoryServerTransactionStore(9);
+    const dispatch = createServerTransactionDispatcher({
+      getPendingNonce: vi.fn().mockResolvedValue(9),
+      store,
+    });
+
+    const result = await dispatch({
+      confirm: vi.fn().mockResolvedValue({ status: 'reverted' }),
+      send: vi.fn().mockResolvedValue(HASH),
+      simulate: vi.fn().mockResolvedValue(undefined),
+      succeeded: (receipt: unknown) => (receipt as { status?: string })?.status === 'success',
+    });
+
+    // The receipt still comes back: the caller decides what to raise, and several read the
+    // revert reason out of it. What changes is the record -- `confirmed` is a claim the work
+    // happened, and every reader of that status treats it as one (ADR-0073).
+    expect(result.hash).toBe(HASH);
+    expect(state.rows[0]).toMatchObject({ nonce: 9, status: 'failed', txHash: HASH });
+  });
+
   it('returns the nonce to the pool when a broadcast provably never happened', async () => {
     const { state, store } = createMemoryServerTransactionStore(41);
     const dispatch = createServerTransactionDispatcher({
@@ -65,6 +89,7 @@ describe('server transaction dispatcher', () => {
 
     await expect(
       dispatch({
+        succeeded: () => true,
         confirm: vi.fn(),
         send: vi.fn().mockRejectedValue(new Error('connection reset by peer')),
         simulate: vi.fn().mockResolvedValue(undefined),
@@ -85,6 +110,7 @@ describe('server transaction dispatcher', () => {
 
     await expect(
       dispatch({
+        succeeded: () => true,
         confirm: vi.fn(),
         onNonceReleased,
         send: vi.fn().mockRejectedValue(new Error('socket hang up')),
@@ -103,6 +129,7 @@ describe('server transaction dispatcher', () => {
 
     await expect(
       dispatch({
+        succeeded: () => true,
         confirm: vi.fn(),
         send: vi.fn().mockRejectedValue(new Error('socket hang up')),
         simulate: vi.fn().mockResolvedValue(undefined),
@@ -146,6 +173,7 @@ describe('server transaction dispatcher', () => {
 
     await expect(
       dispatch({
+        succeeded: () => true,
         confirm: vi.fn(),
         onNonceReleased,
         send: vi.fn().mockRejectedValue(new Error('connection reset by peer')),
@@ -166,6 +194,7 @@ describe('server transaction dispatcher', () => {
 
     await expect(
       dispatch({
+        succeeded: () => true,
         confirm: vi.fn(),
         send: vi.fn().mockRejectedValue(new Error('connection reset by peer')),
         simulate: vi.fn().mockResolvedValue(undefined),
@@ -188,6 +217,7 @@ describe('server transaction dispatcher', () => {
 
     await expect(
       dispatch({
+        succeeded: () => true,
         confirm: vi.fn(),
         send: vi.fn().mockRejectedValue(new Error('nonce too low')),
         simulate: vi.fn().mockResolvedValue(undefined),
@@ -208,6 +238,7 @@ describe('server transaction dispatcher', () => {
 
     await expect(
       dispatch({
+        succeeded: () => true,
         confirm: vi.fn().mockRejectedValue(new Error('timed out waiting for receipt')),
         send: vi.fn().mockResolvedValue(HASH),
         simulate: vi.fn().mockResolvedValue(undefined),
@@ -242,6 +273,7 @@ describe('server transaction dispatcher', () => {
     await Promise.all(
       [0, 1, 2].map(() =>
         dispatch({
+          succeeded: () => true,
           confirm: async () => {
             concurrentSends -= 1;
             return { status: 'success' };

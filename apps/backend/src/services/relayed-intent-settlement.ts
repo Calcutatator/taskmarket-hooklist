@@ -10,6 +10,7 @@ import {
   findIntentByTransactionId,
   listAbandonedIntents,
   listConfirmedUnsettledIntents,
+  listFailedTransactionIntents,
   markIntentFailed,
 } from './relayed-intents';
 
@@ -139,48 +140,93 @@ export async function settleAbandonedIntents(limit: number): Promise<void> {
   }
 }
 
-export function createRelayedIntentSettlement(): RelayedIntentSettlement {
+/**
+ * Settle every intent whose own transaction is terminally failed on chain.
+ *
+ * The general rule ADR-0073 states, run as a sweep: an outbox row that reaches `failed` while
+ * carrying a hash is confirmed evidence that this intent's work did not happen, and the intent
+ * under it must reach `failed` too. Whichever writer produced that row -- the reconciler reading
+ * a receipt, the dispatcher reading its own, `settleNonceSpentElsewhere` -- the settlement is the
+ * same one, reached through the same `onFailed` the reconciler uses, so there is one refund rule
+ * rather than one per writer.
+ *
+ * Idempotent by the same guards `onFailed` already has: it skips an intent already `completed`
+ * or `failed`, so a row settled inline by its writer is not settled twice and not refunded twice.
+ *
+ * No cutoff, deliberately. The other two sweeps wait fifteen minutes because their evidence is
+ * an absence that time might still fill in. This one waits for nothing: the chain has already
+ * answered, and ADR-0045 is explicit that a confirmed verdict, not a timer, is what settles an
+ * intent.
+ */
+export async function settleFailedTransactionIntents(
+  limit: number,
+  options: { database?: typeof db } = {}
+): Promise<void> {
+  const database = options.database ?? db;
+  const settlement = createRelayedIntentSettlement(database);
+  for (const intent of await listFailedTransactionIntents({ db: database, limit })) {
+    if (!intent.serverWalletTransactionId) continue;
+    try {
+      await settlement.onFailed(
+        intent.serverWalletTransactionId,
+        'the transaction sent for this intent failed on chain'
+      );
+    } catch (error) {
+      // One intent must not end the pass; the next one sees it again.
+      logger.error('Settling an intent whose transaction failed on chain did not complete', {
+        error: error instanceof Error ? error.message : String(error),
+        intentId: intent.id,
+      });
+    }
+  }
+}
+
+/**
+ * @param database injected only so the sweep above can run against an isolated test database;
+ * the reconciler wiring uses the module singleton.
+ */
+export function createRelayedIntentSettlement(database: typeof db = db): RelayedIntentSettlement {
   return {
     onConfirmed: async (transactionId: string, hash: Hex) => {
       const intent = await findIntentByTransactionId({
-        db,
+        db: database,
         serverWalletTransactionId: transactionId,
       });
       // Not every server-wallet transaction has an intent -- background work (indexer,
       // reconciliation, replacements) has nothing to complete.
       if (!intent) return;
 
-      await completeRelayedIntent({ db, intent, txHash: hash });
+      await completeRelayedIntent({ db: database, intent, txHash: hash });
     },
 
     sweepConfirmed: async (limit: number) => {
       // Only the intent's own recorded hash is used: the sweep is about work whose receipt is
       // already known good, so there is nothing to re-read from the chain, and a row with no
       // hash was never linked to a broadcast and has nothing to complete against.
-      for (const intent of await listConfirmedUnsettledIntents({ db, limit })) {
+      for (const intent of await listConfirmedUnsettledIntents({ db: database, limit })) {
         if (!intent.txHash) continue;
         // Late, not lost. Errors are already recorded on the intent by completeRelayedIntent,
         // and the next pass sees it again, so one bad intent must not end the sweep.
-        await completeRelayedIntent({ db, intent, txHash: intent.txHash });
+        await completeRelayedIntent({ db: database, intent, txHash: intent.txHash });
       }
     },
 
     onFailed: async (transactionId: string, reason: string) => {
       const intent = await findIntentByTransactionId({
-        db,
+        db: database,
         serverWalletTransactionId: transactionId,
       });
       if (!intent) return;
       if (intent.status === 'completed' || intent.status === 'failed') return;
 
-      await markIntentFailed({ db, intentId: intent.id, reason });
+      await markIntentFailed({ db: database, intentId: intent.id, reason });
 
       // The reconciler reaches onFailed only on a reverted receipt or a mined replacement, so
       // by here the chain has answered and the call this intent stood for provably did not
       // happen. That is the one precondition under which handing back a replay guard is safe:
       // release it on a timeout instead and a captured signature could be replayed while the
       // original transaction is still in a mempool, waiting to mine (ADR-0050).
-      await releaseIntentGuard({ db, intent });
+      await releaseIntentGuard({ db: database, intent });
 
       // Refund only what this intent itself was paid for. An intent with no payment reference
       // has nothing to refund: whatever it was going to do on chain did not happen, and the
@@ -234,7 +280,7 @@ export function createRelayedIntentSettlement(): RelayedIntentSettlement {
         await handlePostPaymentFailure({
           amount: BigInt(intent.paymentAmount),
           context: intent.operation,
-          db,
+          db: database,
           error: new Error(reason),
           payer: intent.payer as `0x${string}`,
           paymentTxHash: intent.paymentTxHash as `0x${string}`,

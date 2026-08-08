@@ -29,6 +29,7 @@ async function broadcastOne(store: ReturnType<typeof createMemoryServerTransacti
   });
   await expect(
     dispatch({
+      succeeded: () => true,
       confirm: vi.fn().mockRejectedValue(new Error('receipt timeout')),
       send: vi.fn().mockResolvedValue(HASH),
       simulate: vi.fn().mockResolvedValue(undefined),
@@ -412,11 +413,13 @@ describe('server transaction reconciler', () => {
     });
 
     const rejected = dispatch({
+      succeeded: () => true,
       confirm: vi.fn(),
       send: vi.fn().mockRejectedValue(new Error('connection reset by peer')),
       simulate: vi.fn().mockResolvedValue(undefined),
     });
     const inFlight = dispatch({
+      succeeded: () => true,
       confirm: vi.fn().mockRejectedValue(new Error('receipt timeout')),
       send: vi.fn().mockResolvedValue(HASH),
       simulate: vi.fn().mockResolvedValue(undefined),
@@ -454,6 +457,7 @@ describe('server transaction reconciler', () => {
     });
     await expect(
       dispatch({
+        succeeded: () => true,
         confirm: vi.fn(),
         send: vi.fn().mockRejectedValue(new Error('connection reset by peer')),
         simulate: vi.fn().mockResolvedValue(undefined),
@@ -481,6 +485,7 @@ describe('server transaction reconciler', () => {
     });
     await expect(
       dispatch({
+        succeeded: () => true,
         confirm: vi.fn().mockRejectedValue(new Error('receipt timeout')),
         fees: { maxFeePerGas: 1_000n, maxPriorityFeePerGas: 100n },
         send: vi.fn().mockResolvedValue(HASH),

@@ -2,7 +2,10 @@
 import { db } from '../db/client';
 import { logger } from '../lib/logger';
 import { dispatchRelayedIntent } from './relayed-intent-registry';
-import { settleAbandonedIntents } from './relayed-intent-settlement';
+import {
+  settleAbandonedIntents,
+  settleFailedTransactionIntents,
+} from './relayed-intent-settlement';
 import { settleStrandedIntents } from './relayed-intent-stranded';
 import { settlePendingOrphanedRefunds } from './orphaned-payments';
 import { expireStaleReservations } from './reservation-sweep';
@@ -75,6 +78,12 @@ export function createRelayedIntentWorker(options?: {
       // it. It never throws.
       await dispatchRelayedIntent({ db: database, intent });
     }
+
+    // Intents whose own transaction is terminally failed on chain, whoever wrote that verdict
+    // (ADR-0073). First, because it is the only pass here working from an answer the chain has
+    // already given: the others wait out a cutoff for evidence that may still arrive, and this
+    // one has nothing left to wait for. Settling it early also keeps it out of their way.
+    await settleFailedTransactionIntents(MAX_INTENTS_PER_PASS, { database });
 
     // The far end of `recorded`: an intent that is out of rebroadcast attempts, or whose
     // operation has no way to be sent at all. Retrying is over, so a payment it carries is

@@ -283,6 +283,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0070 — A reason that asserts a fact carries it, rather than leaving a reader to guess](0070-a-reason-that-asserts-a-fact-carries-it.md)
 - [0071 — An intent asks the chain whether its own receipt was consumed](0071-an-intent-asks-the-chain-whether-its-own-receipt-was-consumed.md)
 - [0072 — A foreign-spent nonce is evidence for the intent under it, not just for the outbox row](0072-a-foreign-spent-nonce-is-evidence-for-the-intent-under-it.md)
+- [0073 — A terminal outbox row settles the intent beneath it, whoever wrote it](0073-a-terminal-outbox-row-settles-the-intent-beneath-it.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

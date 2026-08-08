@@ -36,6 +36,20 @@ export type ServerTransactionRequest<Receipt> = {
   simulate: () => Promise<unknown>;
   send: (nonce: number) => Promise<Hex>;
   confirm: (hash: Hex) => Promise<Receipt>;
+  /**
+   * Whether the receipt `confirm` returned says the transaction succeeded.
+   *
+   * Required, not optional, and that is the whole point. The dispatcher cannot read a generic
+   * receipt itself, so before this existed it wrote `confirmed` for every receipt it saw --
+   * including a reverted one -- and left the caller to notice. Every caller did notice, and
+   * every caller then threw, which is why this looked harmless: the outbox row said the
+   * transaction succeeded while the request failed, and the intent underneath it was never
+   * settled or refunded (ADR-0073).
+   *
+   * Making it a required field is what stops the next write from reintroducing that: a new
+   * dispatch site cannot compile without answering the question.
+   */
+  succeeded: (receipt: Receipt) => boolean;
 };
 
 export type ServerTransactionResult<Receipt> = {
@@ -193,6 +207,22 @@ export function createServerTransactionDispatcher(options: ServerTransactionDisp
       // caller it is pending -- never recycle a nonce that may already be in the mempool.
       await store.setStatus(id, 'broadcast', { error });
       throw new ServerTransactionPendingError(hash, nonce);
+    }
+
+    // A reverted receipt is not a confirmation. `confirmed` means the chain answered *and the
+    // answer was yes* everywhere else that writes it -- the reconciler has always written
+    // `failed` for `status === 'reverted'` -- and every reader depends on that reading:
+    // `listConfirmedUnsettledIntents` completes the intent under a confirmed row, and
+    // `settlePendingOrphanedRefunds` reads a confirmed refund transfer as money that moved.
+    // This writer was the one that disagreed, and it disagreed on the branch that costs money
+    // (ADR-0073).
+    //
+    // Terminal, with the hash, exactly as the reconciler settles the same verdict. The intent
+    // under it is settled from that row by `settleFailedTransactionIntents`, which is what
+    // makes the refund happen no matter which of the two writers reached the verdict first.
+    if (!request.succeeded(receipt)) {
+      await store.setStatus(id, 'failed', { hash });
+      return { hash, receipt };
     }
 
     await store.setStatus(id, 'confirmed', { hash });

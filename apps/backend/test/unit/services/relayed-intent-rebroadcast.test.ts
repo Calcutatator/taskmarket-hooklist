@@ -12,6 +12,8 @@ vi.mock('../../../src/services/relayed-intent-registry', () => ({
 
 vi.mock('../../../src/services/relayed-intent-settlement', () => ({
   settleAbandonedIntents: vi.fn().mockResolvedValue(undefined),
+  // Runs on the same pass (ADR-0073); stubbed for the same reason as the sweep above.
+  settleFailedTransactionIntents: vi.fn().mockResolvedValue(undefined),
 }));
 
 // The stranded sweep runs on the same pass (ADR-0071) and needs a real database to ask its

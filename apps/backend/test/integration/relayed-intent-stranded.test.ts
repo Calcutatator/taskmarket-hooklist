@@ -146,6 +146,7 @@ async function strandIntent(options: {
 
   await expect(
     dispatch({
+      succeeded: () => true,
       confirm: vi.fn(),
       onNonceAllocated: (transactionId: string) =>
         link.onAllocated(

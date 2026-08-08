@@ -1,7 +1,7 @@
 // Implements: ADR-0045, ADR-0050, ADR-0052
 // Implements: ADR-0049
 import { createHash, randomUUID } from 'crypto';
-import { and, asc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import type { db as DbType } from '../db/client';
 import { type ApiErrorEnvelope, IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
@@ -1412,6 +1412,54 @@ export async function listConfirmedUnsettledIntents(input: {
  * carries a hash has an answer readable the ordinary way. Only the row that has given up
  * without ever naming a transaction is this state.
  */
+/**
+ * Non-terminal intents whose own transaction is terminally failed on chain.
+ *
+ * The general form of a defect that has now been closed three times one door at a time: an
+ * outbox row reaches a terminal state while the intent underneath it is left unsettled, so the
+ * payer is charged for a write that provably did not happen and nothing ever refunds them. The
+ * first two doors were closed inside the reconciler (`settleNonceSpentElsewhere` settling its
+ * intent, and pairing every terminal branch with `settleIntent`); the third was a reverted
+ * receipt seen inside a dispatch, where the reconciler was never involved at all (ADR-0073).
+ *
+ * So the rule is stated as a query rather than defended at each branch. Whoever wrote the
+ * `failed` row and for whatever reason, the intent under it is settled -- immediately if that
+ * writer settled it inline, on the next pass if it did not, crashed, or was deployed over.
+ *
+ * The hash requirement is the evidence, and it is not decoration. A `failed` outbox row that
+ * carries a hash names a transaction the chain has answered for, or one it has established can
+ * never mine. A `failed` row with no hash names nothing: its nonce may have been spent by this
+ * intent's own transaction, so it is not refundable on this evidence and is deliberately left to
+ * `listStrandedIntents`, which asks the chain about the intent's own one-shot receipt instead
+ * (ADR-0069, ADR-0071). Never refund on the absence of evidence.
+ */
+export async function listFailedTransactionIntents(input: {
+  db: Db;
+  limit: number;
+}): Promise<RelayedIntent[]> {
+  const rows = await input.db
+    .select({ intent: relayedIntents })
+    .from(relayedIntents)
+    // Joined on the outbox id, not the hash: the intent's own `txHash` is exactly what this
+    // population may be missing (a dispatch that threw before persisting it), and the link is
+    // written at nonce allocation, before anything is sent.
+    .innerJoin(
+      serverWalletTransactions,
+      eq(serverWalletTransactions.id, relayedIntents.serverWalletTransactionId)
+    )
+    .where(
+      and(
+        inArray(relayedIntents.status, ['recorded', 'broadcast']),
+        eq(serverWalletTransactions.status, 'failed'),
+        isNotNull(serverWalletTransactions.txHash)
+      )
+    )
+    .orderBy(asc(relayedIntents.createdAt))
+    .limit(input.limit);
+
+  return rows.map((row) => row.intent);
+}
+
 export async function listStrandedIntents(input: {
   cutoff: Date;
   db: Db;

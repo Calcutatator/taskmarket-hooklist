@@ -16,6 +16,8 @@ vi.mock('../../../src/services/relayed-intent-registry', () => ({
 }));
 vi.mock('../../../src/services/relayed-intent-settlement', () => ({
   settleAbandonedIntents: vi.fn().mockResolvedValue(undefined),
+  // Runs on the same pass (ADR-0073); stubbed for the same reason as the sweep above.
+  settleFailedTransactionIntents: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../../../src/services/relayed-intent-stranded', () => ({
   settleStrandedIntents: vi.fn().mockResolvedValue(undefined),
