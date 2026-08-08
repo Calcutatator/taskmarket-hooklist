@@ -349,6 +349,19 @@ export const TaskMarketABI = [
   },
   {
     "type": "function",
+    "name": "minAppealWindowSecs",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "owner",
     "inputs": [],
     "outputs": [
@@ -460,6 +473,19 @@ export const TaskMarketABI = [
   },
   {
     "type": "function",
+    "name": "setMinAppealWindowSecs",
+    "inputs": [
+      {
+        "name": "newMinimum",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setReputationRegistry",
     "inputs": [
       {
@@ -558,6 +584,19 @@ export const TaskMarketABI = [
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MinAppealWindowUpdated",
+    "inputs": [
+      {
+        "name": "minAppealWindowSecs",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
       }
     ],
     "anonymous": false
@@ -672,6 +711,11 @@ export const TaskMarketABI = [
   {
     "type": "error",
     "name": "InvalidInitialization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidMinAppealWindow",
     "inputs": []
   },
   {
@@ -978,6 +1022,150 @@ export const TaskMarketABI = [
   },
   {
     "type": "function",
+    "name": "createTask",
+    "inputs": [
+      {
+        "name": "config",
+        "type": "tuple",
+        "internalType": "struct ITMPCore.TaskConfig",
+        "components": [
+          {
+            "name": "reward",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "duration",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "mode",
+            "type": "bytes4",
+            "internalType": "bytes4"
+          },
+          {
+            "name": "pitchDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "bidDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "auctionSubtype",
+            "type": "bytes4",
+            "internalType": "bytes4"
+          }
+        ]
+      },
+      {
+        "name": "stakeConfig",
+        "type": "tuple",
+        "internalType": "struct ITMPCore.StakeConfig",
+        "components": [
+          {
+            "name": "required",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "bps",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ]
+      },
+      {
+        "name": "hookConfig",
+        "type": "tuple",
+        "internalType": "struct ITMPCore.HookConfig",
+        "components": [
+          {
+            "name": "contracts",
+            "type": "address[]",
+            "internalType": "address[]"
+          },
+          {
+            "name": "data",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      },
+      {
+        "name": "content",
+        "type": "tuple",
+        "internalType": "struct ITMPCore.TaskContent",
+        "components": [
+          {
+            "name": "contentHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "contentURI",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "tags",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      },
+      {
+        "name": "evaluatorConfig",
+        "type": "tuple",
+        "internalType": "struct ITMPCore.TaskEvaluatorConfig",
+        "components": [
+          {
+            "name": "evaluator",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "evaluatorStake",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "evaluatorFeeBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "evaluationWindow",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "appealWindow",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "disputeResolver",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "taskId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "forfeitAndReopen",
     "inputs": [
       {
@@ -1139,6 +1327,31 @@ export const TaskMarketABI = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "EvaluatorAssigned",
+    "inputs": [
+      {
+        "name": "taskId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "evaluator",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "stakeAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -1635,6 +1848,11 @@ export const TaskMarketABI = [
   },
   {
     "type": "error",
+    "name": "AppealWindowTooShort",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "BidDeadlineMustBeGreaterThanZero",
     "inputs": []
   },
@@ -1655,6 +1873,11 @@ export const TaskMarketABI = [
   },
   {
     "type": "error",
+    "name": "DisputeResolverCannotBeRequester",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "DurationMustBeGreaterThanZero",
     "inputs": []
   },
@@ -1671,6 +1894,16 @@ export const TaskMarketABI = [
   {
     "type": "error",
     "name": "EnforcedPause",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EvaluatorAlreadyAssigned",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EvaluatorCannotBeRequester",
     "inputs": []
   },
   {
@@ -1700,6 +1933,11 @@ export const TaskMarketABI = [
   },
   {
     "type": "error",
+    "name": "InvalidEvaluator",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidMode",
     "inputs": []
   },
@@ -1716,6 +1954,11 @@ export const TaskMarketABI = [
   {
     "type": "error",
     "name": "NoActiveSubmissions",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NoRewardChange",
     "inputs": []
   },
   {
@@ -1795,6 +2038,11 @@ export const TaskMarketABI = [
   },
   {
     "type": "error",
+    "name": "StakeTransferFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "SubmissionAlreadyRejected",
     "inputs": []
   },
@@ -1806,6 +2054,11 @@ export const TaskMarketABI = [
   {
     "type": "error",
     "name": "TaskAlreadyAccepted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TaskAlreadyRefunded",
     "inputs": []
   },
   {
@@ -2332,31 +2585,6 @@ export const TaskMarketABI = [
   },
   {
     "type": "event",
-    "name": "EvaluatorAssigned",
-    "inputs": [
-      {
-        "name": "taskId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "evaluator",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "stakeAmount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "TaskAppealed",
     "inputs": [
       {
@@ -2456,11 +2684,6 @@ export const TaskMarketABI = [
   },
   {
     "type": "error",
-    "name": "EvaluatorAlreadyAssigned",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "EvaluatorPaymentFailed",
     "inputs": []
   },
@@ -2472,11 +2695,6 @@ export const TaskMarketABI = [
   {
     "type": "error",
     "name": "InvalidAwardRecipient",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidEvaluator",
     "inputs": []
   },
   {
@@ -2512,11 +2730,6 @@ export const TaskMarketABI = [
   {
     "type": "error",
     "name": "NotWorker",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "StakeTransferFailed",
     "inputs": []
   },
   {

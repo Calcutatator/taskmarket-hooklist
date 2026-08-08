@@ -125,6 +125,7 @@ export const MAIN_INDEXED_EVENT_NAMES = [
   'FeeRecipientUpdated',
   'ForwarderUpdated',
   'ReputationRegistryUpdated',
+  'MinAppealWindowUpdated',
   'DefaultHooksSet',
   'DiamondCut',
   'HookRegistered',
@@ -179,10 +180,8 @@ export const HISTORICAL_MAIN_EVENTS: Record<string, AbiEvent> = {
  * it exactly -- at which point it should move to MAIN_INDEXED_EVENT_NAMES.
  */
 export const PENDING_MAIN_EVENTS: Record<string, AbiEvent> = {
-  // AdminFacet.setMinAppealWindow, arriving with rev017.
-  MinAppealWindowUpdated: parseAbiItem(
-    'event MinAppealWindowUpdated(uint32 newMinAppealWindow)'
-  ) as AbiEvent,
+  // Empty: rev017 has landed, so MinAppealWindowUpdated now comes from the generated ABI and
+  // has moved to MAIN_INDEXED_EVENT_NAMES, which is the transition this map exists to stage.
 };
 
 export const MAIN_CONTRACT_EVENTS: AbiEvent[] = [

@@ -125,8 +125,24 @@ async function strandIntent(options: {
 
   const nonce = Math.floor(Math.random() * 1_000_000);
   const dispatch = createServerTransactionDispatcher({
-    // The chain's pending count is already past this nonce, so nothing here can prove it free.
-    getPendingNonce: vi.fn().mockResolvedValue(nonce + 1),
+    // Two reads, deliberately different, because the dispatcher makes two for different
+    // reasons. The first seeds the allocator. The second asks whether the allocated nonce is
+    // still free now that the send has failed, and must answer no -- that is the case with no
+    // answer at all, where the transaction can neither be proven sent nor proven unsent, and
+    // it is the only branch that leaves the row linked and hashless.
+    //
+    // A single mocked value collapses the two into `pending === allocated`, which the
+    // dispatcher reads as positive evidence the nonce is free: it recycles the row, releases
+    // the link, and the stranded state this file is about never forms.
+    //
+    // The second value is unreachably large rather than `nonce + 1` because the allocator
+    // outlives any one call. Seeding only happens once, so later intents in this file draw
+    // from the sequence that call started, and a value chosen relative to this call's `nonce`
+    // would be below theirs -- making the branch taken depend on test order.
+    getPendingNonce: vi
+      .fn()
+      .mockResolvedValueOnce(nonce)
+      .mockResolvedValue(Number.MAX_SAFE_INTEGER),
     store: store(),
   });
   const link = intentOutboxLink(database as never, intentId);
@@ -196,9 +212,16 @@ describeWithDatabase('an intent whose send never returned a hash', () => {
     restoreServerEnvironment();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     readContract.mockReset();
     handlePostPaymentFailure.mockClear();
+    // The sweep under test is global -- it settles every stranded intent in the database, not
+    // just the one a given test created. Without this, an intent a test deliberately leaves
+    // unresolved is swept by the next test's pass, and assertions about how many refunds were
+    // issued, or about a particular intent's own status, start depending on the order the
+    // tests happen to run in.
+    await database.delete(relayedIntents);
+    await database.delete(serverWalletTransactions);
   });
 
   it('reaches the stranded state through the dispatcher and the reconciler', async () => {
