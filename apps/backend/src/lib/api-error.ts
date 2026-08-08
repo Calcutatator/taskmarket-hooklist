@@ -42,7 +42,20 @@ export class ApiError extends TRPCError {
 
   constructor(input: { code: TRPCError['code']; message: string; envelope: ApiErrorEnvelope }) {
     super({ code: input.code, message: input.message });
-    this.name = 'ApiError';
+    // `name` stays exactly `'TRPCError'`, inherited. It is not cosmetic on this class: the REST
+    // transport decides whether to keep a thrown error by reading the string rather than by
+    // `instanceof` -- `getErrorFromUnknown` in `trpc-to-openapi/adapters/node-http/errors.js`:
+    //
+    //     if (cause instanceof Error && cause.name === 'TRPCError') return cause;
+    //     ... new TRPCError({ message: 'Internal server error', code: 'INTERNAL_SERVER_ERROR' })
+    //     if (stack) error.stack = stack;
+    //
+    // Setting it to `'ApiError'` failed that test, so every throw from inside a procedure reached
+    // REST callers as a generic 500 with the code and the envelope both discarded -- and the
+    // replacement inherits the original stack, so the logs still read `ApiError: ...` under a
+    // message of `Internal server error` and the substitution is invisible. That turned
+    // `intent_in_flight` into the 5xx the mapping below exists to avoid: a retrying client
+    // resubmits a paid write that already landed. `api-error-rest-status.test.ts` pins it.
     this.envelope = input.envelope;
   }
 }
