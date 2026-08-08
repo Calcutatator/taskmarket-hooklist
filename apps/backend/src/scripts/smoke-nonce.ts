@@ -758,9 +758,14 @@ async function runChecks() {
     (task) => Boolean(task.evaluator),
     { label: `an evaluator to be recorded on task ${taskIds[0]}`, timeoutMs: 120_000 }
   );
-  if (evaluated.evaluator?.toLowerCase() !== requester.address.toLowerCase()) {
+  // The dedicated evaluator account, not the requester: rev017's assignEvaluator rejects
+  // `evaluator == requester`, so the task these steps create is created with `nonceEvaluator`
+  // and this assertion could never pass against the requester. It threw on every run, which is
+  // why step 8 -- the only end-to-end exercise of stranded-intent recovery (ADR-0071) -- was
+  // never reached.
+  if (evaluated.evaluator?.toLowerCase() !== nonceEvaluator.address.toLowerCase()) {
     throw new Error(
-      `Task ${taskIds[0]} evaluator is ${evaluated.evaluator}, expected ${requester.address}`
+      `Task ${taskIds[0]} evaluator is ${evaluated.evaluator}, expected ${nonceEvaluator.address}`
     );
   }
   ok('evaluator recorded on the task by the create transaction alone', evaluated.evaluator);
