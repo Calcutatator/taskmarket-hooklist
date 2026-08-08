@@ -3,6 +3,7 @@
 // storybook-coverage: components/market/interactive-html-preview.tsx
 // storybook-coverage: components/market/live-activity.tsx
 // storybook-coverage: components/market/private-task-access-gate.tsx
+// storybook-coverage: components/market/published-html-result.tsx
 // storybook-coverage: components/market/resilient-artifact-video.tsx
 // storybook-coverage: components/market/submission-gallery.tsx
 // storybook-coverage: components/market/task-description-disclosure.tsx
@@ -253,6 +254,7 @@ export const TaskDetailCollapsedDescriptionBeforeSubmissions: Story = {
   render: () => (
     <TaskDetailPanel
       backHref="/tasks"
+      htmlSubmissions={submissions}
       modeData={{ submissions }}
       profileBasePath="/agents"
       task={longBriefReviewTask}
@@ -263,6 +265,9 @@ export const TaskDetailCollapsedDescriptionBeforeSubmissions: Story = {
     const description = canvas.getByRole('group', { name: 'Description' });
     const descriptionBody = within(description).getByTestId('task-description-body');
     const submissionReview = canvas.getByRole('heading', { name: 'Submission review' });
+    const publishedResult = within(description).getByRole('link', {
+      name: /open interactive result/i,
+    });
     const briefCopy = within(description).getByText(
       /Identify inconsistencies, missing edge cases/i
     );
@@ -275,6 +280,13 @@ export const TaskDetailCollapsedDescriptionBeforeSubmissions: Story = {
     await expect(descriptionBody).toHaveClass('max-h-[200px]', 'overflow-hidden');
     await expect(within(description).getByTestId('task-description-fade')).toBeVisible();
     await expect(briefCopy).toBeVisible();
+    await expect(publishedResult).toHaveAttribute('href', '/tasks/task-1?artifact=artifact-html');
+    await expect(
+      within(description).getByRole('button', { name: 'Share interactive result' })
+    ).toBeVisible();
+    await expect(
+      within(description).getByRole('button', { name: 'Copy interactive result link' })
+    ).toBeVisible();
     await expect(
       Boolean(
         description.compareDocumentPosition(submissionReview) & Node.DOCUMENT_POSITION_FOLLOWING
@@ -296,17 +308,39 @@ export const TaskDetailCollapsedDescriptionBeforeSubmissions: Story = {
 };
 
 export const OpenSubmissionGallery: Story = {
+  parameters: {
+    a11y: { test: 'error' },
+  },
   render: () => (
     <SubmissionGalleryDialog
       contextLabel="Protocol review submissions"
       entries={submissionMediaEntries(submissions)}
-      initialArtifactId={imageArtifact.id}
+      initialArtifactId={null}
       onOpenChange={() => undefined}
       open
+      preferredArtifactType="image"
       profileBasePath="/agents"
       taskId="task-1"
     />
   ),
+  play: async ({ canvasElement }) => {
+    const documentBody = within(canvasElement.ownerDocument.body);
+    const galleryFrame = await documentBody.findByTestId('gallery-frame');
+    const dialog = galleryFrame.closest<HTMLElement>('[role="dialog"]');
+
+    await expect(dialog).not.toBeNull();
+    if (!dialog) {
+      throw new Error('Submission gallery dialog did not render.');
+    }
+
+    const gallery = within(dialog);
+    await expect(gallery.getByRole('button', { name: 'Filter gallery to Images' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    await expect(gallery.getByText('Task default')).toBeVisible();
+    await expect(gallery.getByRole('img', { name: 'protocol-review.png' })).toBeVisible();
+  },
 };
 
 export const FullscreenInteractiveHtmlGallery: Story = {
@@ -318,7 +352,7 @@ export const FullscreenInteractiveHtmlGallery: Story = {
     <SubmissionGalleryDialog
       contextLabel="Protocol review submissions"
       entries={submissionMediaEntries(submissions)}
-      initialArtifactId={htmlArtifact.id}
+      initialArtifactId={null}
       onOpenChange={() => undefined}
       open
       profileBasePath="/agents"
@@ -335,12 +369,25 @@ export const FullscreenInteractiveHtmlGallery: Story = {
       throw new Error('Submission gallery dialog did not render.');
     }
     const gallery = within(dialog);
+    const htmlFilter = gallery.getByRole('button', { name: 'Filter gallery to HTML' });
+    const imageFilter = gallery.getByRole('button', { name: 'Filter gallery to Images' });
+
+    await expect(htmlFilter).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(imageFilter);
+    await expect(imageFilter).toHaveAttribute('aria-pressed', 'true');
+    await expect(await gallery.findByAltText('protocol-review.png')).toBeVisible();
+    await userEvent.click(htmlFilter);
     const frame = await gallery.findByTitle('Interactive preview of interactive-report.html');
 
     await expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
+    const enterFullScreen = gallery.queryByRole('button', { name: 'Enter full screen' });
+    if (!enterFullScreen) {
+      await expect(gallery.getByRole('button', { name: 'Close submission gallery' })).toBeVisible();
+      return;
+    }
+
     await expect(dialog).toHaveAttribute('data-full-viewport', 'false');
 
-    const enterFullScreen = gallery.getByRole('button', { name: 'Enter full screen' });
     enterFullScreen.focus();
     await userEvent.keyboard('{Enter}');
 

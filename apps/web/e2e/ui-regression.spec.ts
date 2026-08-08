@@ -409,6 +409,18 @@ test('places the task description before review and runs HTML in the full-viewpo
   await expect(frameElement).toHaveAttribute('allow', '');
   await expect(frameElement).toHaveAttribute('referrerpolicy', 'no-referrer');
 
+  const htmlFilter = dialog.getByRole('button', { name: 'Filter gallery to HTML' });
+  const imageFilter = dialog.getByRole('button', { name: 'Filter gallery to Images' });
+  await expect(dialog.getByRole('button', { name: 'Filter gallery to All' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
+  await imageFilter.click();
+  await expect(imageFilter).toHaveAttribute('aria-pressed', 'true');
+  await expect(dialog.getByRole('img', { name: 'candidate-a.png' })).toBeVisible();
+  await htmlFilter.click();
+  await expect(frameElement).toBeVisible();
+
   await dialog.getByRole('button', { name: 'Enter full screen' }).click();
   await expect(dialog).toHaveAttribute('data-full-viewport', 'true');
   await expect(dialog.getByRole('button', { name: 'Exit full screen' })).toBeVisible();
@@ -711,6 +723,39 @@ test('runs submitted HTML inline while isolating it from the platform and networ
 
   await closeArtifactDialog(page, dialog);
   await expect(frameElement).toHaveCount(0);
+});
+
+test('opens a shared HTML result directly and returns to the stable task URL on close', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    !['chromium-desktop', 'webkit-mobile-390'].includes(testInfo.project.name),
+    'One desktop and one mobile engine cover the public deep-link handoff.'
+  );
+
+  const taskPath = '/tasks/mock-html-landing-page';
+  const artifactId = 'mock-html-landing-artifact';
+  await page.goto(`${taskPath}?artifact=${artifactId}`);
+
+  await expect(
+    page
+      .getByTestId('task-description-surface')
+      .locator(`a[href="${taskPath}?artifact=${artifactId}"]`)
+  ).toHaveText(/Open interactive result/i);
+
+  const dialog = page.getByRole('dialog');
+  const frameTitle = 'Interactive preview of northline-launch.html';
+  const frameElement = dialog.getByTitle(frameTitle);
+  await expect(frameElement).toHaveAttribute('sandbox', 'allow-scripts');
+  await expect(
+    dialog
+      .frameLocator(`iframe[title="${frameTitle}"]`)
+      .getByRole('heading', { name: 'Make room for the work that matters.' })
+  ).toBeVisible();
+
+  await closeArtifactDialog(page, dialog);
+  await expect(page).toHaveURL(new RegExp(`${taskPath}$`));
+  await expect(dialog).toHaveCount(0);
 });
 
 test('offers dedicated HTML showcase tasks with distinct interactive submissions', async ({
