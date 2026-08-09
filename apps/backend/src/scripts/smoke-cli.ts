@@ -426,7 +426,11 @@ async function main() {
     // the CLI's header, the backend's classification, the envelope, and the rendering -- and it
     // is the one an agent retrying a paid command hits first.
     log('15/15', 'idempotency key reuse is refused, with a machine-readable envelope...');
-    const reusedKey = `smoke-cli-${randomUUID()}`;
+    // A bare UUID, not a prefixed one. The backend rejects a non-UUID key ahead of the 402
+    // challenge, so `smoke-cli-<uuid>` failed validation on the FIRST call and never reached the
+    // reuse this step exists to test -- a scenario that fails before the thing it tests, which is
+    // the failure mode the step was written to catch elsewhere.
+    const reusedKey = randomUUID();
     const createArgs = [
       'task',
       'create',

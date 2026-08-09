@@ -321,7 +321,7 @@ async function smokeDiamondSelectorMissing(requester: Account, rpcUrl: string, c
   const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
   const walletClient = createWalletClient({ account: owner, chain, transport: http(rpcUrl) });
 
-  log('1/5', 'Creating a task to cancel...');
+  log('1/6', 'Creating a task to cancel...');
   const { taskId } = (await x402Post(
     '/api/tasks',
     {
@@ -335,7 +335,7 @@ async function smokeDiamondSelectorMissing(requester: Account, rpcUrl: string, c
   )) as { taskId: string };
   ok('taskId', taskId);
 
-  log('2/5', 'Reading current facetAddress for cancelTask selector...');
+  log('2/6', 'Reading current facetAddress for cancelTask selector...');
   const currentFacet = await publicClient.readContract({
     address: contractAddress,
     abi: DIAMOND_ABI,
@@ -348,59 +348,14 @@ async function smokeDiamondSelectorMissing(requester: Account, rpcUrl: string, c
   ok('current facet address', currentFacet);
 
   let restoreFailure: string | undefined;
-  try {
-    log('3/5', 'Removing cancelTask selector (simulating a just-upgraded diamond)...');
-    const removeTx = await walletClient.sendTransaction({
-      to: contractAddress,
-      data: encodeFunctionData({
-        abi: DIAMOND_ABI,
-        functionName: 'diamondCut',
-        args: [
-          [
-            {
-              facetAddress: ZERO_ADDRESS,
-              action: ACTION_REMOVE,
-              functionSelectors: [CANCEL_TASK_SELECTOR],
-            },
-          ],
-          ZERO_ADDRESS,
-          '0x',
-        ],
-      }),
-      chain,
-      account: owner,
-    });
-    await publicClient.waitForTransactionReceipt({ hash: removeTx });
-    ok('REMOVE diamondCut mined', removeTx);
+  let restored = false;
 
-    log(
-      '4/5',
-      'Cancelling through the normal backend flow (payment settles, on-chain call has nowhere to go)...'
-    );
-    let cancelError: Error | undefined;
-    const cancelIdempotencyKey = newIdempotencyKey();
-    try {
-      await x402Post(`/api/tasks/${taskId}/cancel`, { taskId }, requester, {
-        idempotencyKey: cancelIdempotencyKey,
-      });
-    } catch (err) {
-      cancelError = err as Error;
-    }
-    if (!cancelError) {
-      throw new Error(
-        'Expected cancel to fail while cancelTask selector is removed, but it succeeded'
-      );
-    }
-    console.log('  cancel error:', cancelError.message);
-    await assertPaymentRefunded(requester.address, cancelIdempotencyKey);
-
-    const task = (await get(`/api/tasks/${taskId}`)) as { status: string };
-    if (task.status === 'cancelled') {
-      throw new Error('Task must not be marked cancelled -- the on-chain cancel never happened');
-    }
-    ok('task status unchanged (not falsely marked cancelled)', task.status);
-  } finally {
-    log('5/5', 'Restoring cancelTask selector...');
+  /**
+   * Put the selector back. Called explicitly as step 5 -- because the scenario's real subject is
+   * what the intent does *after* the diamond is whole again -- and again from `finally` only if
+   * that never ran, so a throw mid-scenario still leaves the chain as it was found.
+   */
+  const restoreSelector = async () => {
     const addTx = await walletClient.sendTransaction({
       to: contractAddress,
       data: encodeFunctionData({
@@ -431,8 +386,125 @@ async function smokeDiamondSelectorMissing(requester: Account, rpcUrl: string, c
     if (restoredFacet.toLowerCase() !== currentFacet.toLowerCase()) {
       restoreFailure = `cancelTask selector NOT restored -- manual intervention required. Expected ${currentFacet}, got ${restoredFacet}`;
       console.error(restoreFailure);
-    } else {
-      ok('cancelTask selector restored', restoredFacet);
+      return;
+    }
+    restored = true;
+    ok('cancelTask selector restored', restoredFacet);
+  };
+
+  try {
+    log('3/6', 'Removing cancelTask selector (simulating a just-upgraded diamond)...');
+    const removeTx = await walletClient.sendTransaction({
+      to: contractAddress,
+      data: encodeFunctionData({
+        abi: DIAMOND_ABI,
+        functionName: 'diamondCut',
+        args: [
+          [
+            {
+              facetAddress: ZERO_ADDRESS,
+              action: ACTION_REMOVE,
+              functionSelectors: [CANCEL_TASK_SELECTOR],
+            },
+          ],
+          ZERO_ADDRESS,
+          '0x',
+        ],
+      }),
+      chain,
+      account: owner,
+    });
+    await publicClient.waitForTransactionReceipt({ hash: removeTx });
+    ok('REMOVE diamondCut mined', removeTx);
+
+    log(
+      '4/6',
+      'Cancelling through the normal backend flow (payment settles, on-chain call has nowhere to go)...'
+    );
+    let cancelError: Error | undefined;
+    const cancelIdempotencyKey = newIdempotencyKey();
+    try {
+      await x402Post(`/api/tasks/${taskId}/cancel`, { taskId }, requester, {
+        idempotencyKey: cancelIdempotencyKey,
+      });
+    } catch (err) {
+      cancelError = err as Error;
+    }
+    if (!cancelError) {
+      throw new Error(
+        'Expected cancel to fail while cancelTask selector is removed, but it succeeded'
+      );
+    }
+    console.log('  cancel error:', cancelError.message);
+
+    // This scenario used to assert a refund here, and that assertion is now wrong rather than
+    // merely unreached. A selector that is missing is not evidence that the write can never
+    // land -- the diamond can be made whole again, and in this very scenario it is, one step
+    // below. ADR-0045 requires positive evidence of death before a refund, so the layer keeps
+    // the intent alive and retries it; ADR-0074 reports that to the caller as in flight. The
+    // old assertion waited for a refund that correctly never came, and would have kept waiting.
+    //
+    // So the subject of the scenario has moved. What matters is no longer "is it refunded" but
+    // the two things that make refusing to refund safe: nothing is paid back while the outcome
+    // is still open, and nothing is reported as done that has not happened.
+    const beforeRestore = (await get(`/api/tasks/${taskId}`)) as { status: string };
+    if (beforeRestore.status === 'cancelled') {
+      throw new Error('Task must not be marked cancelled -- the on-chain cancel never happened');
+    }
+    ok('task status unchanged while the selector is missing', beforeRestore.status);
+
+    log('5/6', 'Restoring cancelTask selector...');
+    await restoreSelector();
+    if (restoreFailure) throw new Error(restoreFailure);
+
+    // The payoff, and the reason a refund here would have been a mistake: with the diamond whole
+    // the retry lands, the cancel really happens, and the caller's payment bought the work it
+    // was for. A layer that had refunded on the first failure would have paid the money back for
+    // a write that then went through.
+    log('6/6', 'The in-flight intent completes once the diamond is whole again...');
+    const settled = await pollUntil(
+      async () => (await get(`/api/tasks/${taskId}`)) as { status: string },
+      (t) => t.status === 'cancelled',
+      {
+        intervalMs: 1000,
+        timeoutMs: INTENT_TIMEOUT_MS,
+        label: `task ${taskId} to reach cancelled once the retry can land`,
+      }
+    );
+    ok('task cancelled by the retried intent', settled!.status);
+
+    // `orphaned_payments` is keyed by the payment's own transaction hash, which the intent
+    // carries -- so the intent is read first and the refund ledger second, the same route
+    // `assertPaymentRefunded` takes in the other direction.
+    const cancelIntent = (
+      await db
+        .select({ id: relayedIntents.id, paymentTxHash: relayedIntents.paymentTxHash })
+        .from(relayedIntents)
+        .where(eq(relayedIntents.idempotencyKey, cancelIdempotencyKey))
+        .limit(1)
+    )[0];
+    if (!cancelIntent?.paymentTxHash) {
+      throw new Error(
+        `No settled payment reference on the intent for idempotency key ${cancelIdempotencyKey}`
+      );
+    }
+    const refundedAnyway = (
+      await db
+        .select({ id: orphanedPayments.id, refundStatus: orphanedPayments.refundStatus })
+        .from(orphanedPayments)
+        .where(eq(orphanedPayments.paymentTxHash, cancelIntent.paymentTxHash))
+        .limit(1)
+    )[0];
+    if (refundedAnyway && refundedAnyway.refundStatus === 'refunded') {
+      throw new Error(
+        `The cancel completed on chain, but its payment was refunded anyway (orphaned_payments ${refundedAnyway.id}) -- the caller got the work and the money back`
+      );
+    }
+    ok('no refund was issued for a write that landed', true);
+  } finally {
+    if (!restored) {
+      log('safety', 'Restoring cancelTask selector after an incomplete run...');
+      await restoreSelector();
     }
   }
   if (restoreFailure) {
