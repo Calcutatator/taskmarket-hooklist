@@ -529,8 +529,8 @@ SERVER_PRIVATE_KEY=$SERVER_KEY
 # known, and because the sandbox is the one environment where the bound actually bites.
 #
 # On a 1s-block Anvil carrying no traffic but ours, each send raises the base fee that prices the
-# next one, so the fee oracle doubles per send and a long burst runs away -- `make smoke
-# rate-limit` drained the relayer wallet of over 5,700 ETH on two separate rounds. That loop
+# next one, so the fee oracle doubles per send and a long burst runs away -- a long
+# rate-limit run drained the relayer wallet of over 5,700 ETH on two separate rounds. That loop
 # cannot close on Base, where our sends are a rounding error in the base fee, which is why this
 # is provisioned here rather than defaulted in the application.
 #
