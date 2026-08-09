@@ -348,3 +348,8 @@ adrs:
     title: A relay retry is spent only where a later attempt could answer differently
     status: Accepted
     date: "2026-08-08"
+  - number: "0076"
+    file: "0076-a-first-send-is-bounded-by-an-absolute-fee-ceiling-not-by-a-multiple-of-the-oracle.md"
+    title: "A first send is bounded by an absolute fee ceiling, not by a multiple of the oracle"
+    status: Accepted
+    date: "2026-08-08"

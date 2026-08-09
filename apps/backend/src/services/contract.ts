@@ -1,5 +1,6 @@
 // Implements: ADR-0055
 // Implements: ADR-0075
+// Implements: ADR-0076
 import {
   parseAbi,
   parseAbiItem,
@@ -16,6 +17,7 @@ import { ServerTransactionPendingError } from '../lib/server-transaction-dispatc
 import { UndeterminedRelayError, classifyRelayFailure } from '../lib/relay-failure';
 import { getPublicClient, runWithRpcApplicationAttempt } from '../lib/rpc-gateway';
 import { getServerConfig } from '../config/env';
+import { logger } from '../lib/logger';
 import { SETTLEMENT_READ_ABI, TASK_COMPLETED_EVENT } from './settlement-contract';
 import { currentRelayEnvelope, currentRelayOutboxLink, newRelayEnvelope } from './relay-envelope';
 import { computeRelayReceiptHash } from './relay-receipt';
@@ -437,12 +439,50 @@ async function retryWithBackoff<T>(
   throw lastError;
 }
 
+/**
+ * Price a first send, bounded by the same absolute ceiling replacements answer to (ADR-0076).
+ *
+ * `GAS_MULTIPLIER` doubles whatever the oracle returns, and until ADR-0076 nothing bounded the
+ * result -- ADR-0051 had given the replacement path a full escalation policy with a ceiling while
+ * its sibling, the send every paid write makes, had none. That asymmetry was never decided; it is
+ * what happens when one path gets a policy and the other does not.
+ *
+ * The ceiling is absolute rather than a multiple of the oracle on purpose. A sandbox run drained
+ * its relayer wallet because each send raised the base fee that priced the next one, so the
+ * oracle itself was what climbed -- and a bound derived from the signal that ran away runs away
+ * with it. Only a fixed number holds in that case.
+ *
+ * Clamping never refuses the send. A transaction priced at the ceiling is broadcast; if the market
+ * has moved past it, it waits in the mempool and the replacement path escalates it under ADR-0051.
+ * Slow is recoverable by machinery that already exists; overspent is not.
+ */
 async function getGasParams(publicClient: ReturnType<typeof getPublicClient>) {
   const fees = await retryWithBackoff(() => publicClient.estimateFeesPerGas(), 3, 500);
-  return {
-    maxFeePerGas: fees.maxFeePerGas * GAS_MULTIPLIER,
-    maxPriorityFeePerGas: (fees.maxPriorityFeePerGas ?? 1_000_000n) * GAS_MULTIPLIER,
-  };
+  const maxFeePerGas = fees.maxFeePerGas * GAS_MULTIPLIER;
+  const maxPriorityFeePerGas = (fees.maxPriorityFeePerGas ?? 1_000_000n) * GAS_MULTIPLIER;
+
+  const ceiling = getServerConfig().REPLACEMENT_GAS_MAX_FEE_WEI;
+  if (ceiling === undefined) return { maxFeePerGas, maxPriorityFeePerGas };
+
+  const cappedMaxFee = maxFeePerGas > ceiling ? ceiling : maxFeePerGas;
+  // A priority fee above the max fee is not a meaningful bid, so it follows the same ceiling
+  // rather than being left to exceed the total this send is willing to pay.
+  const cappedPriority = maxPriorityFeePerGas > cappedMaxFee ? cappedMaxFee : maxPriorityFeePerGas;
+
+  if (cappedMaxFee !== maxFeePerGas || cappedPriority !== maxPriorityFeePerGas) {
+    // Reaching the ceiling says something about the configuration, not about this write -- the
+    // same thing `cappedBelowOpeningBid` reports on the replacement side. It is only visible here
+    // because a clamped send otherwise looks exactly like an ordinary slow one.
+    logger.warn('Gas fees clamped to REPLACEMENT_GAS_MAX_FEE_WEI', {
+      ceilingWei: ceiling.toString(),
+      requestedMaxFeePerGas: maxFeePerGas.toString(),
+      appliedMaxFeePerGas: cappedMaxFee.toString(),
+      requestedMaxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
+      appliedMaxPriorityFeePerGas: cappedPriority.toString(),
+    });
+  }
+
+  return { maxFeePerGas: cappedMaxFee, maxPriorityFeePerGas: cappedPriority };
 }
 
 function assertSuccess(receipt: { status: string }, label: string) {

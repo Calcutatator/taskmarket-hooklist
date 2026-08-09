@@ -143,8 +143,17 @@ const envSchema = z
     REPLACEMENT_GAS_ESCALATION_PCT: z.coerce.number().int().min(125).default(150),
     // Ceiling, as a multiple of the original transaction's fee.
     REPLACEMENT_GAS_MAX_MULTIPLE: z.coerce.number().int().min(2).default(10),
-    // Optional absolute per-gas ceiling applied after the multiple. Unset by default because
-    // a wei value means nothing without knowing the chain.
+    // Optional absolute per-gas ceiling. Unset by default because a wei value means nothing
+    // without knowing the chain.
+    //
+    // Governs EVERY send, not only replacements (ADR-0076), despite the name -- on the
+    // replacement path it applies after `REPLACEMENT_GAS_MAX_MULTIPLE`, and on a first send after
+    // `GAS_MULTIPLIER`. The name is kept because renaming a configured environment variable
+    // breaks every deployment that sets it, which is a real cost paid for an accurate name.
+    //
+    // It is absolute rather than a multiple of the fee oracle deliberately: the failure it
+    // bounds is the oracle itself climbing, and a ceiling derived from a runaway signal runs
+    // away with it.
     //
     // Parsed as a decimal string into bigint, not through z.coerce.number(). ADR-0051's own
     // table specified `int`, following the surrounding pattern, and that is wrong for this one
