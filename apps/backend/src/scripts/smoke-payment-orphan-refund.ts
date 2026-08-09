@@ -109,6 +109,20 @@ const REFUND_TIMEOUT_MS = 30_000;
 // The intent row is written by the request itself, so its payment reference appears
 // almost immediately -- this only absorbs commit latency.
 const INTENT_TIMEOUT_MS = 15_000;
+// How long to wait for an intent to COMPLETE, which is a different wait entirely and was
+// briefly given INTENT_TIMEOUT_MS by mistake -- 15s against a path measured at 36s.
+//
+// Completion here does not happen in the request. The relay's in-request loop gives a decoded
+// revert two attempts and gives up in about six seconds (ADR-0075), so the write is finished by
+// the background worker instead, on a DEFAULT_INTENT_WORKER_INTERVAL_MS = 10s cadence, after the
+// condition blocking it has cleared. That is the sum this has to clear: the in-request budget,
+// then a worker pass, then the chain.
+//
+// 90s against an observed 36s. Deliberately generous rather than snug: this is the one path here
+// whose duration is set by a worker interval and a retry budget, both of which are decisions that
+// may change again, and a timeout that tracks them closely turns any future retune into a smoke
+// failure that looks like a product bug.
+const COMPLETION_TIMEOUT_MS = 90_000;
 
 /**
  * Assert that the payment made under `idempotencyKey` was really refunded, by reading the
@@ -467,7 +481,7 @@ async function smokeDiamondSelectorMissing(requester: Account, rpcUrl: string, c
       (t) => t.status === 'cancelled',
       {
         intervalMs: 1000,
-        timeoutMs: INTENT_TIMEOUT_MS,
+        timeoutMs: COMPLETION_TIMEOUT_MS,
         label: `task ${taskId} to reach cancelled once the retry can land`,
       }
     );

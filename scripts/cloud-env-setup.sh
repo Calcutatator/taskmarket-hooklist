@@ -524,6 +524,20 @@ SUBMISSION_FREE_ALLOWANCE=1000
 USDC_DOMAIN_NAME="USD Coin"
 CORS_ORIGIN=http://localhost:5173
 SERVER_PRIVATE_KEY=$SERVER_KEY
+# Absolute per-gas ceiling on every send, first or replacement (ADR-0076). Unset in production
+# because a wei value means nothing without knowing the chain; set here because this chain IS
+# known, and because the sandbox is the one environment where the bound actually bites.
+#
+# On a 1s-block Anvil carrying no traffic but ours, each send raises the base fee that prices the
+# next one, so the fee oracle doubles per send and a long burst runs away -- `make smoke
+# rate-limit` drained the relayer wallet of over 5,700 ETH on two separate rounds. That loop
+# cannot close on Base, where our sends are a rounding error in the base fee, which is why this
+# is provisioned here rather than defaulted in the application.
+#
+# 100 gwei. A submission costs ~170k gas, so this bounds one send at ~0.017 ETH -- the top of the
+# range every other smoke target already spends, and roughly five orders of magnitude below what
+# an unbounded burst reached.
+REPLACEMENT_GAS_MAX_FEE_WEI=100000000000
 PLATFORM_MASTER_KEY=$PLATFORM_MASTER_KEY_GENERATED
 ADMIN_SECRET=$ADMIN_SECRET_GENERATED
 # Defaults to false (apps/backend/src/config/env.ts), which makes xmtp.router.ts
