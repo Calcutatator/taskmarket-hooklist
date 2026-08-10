@@ -10,6 +10,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Which parts of the tree this run actually touches. Computed with git rather than a
+  # third-party action so there is nothing extra to pin or trust.
+  #
+  # `quality-contracts` is the most expensive job in this workflow by a distance -- around 19
+  # minutes, nearly all of it compiling Solidity twice -- and it ran on every pull request,
+  # including ones that touch no Solidity at all. That is the bulk of the cost of gating a
+  # frontend change.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      contracts: ${{ steps.filter.outputs.contracts }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        run: |
+          # A pull request is compared against its merge base; a push to main against its parent.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+            git fetch -q origin "${{ github.base_ref }}"
+            RANGE="$(git merge-base "$BASE" HEAD)...HEAD"
+          else
+            RANGE="HEAD^...HEAD"
+          fi
+          echo "range: $RANGE"
+          if git diff --name-only "$RANGE" | grep -q "^packages/contracts/"; then
+            echo "contracts=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "contracts=false" >> "$GITHUB_OUTPUT"
+          fi
+          git diff --name-only "$RANGE" | grep "^packages/contracts/" | head -5 || true
+
   skill-conformance:
     runs-on: ubuntu-latest
     # The docs build installs Playwright OS and browser dependencies. A slow Ubuntu
@@ -142,6 +177,10 @@ jobs:
           DATABASE_URL: postgresql://taskmarket:taskmarket@localhost:5432/taskmarket_test
 
   quality-contracts:
+    needs: changes
+    # Skipped when no Solidity changed. The job verifies the contracts and nothing else, so on a
+    # run that touches none of them it re-proves what the previous run already proved.
+    if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
     # Raised from 30, which this job outgrew. Nearly all of it is compilation: the ABI freshness
     # check is a full `forge build` at ~12-13 minutes, and coverage recompiles separately under
@@ -291,7 +330,13 @@ jobs:
       - name: Verify quality shards
         run: |
           test "${{ needs.quality-js.result }}" = "success"
-          test "${{ needs.quality-contracts.result }}" = "success"
+          # Skipped is a pass here and nowhere else: this job is conditional on Solidity having
+          # changed, so "did not run" means "there was nothing to check". Every other shard is
+          # unconditional, and a skip there would mean something went wrong.
+          case "${{ needs.quality-contracts.result }}" in
+            success|skipped) ;;
+            *) echo "quality-contracts: ${{ needs.quality-contracts.result }}"; exit 1 ;;
+          esac
           test "${{ needs.skill-conformance.result }}" = "success"
           test "${{ needs.adr.result }}" = "success"
           test "${{ needs.storybook.result }}" = "success"
