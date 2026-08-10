@@ -211,14 +211,17 @@ jobs:
       # step scripts directly, so they have to compile.
       - name: Add swap for the coverage compile
         run: |
-          # The runner ships with an active /swapfile, so allocating over it fails "Text file
-          # busy". Swap off first, then place a larger file on /mnt, which is the roomier disk.
-          sudo swapoff -a || true
+          # Added ALONGSIDE the runner's existing /swapfile, never replacing it. An earlier
+          # version ran `swapoff -a` first and the runner did not survive the job -- steps after
+          # this one recorded no conclusion and the log was lost, which is what dropping the
+          # machine's only swap during the heaviest compile buys you. `swapon` takes multiple
+          # areas, so there is no reason to remove one.
           sudo rm -f /mnt/swapfile-coverage
           sudo fallocate -l 12G /mnt/swapfile-coverage
           sudo chmod 600 /mnt/swapfile-coverage
           sudo mkswap /mnt/swapfile-coverage
           sudo swapon /mnt/swapfile-coverage
+          swapon --show
           free -h
 
       - name: Coverage check
