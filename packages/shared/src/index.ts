@@ -22,6 +22,7 @@ export {
   READ_AUTH_ADDRESS_HEADER,
   READ_AUTH_SIGNATURE_HEADER,
   TASK_ACCESS_GRANT_HEADER,
+  IDEMPOTENCY_KEY_HEADER,
 } from './lib/authMessages';
 export { usdcToBaseUnits, formatUsdcBaseUnits, type FormatUsdcOptions } from './lib/usdc';
 export {

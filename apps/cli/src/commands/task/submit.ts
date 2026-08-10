@@ -117,11 +117,15 @@ export const submitCmd = new Command('submit')
     try {
       if (!opts.file || opts.file.length === 0) {
         printError('--file is required');
+        return;
       }
 
       const keystore = await loadKeystore();
       const signature = await signMessage(buildSubmitMessage(taskId), keystore);
 
+      // Each file uploads concurrently and each upload is its own write. Nothing has to be done
+      // to keep their keys apart: a failure carries the key of the upload that raised it, so the
+      // concurrency here is invisible to the reporting.
       const artifactInputs = await Promise.all(
         opts.file.map(async (filePath) => {
           const mimeType = mimeTypeForPath(filePath);
@@ -130,10 +134,12 @@ export const submitCmd = new Command('submit')
           const data = await fsPromises.readFile(filePath);
 
           if (data.length === 0) {
-            printError(`File is empty: ${basename(filePath)}`);
+            throw new Error(`File is empty: ${basename(filePath)}`);
           }
 
-          const { uploadUrl, artifactKey } = (await apiPost(
+          const {
+            data: { uploadUrl, artifactKey },
+          } = await apiPost<{ uploadUrl: string; artifactKey: string }>(
             `/api/tasks/${taskId}/submissions/request-upload-url`,
             {
               taskId,
@@ -144,7 +150,7 @@ export const submitCmd = new Command('submit')
               role: opts.role,
               sizeBytes: data.length,
             }
-          )) as { uploadUrl: string; artifactKey: string };
+          );
 
           const sha256Hash = createHash('sha256').update(data).digest('hex');
           const keccak256Hash = keccak256(new Uint8Array(data)) as string;
@@ -181,14 +187,19 @@ export const submitCmd = new Command('submit')
       // handles both cases transparently: it returns the JSON body directly when the first
       // round already succeeds (still within the free allowance), and only runs the
       // sign-and-pay handshake when actually challenged with a 402.
-      const result = (await x402Post(`/api/tasks/${taskId}/submissions/from-keys`, {
-        taskId,
-        workerAddress: keystore.walletAddress,
-        artifacts: artifactInputs,
-        signature: submitSignature,
-      })) as { submissionId: string };
+      // The submission itself is the write this command reports, so its key is the one the
+      // envelope carries -- not any of the per-file uploads that got it here.
+      const { data: result, idempotencyKey } = await x402Post<{ submissionId: string }>(
+        `/api/tasks/${taskId}/submissions/from-keys`,
+        {
+          taskId,
+          workerAddress: keystore.walletAddress,
+          artifacts: artifactInputs,
+          signature: submitSignature,
+        }
+      );
 
-      printResult({ submissionId: result.submissionId });
+      printResult({ submissionId: result.submissionId }, { idempotencyKey });
     } finally {
       submitCmd.setOptionValue('file', []);
     }

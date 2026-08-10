@@ -1,3 +1,5 @@
+import type { MainEventArgName } from './indexer-abi-events';
+
 export type SettlementCompletionLog = {
   args: {
     taskId: string;
@@ -9,6 +11,23 @@ export type SettlementCompletionLog = {
   logIndex: number;
   transactionHash: string;
 };
+
+/**
+ * Pins the four TaskCompleted parameters this projector destructures against the
+ * generated ABI (ADR-0065). If one is renamed or dropped on-chain, `Exclude` leaves
+ * its name behind, that name is not assignable, and this file stops compiling with
+ * the offending parameter quoted in the error -- rather than the projector reading
+ * `undefined` and throwing at runtime on a log it had already fetched. The names on
+ * the right of the comparison come from the `as const` ABI; nothing is transcribed.
+ */
+type MissingCompletionArgs = Exclude<
+  keyof SettlementCompletionLog['args'],
+  MainEventArgName<'TaskCompleted'>
+>;
+
+export const COMPLETION_ARGS_MATCH_ABI: [MissingCompletionArgs] extends [never]
+  ? true
+  : MissingCompletionArgs = true;
 
 export type EventLog = {
   args: Record<string, unknown>;

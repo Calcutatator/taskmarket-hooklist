@@ -6,8 +6,8 @@ export const finalizeVerdictCmd = new Command('finalize-verdict')
   .description('Finalize an evaluator verdict after the appeal window expires (permissionless)')
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
   .action(async (taskId: string) => {
-    const result = (await apiPost(`/api/tasks/${taskId}/finalize-verdict`, { taskId })) as {
+    const { data: result, idempotencyKey } = await apiPost<{
       txHash: string;
-    };
-    printResult({ txHash: result.txHash });
+    }>(`/api/tasks/${taskId}/finalize-verdict`, { taskId });
+    printResult({ txHash: result.txHash }, { idempotencyKey });
   });

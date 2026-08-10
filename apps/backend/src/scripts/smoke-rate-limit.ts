@@ -15,37 +15,171 @@
  * Verification"; smoke-bounty.ts only submits 3 times total, never reaching the free
  * allowance). This script is that end-to-end proof.
  *
- * Runs against a *small* HARD_SUBMISSION_CEILING override so the whole test completes in a
- * handful of requests instead of ~94 real paid X402 round-trips to reach the real
- * production ceiling of 100 (apps/backend/src/config/payments.ts). The override is read by
- * the BACKEND process itself (apps/backend/src/config/env.ts's
- * getHardSubmissionCeilingOverride), so it must be set in the backend's own environment --
- * not this script's -- before the backend under test starts. FREE_SUBMISSION_ALLOWANCE (5)
- * stays at its real, unoverridden production default -- it's already cheap enough to
- * exercise as-is.
+ * **This script owns its own environment by adapting to it, not by changing it.** The limits
+ * it asserts against are read from GET /api/health, and the work it does is derived from
+ * them: it does not set, override, restart or otherwise disturb anything on the backend, so
+ * there is nothing to tear down afterwards and no way for a failed run to leave the stack
+ * different from how it found it.
  *
- * Usage (start/restart the backend under test with a small ceiling override first):
- *   HARD_SUBMISSION_CEILING=7 pnpm --filter @taskmarket/backend dev
+ * That is a deliberate choice over the alternative. The ceiling and the allowance are read by
+ * the BACKEND process itself (apps/backend/src/config/env.ts), so the only way for this
+ * script to *set* them would be to restart the backend under test -- a process it does not
+ * own, may not be able to see (a container, a deployment), and could leave down if this run
+ * died between stop and start. Adapting needs none of that.
  *
- *   # in another shell, against that backend:
- *   HARD_SUBMISSION_CEILING=7 REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
+ * The script used to keep its own copies of both numbers, and had no way to notice when the
+ * backend was enforcing something else. Under the standard `make smoke rate-limit` invocation
+ * it always was, and in two different ways at once: cloud-env-setup.sh sets
+ * SUBMISSION_FREE_ALLOWANCE=1000 and no ceiling override, so the backend runs a free allowance
+ * of 1000 against a ceiling of 100. Setting HARD_SUBMISSION_CEILING for the script alone would
+ * have made that worse, not better -- it would have moved the disagreement rather than
+ * resolving it.
+ *
+ * **Zones are skipped individually, not all together.** That same sandbox configuration makes
+ * the paid zone empty: with an allowance above the ceiling, every submission up to the ceiling
+ * is free and there is no priced band between them. Tier 1 genuinely cannot be observed
+ * against that backend -- but Tier 2 can, completely, and a whole-script skip threw that away
+ * and reported nothing. So each zone checks whether the effective configuration makes it
+ * reachable, runs if it does, and prints a named skip with its remedy if it does not. Only a
+ * configuration that puts the ceiling itself out of reach skips the whole run.
+ *
+ * Usage (no special backend environment required):
+ *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-rate-limit.ts
  *
- * This script's own HARD_SUBMISSION_CEILING is read only to know what ceiling to expect
- * and assert against -- it does not itself change the backend's behavior. If unset, it
- * defaults to 7, matching the value the "Usage" example above sets on the backend.
+ * To exercise the paid zone as well, start the backend under test with an allowance below its
+ * ceiling, e.g. SUBMISSION_FREE_ALLOWANCE=2 HARD_SUBMISSION_CEILING=5.
  */
 import { createHash } from 'crypto';
 import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, post, x402Post, getAccounts, API_URL, type Account } from './_x402';
 
-// Must match whatever HARD_SUBMISSION_CEILING the backend under test was actually started
-// with -- see the header comment above. Small on purpose: this script's whole point is to
-// reach the ceiling in a handful of requests, not the real production value of 100.
-const HARD_CEILING = Number(process.env.HARD_SUBMISSION_CEILING ?? 7);
-// FREE_SUBMISSION_ALLOWANCE's real, unoverridden production default (apps/backend/src/
-// config/payments.ts) -- cheap enough (5) that this script doesn't need its own override.
-const FREE_ALLOWANCE = 5;
+/**
+ * Two budgets, because the two kinds of submission cost wildly different things.
+ *
+ * A free submission is one plain POST. A paid one is a real X402 round-trip that settles a
+ * USDC authorization, so a hundred of them is money and minutes, not just requests. Budgeting
+ * them together would either forbid a perfectly cheap 100-free-submission run or permit an
+ * expensive 94-paid one.
+ */
+/**
+ * Read one budget, or refuse to start.
+ *
+ * `Number('abc')` is NaN, and every `count < budget` guard downstream is false against NaN --
+ * so a mistyped override did not cap the run at some wrong number, it removed the cap and let
+ * the submission loops run unbounded. On the paid budget that is real USDC, settled one
+ * authorization at a time until something else stops it. An override that cannot be honoured
+ * has to end the run rather than be silently ignored, and it is validated here, at the read,
+ * so it cannot reach a guard at all.
+ */
+/**
+ * The most either budget may be raised to.
+ *
+ * A budget's whole job is to make the run refuse a configuration it cannot afford, so a budget
+ * large enough that the refusal can never fire is the unbounded run wearing a number. These are
+ * the point past which raising the budget stops being "pay for a longer run" and becomes
+ * "remove the guard": a thousand plain POSTs is slow but survivable, whereas two hundred real
+ * X402 round-trips is minutes and USDC, one settled authorization at a time.
+ *
+ * Deliberately far above both defaults (150 and 20), because this is not a tuning knob -- an
+ * operator with a genuine reason to raise a budget should not hit it, and one who has typed a
+ * number by mistake should.
+ */
+const BUDGET_CEILINGS = { free: 1000, paid: 200 } as const;
+
+function submissionBudget(name: string, fallback: number, ceiling: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const parsed = Number(raw);
+  // isSafeInteger, not isInteger: `Number('1e30')` is an integer by that test, and this budget
+  // caps a loop that settles one real USDC authorization per iteration. A value that large is
+  // not a cap at all, and it is indistinguishable from the unbounded run this guard exists to
+  // prevent.
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > ceiling) {
+    console.error('\n=== Rate-limit smoke test ABORTED (nothing was checked) ===');
+    console.error(
+      `reason: ${name}=${raw} is not a whole number of submissions between 1 and ${ceiling}`
+    );
+    console.error(
+      `fix:    unset ${name} to use the default (${fallback}), or set an integer in 1..${ceiling}`
+    );
+    process.exit(2);
+  }
+  return parsed;
+}
+
+const MAX_FREE_SUBMISSIONS = submissionBudget(
+  'SMOKE_RATE_LIMIT_MAX_FREE',
+  150,
+  BUDGET_CEILINGS.free
+);
+const MAX_PAID_SUBMISSIONS = submissionBudget(
+  'SMOKE_RATE_LIMIT_MAX_PAID',
+  20,
+  BUDGET_CEILINGS.paid
+);
+
+type BackendLimits = { freeSubmissionAllowance: number; hardSubmissionCeiling: number };
+
+/**
+ * Stop the run without claiming a pass.
+ *
+ * A skipped smoke test that exits 0 is indistinguishable from one that verified something,
+ * which smoke-nonce.ts argues is the worse of the two failures -- and this skip covers the
+ * entire script, not one step of it. So it exits non-zero and says exactly what to change.
+ */
+function skip(reason: string, remedy: string): never {
+  console.error(`\n=== Rate-limit smoke test SKIPPED (this is not a pass) ===`);
+  console.error(`reason: ${reason}`);
+  console.error(`fix:    ${remedy}`);
+  process.exit(2);
+}
+
+/**
+ * Announce that one zone could not be checked, and carry on with the rest.
+ *
+ * Distinct from skip() above, which ends the run. A zone the effective configuration puts out
+ * of reach is not a failure and not a pass: naming it, with the configuration change that
+ * would make it reachable, is the most this run can honestly say about it. Recorded so the
+ * final summary states it again -- a skip announced only in the middle of several hundred
+ * lines of submission output is a skip nobody reads.
+ */
+const skippedZones: string[] = [];
+function skipZone(zone: string, reason: string, remedy: string): void {
+  const message = `${zone} NOT CHECKED -- ${reason}. To check it: ${remedy}`;
+  skippedZones.push(message);
+  console.log(`\n  ! ${message}`);
+}
+
+/**
+ * Ask the backend what it is actually enforcing.
+ *
+ * The whole point of reading rather than assuming: the script and the backend disagreeing
+ * about a limit is a misconfiguration, and it should be reported as one rather than
+ * discovered as a failed assertion three minutes into the run.
+ */
+async function readBackendLimits(): Promise<BackendLimits> {
+  const response = await fetch(`${API_URL}/api/health`);
+  if (!response.ok) {
+    skip(
+      `GET ${API_URL}/api/health returned ${response.status}`,
+      'start the backend under test, then re-run'
+    );
+  }
+  const body = (await response.json()) as { limits?: Partial<BackendLimits> };
+  const limits = body.limits;
+  if (
+    !limits ||
+    typeof limits.freeSubmissionAllowance !== 'number' ||
+    typeof limits.hardSubmissionCeiling !== 'number'
+  ) {
+    skip(
+      'the backend under test does not report its submission limits on /api/health',
+      'it predates the limits field; redeploy it from this branch'
+    );
+  }
+  return limits as BackendLimits;
+}
 
 function contentHash(payload: string): string {
   return createHash('sha256').update(Buffer.from(payload)).digest('hex');
@@ -131,21 +265,39 @@ async function createBountyTask(requester: Account, description: string): Promis
 
 async function main() {
   const { requester, worker } = getAccounts();
+  const limits = await readBackendLimits();
+  const FREE_ALLOWANCE = limits.freeSubmissionAllowance;
+  const HARD_CEILING = limits.hardSubmissionCeiling;
 
   console.log('=== Taskmarket Smoke Test — Rate Limit (RFC-0006 Tier 1 + Tier 2) ===');
   console.log('requester:      ', requester.address);
   console.log('worker:         ', worker.address);
   console.log('api:            ', API_URL);
-  console.log('free allowance: ', FREE_ALLOWANCE, '(real production default, unoverridden)');
-  console.log(
-    'hard ceiling:   ',
-    HARD_CEILING,
-    '(expects the backend under test to have been started with a matching HARD_SUBMISSION_CEILING override)'
-  );
+  console.log('free allowance: ', FREE_ALLOWANCE, '(as reported by the backend under test)');
+  console.log('hard ceiling:   ', HARD_CEILING, '(as reported by the backend under test)');
 
-  if (HARD_CEILING <= FREE_ALLOWANCE) {
-    throw new Error(
-      `HARD_SUBMISSION_CEILING (${HARD_CEILING}) must be greater than FREE_SUBMISSION_ALLOWANCE (${FREE_ALLOWANCE}) for this script's three zones to be distinct`
+  // How many submissions of each kind it actually takes to stand at the ceiling, derived from
+  // what the backend reports rather than assumed. Submissions 1..min(allowance, ceiling) are
+  // free; anything between the allowance and the ceiling is paid. On a backend whose allowance
+  // is at or above its ceiling the paid band is empty -- which is a configuration to report,
+  // not a run to abandon.
+  const freeSubmissions = Math.min(FREE_ALLOWANCE, HARD_CEILING);
+  const paidSubmissions = Math.max(0, HARD_CEILING - FREE_ALLOWANCE);
+  console.log('free submissions to ceiling:', freeSubmissions);
+  console.log('paid submissions to ceiling:', paidSubmissions);
+
+  // The one condition that ends the run: the ceiling itself is out of reach, so no zone can be
+  // checked. Everything below this point can report something useful.
+  if (freeSubmissions > MAX_FREE_SUBMISSIONS) {
+    skip(
+      `reaching the ceiling of ${HARD_CEILING} needs ${freeSubmissions} free submissions, above this run's budget of ${MAX_FREE_SUBMISSIONS}`,
+      `restart the backend with a smaller HARD_SUBMISSION_CEILING, or raise SMOKE_RATE_LIMIT_MAX_FREE above ${freeSubmissions}`
+    );
+  }
+  if (paidSubmissions > MAX_PAID_SUBMISSIONS) {
+    skip(
+      `reaching the ceiling of ${HARD_CEILING} needs ${paidSubmissions} real paid X402 round-trips, above this run's budget of ${MAX_PAID_SUBMISSIONS}`,
+      `restart the backend with HARD_SUBMISSION_CEILING closer to its free allowance of ${FREE_ALLOWANCE}, or raise SMOKE_RATE_LIMIT_MAX_PAID above ${paidSubmissions} to pay for the full run`
     );
   }
 
@@ -154,16 +306,16 @@ async function main() {
   const taskId = await createBountyTask(requester, 'Rate-limit smoke test task');
   ok('taskId', taskId);
 
-  // 2. Free zone: submissions 1..FREE_ALLOWANCE succeed via plain post() -- no payment.
+  // 2. Free zone: submissions 1..freeSubmissions succeed via plain post() -- no payment.
   //    post() throws on any non-2xx response, so a successful post() here is itself the
   //    assertion that no payment was demanded.
-  log('2/7', `Submitting ${FREE_ALLOWANCE} times within the free allowance (no payment)...`);
-  for (let i = 1; i <= FREE_ALLOWANCE; i++) {
+  log('2/7', `Submitting ${freeSubmissions} times within the free allowance (no payment)...`);
+  for (let i = 1; i <= freeSubmissions; i++) {
     const body = await signedSubmissionBody(taskId, worker, i);
     const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, body)) as {
       submissionId: string;
     };
-    ok(`free submission ${i}/${FREE_ALLOWANCE}`, submissionId);
+    ok(`free submission ${i}/${freeSubmissions}`, submissionId);
   }
 
   // 3. Past the free allowance: this submission now requires payment. x402Post's own
@@ -172,40 +324,57 @@ async function main() {
   //    successful round 2, is this script's confirmation that submission
   //    FREE_ALLOWANCE+1 is correctly gated behind X402 and that the paid submission itself
   //    succeeds.
-  const firstPaidIndex = FREE_ALLOWANCE + 1;
-  log(
-    '3/7',
-    `Submitting past the free allowance (submission ${firstPaidIndex}, expect 402 challenge -> paid)...`
-  );
-  {
-    const body = await signedSubmissionBody(taskId, worker, firstPaidIndex);
-    const { submissionId } = (await x402Post(`/api/tasks/${taskId}/submissions`, body, worker)) as {
-      submissionId: string;
-    };
-    ok(`paid submission ${firstPaidIndex}`, submissionId);
-  }
-
-  // 4. Continue submitting (paid) up through the ceiling itself -- every one of these
-  //    must still succeed, since the gate only rejects once the worker's prior successful
-  //    count on this task has REACHED the ceiling (isOverFixedCeiling: priorCount >=
-  //    ceiling). The last iteration here (i === HARD_CEILING) is the submission that
-  //    brings the running total to exactly HARD_CEILING.
-  if (firstPaidIndex < HARD_CEILING) {
-    log(
-      '4/7',
-      `Submitting remaining paid submissions up to the ceiling (${firstPaidIndex + 1}..${HARD_CEILING})...`
+  //
+  //    Steps 3 and 4 together are the paid zone, and it exists only when the backend's free
+  //    allowance sits below its ceiling. When it does not, Tier 1 has no band to be observed
+  //    in on this backend and the skip says so by name rather than the run failing at a 402
+  //    that was never going to arrive.
+  if (paidSubmissions === 0) {
+    log('3/7', 'Paid zone (Tier 1)...');
+    skipZone(
+      'paid zone (RFC-0006 Tier 1, ADR-0035/0036)',
+      `the backend's free allowance (${FREE_ALLOWANCE}) is at or above its hard ceiling (${HARD_CEILING}), so every submission up to the ceiling is free and no priced band exists`,
+      `restart the backend with SUBMISSION_FREE_ALLOWANCE below HARD_SUBMISSION_CEILING, e.g. SUBMISSION_FREE_ALLOWANCE=2 HARD_SUBMISSION_CEILING=5`
     );
-    for (let i = firstPaidIndex + 1; i <= HARD_CEILING; i++) {
-      const body = await signedSubmissionBody(taskId, worker, i);
+    log('4/7', 'Skipped with the paid zone above.');
+  } else {
+    const firstPaidIndex = FREE_ALLOWANCE + 1;
+    log(
+      '3/7',
+      `Submitting past the free allowance (submission ${firstPaidIndex}, expect 402 challenge -> paid)...`
+    );
+    {
+      const body = await signedSubmissionBody(taskId, worker, firstPaidIndex);
       const { submissionId } = (await x402Post(
         `/api/tasks/${taskId}/submissions`,
         body,
         worker
       )) as { submissionId: string };
-      ok(`paid submission ${i}/${HARD_CEILING}`, submissionId);
+      ok(`paid submission ${firstPaidIndex}`, submissionId);
     }
-  } else {
-    log('4/7', 'Skipped -- ceiling reached directly by the first paid submission above.');
+
+    // 4. Continue submitting (paid) up through the ceiling itself -- every one of these
+    //    must still succeed, since the gate only rejects once the worker's prior successful
+    //    count on this task has REACHED the ceiling (isOverFixedCeiling: priorCount >=
+    //    ceiling). The last iteration here (i === HARD_CEILING) is the submission that
+    //    brings the running total to exactly HARD_CEILING.
+    if (firstPaidIndex < HARD_CEILING) {
+      log(
+        '4/7',
+        `Submitting remaining paid submissions up to the ceiling (${firstPaidIndex + 1}..${HARD_CEILING})...`
+      );
+      for (let i = firstPaidIndex + 1; i <= HARD_CEILING; i++) {
+        const body = await signedSubmissionBody(taskId, worker, i);
+        const { submissionId } = (await x402Post(
+          `/api/tasks/${taskId}/submissions`,
+          body,
+          worker
+        )) as { submissionId: string };
+        ok(`paid submission ${i}/${HARD_CEILING}`, submissionId);
+      }
+    } else {
+      log('4/7', 'Skipped -- ceiling reached directly by the first paid submission above.');
+    }
   }
 
   // 5. The critical boundary assertion: the worker now has exactly HARD_CEILING successful
@@ -248,6 +417,15 @@ async function main() {
   console.log('\n=== Rate-limit smoke test passed ===');
   console.log('taskId: ', taskId, `(hit the ${HARD_CEILING}-submission ceiling)`);
   console.log('taskId2:', taskId2, '(fresh ceiling, submitted freely)');
+  // Repeated at the end so what this run did NOT check is as visible as what it did. A pass
+  // that quietly covered less than the reader assumes is the failure this script's own skip
+  // handling exists to prevent.
+  if (skippedZones.length > 0) {
+    console.log('\nZones this backend configuration put out of reach:');
+    for (const message of skippedZones) console.log(`  - ${message}`);
+  } else {
+    console.log('all three zones checked');
+  }
 }
 
 main().catch((err) => {

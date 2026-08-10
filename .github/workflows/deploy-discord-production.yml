@@ -1,0 +1,93 @@
+name: Deploy Discord app to Railway PRODUCTION
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: deploy-discord-PRODUCTION
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: PRODUCTION
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Verify tagged commit passed main CI and DEVNET
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
+            echo "Tagged commit is not reachable from origin/main. Aborting deploy."
+            exit 1
+          fi
+
+          CONCLUSION=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${{ github.sha }}" \
+            --jq '[.workflow_runs[] | select(.name == "CI" and .event == "push" and .head_branch == "main")] | .[0].conclusion // "not_found"')
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "Main CI did not pass on this commit (status: $CONCLUSION). Aborting deploy."
+            exit 1
+          fi
+
+          DEVNET_CONCLUSION=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${{ github.sha }}" \
+            --jq '[.workflow_runs[] | select(.name == "Deploy Discord app to Railway DEVNET" and .event == "workflow_run")] | .[0].conclusion // "not_found"')
+          if [ "$DEVNET_CONCLUSION" != "success" ]; then
+            echo "Discord DEVNET did not pass on this commit (status: $DEVNET_CONCLUSION). Aborting deploy."
+            exit 1
+          fi
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@5.26.1
+
+      - name: Stamp and deploy exact release
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway variable set \
+            "COMMIT_SHA=${{ github.sha }}" \
+            --service "${{ secrets.RAILWAY_DISCORD_SERVICE_NAME }}" \
+            --environment PRODUCTION \
+            --skip-deploys
+          railway up \
+            --service "${{ secrets.RAILWAY_DISCORD_SERVICE_NAME }}" \
+            --environment PRODUCTION
+
+      - name: Verify exact deployment
+        env:
+          DISCORD_APP_URL: ${{ secrets.DISCORD_APP_PRODUCTION_URL }}
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+          EXPECTED_DEPLOY_ENVIRONMENT: PRODUCTION
+        run: make discord smoke
+
+      - name: Install command registration tooling
+        run: make install
+
+      - name: Exercise signed interaction seam
+        run: make discord signed-smoke
+
+      - name: Reconcile production canary guild commands
+        env:
+          DISCORD_APPLICATION_ID: ${{ secrets.DISCORD_APPLICATION_ID }}
+          DISCORD_APP_URL: ${{ secrets.DISCORD_APP_PRODUCTION_URL }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+        run: make discord register

@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const signMessageAsync = vi.fn();
 
@@ -8,11 +8,18 @@ vi.mock('wagmi', () => ({
 }));
 
 import { useReadAuthSignature, useReadAuthSignatureState } from './use-read-auth-signature';
-import { getCachedReadAuthHeaders } from './read-auth';
+import { clearCachedReadAuthHeaders, getCachedReadAuthHeaders } from './read-auth';
 
 const ADDRESS = '0x1111111111111111111111111111111111111111' as const;
 
 describe('useReadAuthSignature', () => {
+  // The header cache is module-level and now short-circuits signing for a wallet that has
+  // already signed, so a signature left behind by one test would suppress the prompt the next
+  // one is asserting on. Reset it the way a fresh page load would.
+  beforeEach(() => {
+    clearCachedReadAuthHeaders();
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
   });
@@ -78,6 +85,27 @@ describe('useReadAuthSignature', () => {
     act(() => rerender({ address: ADDRESS }));
 
     expect(signMessageAsync).toHaveBeenCalledTimes(1);
+  });
+
+  // The read-auth message carries no nonce, so one signature is good for the whole session.
+  // A second consumer mounting later -- an in-flight write starting to poll `intents.get`, in
+  // particular -- must read what the first one signed rather than putting a wallet prompt in
+  // front of someone mid-wait. This is what makes it one prompt per session, not one per
+  // surface.
+  it('reuses a session signature for a second consumer without prompting again', async () => {
+    signMessageAsync.mockResolvedValue('0xsignature');
+    const first = renderHook(() => useReadAuthSignature(ADDRESS));
+    await waitFor(() => expect(first.result.current).toBe(true));
+
+    const second = renderHook(() => useReadAuthSignatureState(ADDRESS, { autoStart: false }));
+
+    await waitFor(() => expect(second.result.current.ready).toBe(true));
+    expect(signMessageAsync).toHaveBeenCalledTimes(1);
+    // And the late consumer must not have cleared the headers it just found.
+    expect(getCachedReadAuthHeaders()).toEqual({
+      'X-Taskmarket-Caller-Address': ADDRESS,
+      'X-Taskmarket-Caller-Signature': '0xsignature',
+    });
   });
 
   it('re-signs and re-caches when the connected address changes', async () => {

@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { loadKeystore } from '../../lib/keystore.js';
 import { apiPost } from '../../lib/api.js';
-import { printError } from '../../lib/output.js';
+import { printError, renderFailure } from '../../lib/output.js';
 import { writeFileSync } from 'fs';
 
 // Strips bytes that a terminal would interpret as control sequences before writing
@@ -35,19 +35,20 @@ export const downloadCmd = new Command('download')
         if (opts.artifact) {
           body.artifactId = opts.artifact;
         }
-        const result = (await apiPost(
+        const { data: result } = await apiPost<{ presignedUrl: string }>(
           `/api/tasks/${taskId}/submissions/${opts.submission}/preview`,
           body
-        )) as { presignedUrl: string };
+        );
         presignedUrl = result.presignedUrl;
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Failed to get download URL.';
-        printError(msg);
+        renderFailure(err, { fallback: 'Failed to get download URL.' });
+        return;
       }
 
       const res = await fetch(presignedUrl!);
       if (!res.ok) {
         printError(`Failed to download file: ${res.status}`);
+        return;
       }
       const content = Buffer.from(await res.arrayBuffer());
 
@@ -62,6 +63,7 @@ export const downloadCmd = new Command('download')
           printError(
             'Downloaded content is not valid UTF-8 text and cannot be safely printed to the terminal. Use --output <path> to save it to a file instead.'
           );
+          return;
         }
         process.stdout.write(sanitizeForTerminal(decoded!));
       }

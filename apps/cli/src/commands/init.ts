@@ -9,7 +9,7 @@ import {
   loadKeystore,
 } from '../lib/keystore.js';
 import { API_ORIGIN, API_URL, apiGet, apiPost } from '../lib/api.js';
-import { printResult, printError } from '../lib/output.js';
+import { printResult, printError, printWarning } from '../lib/output.js';
 import { pollAgentId } from '../lib/agent.js';
 import { registerDevice } from '../lib/device-registration.js';
 import { deriveCompressedPublicKey } from '../lib/encryption.js';
@@ -48,20 +48,21 @@ async function tryRegisterEmail(
   explicit: boolean
 ): Promise<string | null> {
   try {
-    const reg = (await apiPost('/api/emails/register', {
+    const { data: reg } = await apiPost<{ emailAddress: string }>('/api/emails/register', {
       deviceId,
       apiToken,
       username,
-    })) as { emailAddress: string };
+    });
     return reg.emailAddress;
   } catch (err: unknown) {
     if (explicit) {
       const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(
-        JSON.stringify({
-          ok: false,
-          error: `Email registration failed: ${msg}. Run: taskmarket email register --username ${username}`,
-        }) + '\n'
+      // A warning, not the command's result: `init` goes on to succeed without an email address,
+      // so this must not exit and must not carry `pending` -- nothing about the wallet the
+      // command was asked to create is in doubt. It goes through lib/output.ts all the same, so
+      // the failure envelope is still built in exactly one place.
+      printWarning(
+        `Email registration failed: ${msg}. Run: taskmarket email register --username ${username}`
       );
     }
     return null;
@@ -86,6 +87,7 @@ export const initCommand = new Command('init')
       )) as { available: boolean };
       if (!check.available) {
         printError(`Email username "${opts.email}" is not available.`);
+        return;
       }
     }
 

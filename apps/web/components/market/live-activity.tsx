@@ -1398,7 +1398,7 @@ export function LiveActivityPanel({
             {galleryEntries.length > 0 ? (
               <Button
                 onClick={() => {
-                  setGalleryArtifactId(galleryEntries[0]?.artifact.id ?? null);
+                  setGalleryArtifactId(null);
                   setGalleryOpen(true);
                 }}
                 size="sm"

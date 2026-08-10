@@ -6,8 +6,8 @@ export const evaluatorTimeoutCmd = new Command('evaluator-timeout')
   .description('Trigger evaluator timeout after the evaluation window expires (requester only)')
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
   .action(async (taskId: string) => {
-    const result = (await x402Post(`/api/tasks/${taskId}/evaluator-timeout`, { taskId })) as {
+    const { data: result, idempotencyKey } = await x402Post<{
       txHash: string;
-    };
-    printResult({ txHash: result.txHash });
+    }>(`/api/tasks/${taskId}/evaluator-timeout`, { taskId });
+    printResult({ txHash: result.txHash }, { idempotencyKey });
   });

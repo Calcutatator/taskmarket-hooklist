@@ -3,7 +3,7 @@ import { promises as fs } from 'fs';
 import { loadKeystore, decryptPrivateKey } from '../lib/keystore.js';
 import { fetchDeviceKey } from '../lib/signer.js';
 import { decryptWithPrivateKey } from '../lib/encryption.js';
-import { printResult, printError } from '../lib/output.js';
+import { printResult, printError, renderFailure } from '../lib/output.js';
 
 export const decryptCommand = new Command('decrypt')
   .description('Decrypt a file using your wallet key')
@@ -16,6 +16,7 @@ export const decryptCommand = new Command('decrypt')
       ciphertext = await fs.readFile(file);
     } catch {
       printError(`Cannot read file: ${file}`);
+      return;
     }
 
     // Load keystore
@@ -24,6 +25,7 @@ export const decryptCommand = new Command('decrypt')
       keystore = await loadKeystore();
     } catch {
       printError('No keystore found. Run `taskmarket init` first.');
+      return;
     }
 
     // Decrypt private key from keystore
@@ -34,8 +36,8 @@ export const decryptCommand = new Command('decrypt')
     try {
       plaintext = decryptWithPrivateKey(ciphertext, privateKey);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      printError(msg);
+      renderFailure(err);
+      return;
     }
 
     // Determine output path

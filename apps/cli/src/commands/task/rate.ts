@@ -12,14 +12,18 @@ export const rateCmd = new Command('rate')
     const rating = parseInt(opts.rating, 10);
     if (rating < 0 || rating > 100) {
       printError('Rating must be between 0 and 100');
+      return;
     }
 
-    const result = (await x402Post(`/api/tasks/${taskId}/rate`, {
+    const { data: result, idempotencyKey } = await x402Post<{
+      success: boolean;
+      feedbackId: string;
+    }>(`/api/tasks/${taskId}/rate`, {
       taskId,
       worker: opts.worker,
       rating,
       ...(opts.feedback ? { feedbackText: opts.feedback } : {}),
-    })) as { success: boolean; feedbackId: string };
+    });
 
-    printResult({ feedbackId: result.feedbackId });
+    printResult({ feedbackId: result.feedbackId }, { idempotencyKey });
   });

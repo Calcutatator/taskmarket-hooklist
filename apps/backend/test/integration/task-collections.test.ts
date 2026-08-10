@@ -11,6 +11,12 @@ vi.mock('../../src/services/contract', () => ({
   contractSubmitWork: vi.fn(),
 }));
 
+// These routers reach the logger through the relayed-intent path, and the logger reads the
+// server config at import time -- which process.exits when the env is not populated.
+vi.mock('../../src/config/env', () => ({
+  getServerConfig: vi.fn().mockReturnValue({ CHAIN_ID: 84532 }),
+}));
+
 const { router } = await import('../../src/trpc');
 const { pitchesRouter } = await import('../../src/routers/pitches.router');
 const { proofsRouter } = await import('../../src/routers/proofs.router');

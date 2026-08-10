@@ -23,6 +23,9 @@ vi.mock('../../src/lib/output.js', () => ({
   printError: vi.fn(() => {
     throw new Error('printError called');
   }),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 import { submissionsCmd } from '../../src/commands/task/submissions.js';

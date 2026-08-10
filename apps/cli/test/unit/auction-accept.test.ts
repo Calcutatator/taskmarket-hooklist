@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 
 vi.mock('../../src/lib/x402.js', () => ({
   x402Post: vi.fn(),
@@ -8,6 +9,9 @@ vi.mock('../../src/lib/output.js', () => ({
   printResult: vi.fn(),
   printError: vi.fn((message: string) => {
     throw new Error(message);
+  }),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
   }),
 }));
 
@@ -21,7 +25,7 @@ describe('task auction-accept command', () => {
   });
 
   it('posts to bids accept endpoint without min-price', async () => {
-    vi.mocked(x402Post).mockResolvedValue({ acceptedPrice: '2000000', workerAddress: '0xworker' });
+    vi.mocked(x402Post).mockResolvedValue(writeOutcome({ acceptedPrice: '2000000', workerAddress: '0xworker' }));
 
     await auctionAcceptCmd.parseAsync(['node', 'auction-accept', '0xtask'], { from: 'node' });
 
@@ -30,16 +34,15 @@ describe('task auction-accept command', () => {
       acceptedPrice: '2000000',
       acceptedPriceUsdc: '2.000000',
       workerAddress: '0xworker',
-    });
+    }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('converts --min-price to base units', async () => {
-    vi.mocked(x402Post).mockResolvedValue({ acceptedPrice: '3000000', workerAddress: '0xworker' });
+    vi.mocked(x402Post).mockResolvedValue(writeOutcome({ acceptedPrice: '3000000', workerAddress: '0xworker' }));
 
-    await auctionAcceptCmd.parseAsync(
-      ['node', 'auction-accept', '0xtask', '--min-price', '1.5'],
-      { from: 'node' }
-    );
+    await auctionAcceptCmd.parseAsync(['node', 'auction-accept', '0xtask', '--min-price', '1.5'], {
+      from: 'node',
+    });
 
     expect(x402Post).toHaveBeenCalledWith('/api/tasks/0xtask/bids/accept', {
       taskId: '0xtask',
@@ -57,10 +60,9 @@ describe('task auction-accept command', () => {
 
   it('rejects invalid --min-price', async () => {
     await expect(
-      auctionAcceptCmd.parseAsync(
-        ['node', 'auction-accept', '0xtask', '--min-price', 'abc'],
-        { from: 'node' }
-      )
+      auctionAcceptCmd.parseAsync(['node', 'auction-accept', '0xtask', '--min-price', 'abc'], {
+        from: 'node',
+      })
     ).rejects.toThrow('Invalid --min-price: USDC amount must be a positive decimal');
   });
 

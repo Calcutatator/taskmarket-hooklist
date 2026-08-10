@@ -1,10 +1,14 @@
+import { STANDARD_X402_ACTION_AMOUNT } from '@taskmarket/shared';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createMockCtx, makeChain } from '../helpers';
+import { createIntentCtx, makeChain } from '../helpers';
 
 vi.mock('../../../src/services/contract', () => ({
   contractAcceptSubmission: vi.fn().mockResolvedValue('0xaccepttx'),
   contractAcceptSubmissions: vi.fn().mockResolvedValue('0xacceptrankedtx'),
   contractRateTask: vi.fn().mockResolvedValue({ hash: '0xratetx', blockNumber: 100 }),
+  // The rating's completion handler reads the block number back from the receipt: the intent
+  // payload is written before the transaction exists (ADR-0045).
+  blockNumberForTx: vi.fn().mockResolvedValue(100),
   contractRefundOrphanedPayment: vi.fn().mockResolvedValue('0xrefundorphanhash'),
 }));
 
@@ -24,7 +28,7 @@ import {
   contractRateTask,
   contractRefundOrphanedPayment,
 } from '../../../src/services/contract';
-import { agents, taskAwards, tasks } from '../../../src/db/schema';
+import { agents, feedbacks, taskAwards, tasks } from '../../../src/db/schema';
 
 const REQUESTER = '0xRequester0000000000000000000000000000001';
 const WORKER = '0xWorker0000000000000000000000000000000001';
@@ -65,13 +69,13 @@ describe('acceptance router', () => {
     const acceptInput = { taskId: TASK_ID, worker: WORKER };
 
     it('throws when payer is missing', async () => {
-      const ctx = createMockCtx(); // no payer
+      const ctx = createIntentCtx(); // no payer
       const caller = acceptanceRouter.createCaller(ctx);
       await expect(caller.accept(acceptInput)).rejects.toThrow('Payment required: missing payer');
     });
 
     it('throws when task not found', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = acceptanceRouter.createCaller(ctx);
@@ -79,7 +83,7 @@ describe('acceptance router', () => {
     });
 
     it('throws when payer is not the requester', async () => {
-      const ctx = createMockCtx('0xDifferentPayer000000000000000000000001');
+      const ctx = createIntentCtx('0xDifferentPayer000000000000000000000001');
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
 
       const caller = acceptanceRouter.createCaller(ctx);
@@ -89,7 +93,7 @@ describe('acceptance router', () => {
     });
 
     it('throws BAD_REQUEST when no active submission found for bounty', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask()])) // task fetch
         .mockReturnValueOnce(makeChain([])); // submission lookup — none found
@@ -99,7 +103,7 @@ describe('acceptance router', () => {
     });
 
     it('calls contractAcceptSubmission with DB-derived deliverable for bounty', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask()])) // task fetch
         .mockReturnValueOnce(makeChain([{ deliverableHash: DELIVERABLE }])) // submission lookup
@@ -115,31 +119,35 @@ describe('acceptance router', () => {
       expect(args[3]).toBe(DELIVERABLE); // deliverable from DB, not caller
     });
 
-    it('refunds the action fee and never reports success when the on-chain accept fails', async () => {
-      // Regression test: the catch block must `return` handleStandardFeePostPaymentFailure,
-      // not just call it and fall through -- otherwise self-award detection would run
-      // and { success: true } would be returned despite the on-chain accept reverting.
+    // Verifies: ADR-0048
+    it('never reports success, and never refunds, when the on-chain accept fails', async () => {
+      // Self-award detection and { success: true } must not follow an accept that reverted.
+      // The refund is no longer this handler's call: the payment reference is on the intent,
+      // and settlement decides from the reconciler's confirmed verdict.
       (contractAcceptSubmission as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new Error('Contract call rejected: TaskNotOpen')
       );
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
+      // An accept is charged the flat action fee. Both halves are set because the middleware
+      // publishes both, and an intent that recorded only the hash is one settlement cannot
+      // refund -- it has no amount to transfer, so it skips the row.
+      ctx.res.locals.paymentAmount = STANDARD_X402_ACTION_AMOUNT;
       ctx.res.locals.paymentTxHash = '0xpaymenttxhash';
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask()])) // task fetch
         .mockReturnValueOnce(makeChain([{ deliverableHash: DELIVERABLE }])) // submission lookup
-        .mockReturnValueOnce(makeChain([])); // requester agent lookup
-      ctx.db.update
-        .mockReturnValueOnce(makeChain([{ id: 'orphan_x' }])) // orphaned-payments claim
-        .mockReturnValueOnce(makeChain()); // orphaned-payments final status
+        .mockReturnValueOnce(makeChain([])) // requester agent lookup
+        .mockReturnValueOnce(makeChain([])); // worker agent lookup (self-award detection)
 
       await expect(acceptanceRouter.createCaller(ctx).accept(acceptInput)).rejects.toThrow(
-        /automatically refunded/
+        /TaskNotOpen/
       );
 
-      expect(contractRefundOrphanedPayment).toHaveBeenCalledWith(REQUESTER.toLowerCase(), 1000n);
-      // Self-award detection (a 3rd select + possible update) must never run.
-      expect(ctx.db.select).toHaveBeenCalledTimes(3);
-      expect(ctx.db.update).toHaveBeenCalledTimes(2);
+      expect(contractRefundOrphanedPayment).not.toHaveBeenCalled();
+      expect(ctx.updateChain(tasks).set).not.toHaveBeenCalled();
+      expect(ctx.intents[0]!.status).toBe('recorded');
+      expect(ctx.intents[0]!.paymentTxHash).toBe('0xpaymenttxhash');
+      expect(ctx.intents[0]!.paymentAmount).toBe(STANDARD_X402_ACTION_AMOUNT);
     });
   });
 
@@ -147,7 +155,7 @@ describe('acceptance router', () => {
     const WORKER_B = '0xWorker0000000000000000000000000000000002';
 
     it('rejects when shares do not sum to 10000', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
 
       await expect(
         acceptanceRouter.createCaller(ctx).acceptSubmissions({
@@ -161,7 +169,7 @@ describe('acceptance router', () => {
     });
 
     it('rejects when payer is not the requester', async () => {
-      const ctx = createMockCtx('0xOtherPayer00000000000000000000000000001');
+      const ctx = createIntentCtx('0xOtherPayer00000000000000000000000000001');
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
 
       await expect(
@@ -173,7 +181,7 @@ describe('acceptance router', () => {
     });
 
     it('calls contractAcceptSubmissions and returns success', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask()])) // task fetch
         .mockReturnValueOnce(makeChain([])); // requester agent lookup
@@ -195,13 +203,13 @@ describe('acceptance router', () => {
     const rateInput = { taskId: TASK_ID, worker: WORKER, rating: 4 };
 
     it('throws when payer is missing', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       const caller = acceptanceRouter.createCaller(ctx);
       await expect(caller.rate(rateInput)).rejects.toThrow('Payment required: missing payer');
     });
 
     it('throws when task is not completed', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'open' })]));
 
       const caller = acceptanceRouter.createCaller(ctx);
@@ -209,7 +217,7 @@ describe('acceptance router', () => {
     });
 
     it('throws when task not found', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = acceptanceRouter.createCaller(ctx);
@@ -217,7 +225,7 @@ describe('acceptance router', () => {
     });
 
     it('throws when payer is not the requester', async () => {
-      const ctx = createMockCtx('0xDifferentPayer000000000000000000000001');
+      const ctx = createIntentCtx('0xDifferentPayer000000000000000000000001');
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'completed' })]));
 
       const caller = acceptanceRouter.createCaller(ctx);
@@ -227,24 +235,30 @@ describe('acceptance router', () => {
     });
 
     it('rates task, inserts feedback, updates agent stats on happy path', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ status: 'completed' })])) // task lookup
         .mockReturnValueOnce(makeChain([{ workerAddress: WORKER, rating: null }])) // awards
         .mockReturnValueOnce(makeChain([])); // worker agent lookup (no agentId)
+
+      // The completion only bumps the agent aggregate when its conditional update actually
+      // claimed an unrated award, so a repeated completion cannot count the same star twice.
+      ctx.seedUpdate(taskAwards, [{ id: 1 }]);
 
       const caller = acceptanceRouter.createCaller(ctx);
       const result = await caller.rate(rateInput);
 
       expect(result.success).toBe(true);
       expect(contractRateTask).toHaveBeenCalledOnce();
-      expect(ctx.db.update).toHaveBeenCalledTimes(2);
-      expect(ctx.db.insert).toHaveBeenCalledTimes(1);
+      expect(ctx.insertChain(feedbacks).values).toHaveBeenCalledOnce();
+      const updatedTables = ctx.db.update.mock.calls.map(([table]: [unknown]) => table);
+      expect(updatedTables).toContain(taskAwards);
+      expect(updatedTables).toContain(agents);
     });
 
     it('rejects a rating for a worker who is not an award recipient', async () => {
       const otherWorker = '0xWorker0000000000000000000000000000000002';
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ status: 'completed' })]))
         .mockReturnValueOnce(makeChain([{ workerAddress: WORKER, rating: null }]));
@@ -257,7 +271,7 @@ describe('acceptance router', () => {
     });
 
     it('rejects a duplicate-recipient rating when any matching award is already rated', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ status: 'completed' })]))
         .mockReturnValueOnce(
@@ -276,7 +290,7 @@ describe('acceptance router', () => {
 
     it('projects a secondary-winner rating onto task_awards only, never the tasks table', async () => {
       const secondary = '0xWorker0000000000000000000000000000000002';
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ status: 'completed' })]))
         .mockReturnValueOnce(
@@ -286,6 +300,8 @@ describe('acceptance router', () => {
           ])
         )
         .mockReturnValueOnce(makeChain([]));
+
+      ctx.seedUpdate(taskAwards, [{ id: 2 }]);
 
       await acceptanceRouter.createCaller(ctx).rate({ ...rateInput, worker: secondary });
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 import type { Command } from 'commander';
 
 const TASK = '0xtask0000000000000000000000000000000001';
@@ -10,17 +11,24 @@ describe('task accept-submissions command', () => {
   let mockX402Post: ReturnType<typeof vi.fn>;
   let mockPrintResult: ReturnType<typeof vi.fn>;
   let mockPrintError: ReturnType<typeof vi.fn>;
+  let mockRenderFailure: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     mockX402Post = vi.fn();
     mockPrintResult = vi.fn();
     mockPrintError = vi.fn();
+    // Typed `never` in production: it writes the envelope and exits. A double that returned
+    // would let the command carry on past a failure it has already reported.
+    mockRenderFailure = vi.fn(() => {
+      throw new Error('renderFailure');
+    });
 
     vi.resetModules();
     vi.doMock('../../src/lib/x402.js', () => ({ x402Post: mockX402Post }));
     vi.doMock('../../src/lib/output.js', () => ({
       printResult: mockPrintResult,
       printError: mockPrintError,
+      renderFailure: mockRenderFailure,
     }));
 
     const mod = await import('../../src/commands/task/accept-submissions.js');
@@ -28,7 +36,7 @@ describe('task accept-submissions command', () => {
   });
 
   it('posts winners and prints accepted count', async () => {
-    mockX402Post.mockResolvedValue({ success: true });
+    mockX402Post.mockResolvedValue(writeOutcome({ success: true }));
 
     await acceptSubmissionsCmd.parseAsync(
       [
@@ -50,36 +58,48 @@ describe('task accept-submissions command', () => {
         { worker: WORKER_B, share: 4000 },
       ],
     });
-    expect(mockPrintResult).toHaveBeenCalledWith({ accepted: true, winners: 2 });
+    expect(mockPrintResult).toHaveBeenCalledWith({ accepted: true, winners: 2 }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('rejects when shares do not sum to 10000', async () => {
-    await acceptSubmissionsCmd.parseAsync(
-      ['node', 'accept-submissions', TASK, '--winner', `${WORKER_A}:5000`],
-      { from: 'node' }
-    );
+    await expect(
+      acceptSubmissionsCmd.parseAsync(
+        ['node', 'accept-submissions', TASK, '--winner', `${WORKER_A}:5000`],
+        { from: 'node' }
+      )
+    ).rejects.toThrow('renderFailure');
 
-    expect(mockPrintError).toHaveBeenCalledWith(expect.stringContaining('must sum to 10000'));
+    expect(mockRenderFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('must sum to 10000') })
+    );
     expect(mockX402Post).not.toHaveBeenCalled();
   });
 
   it('rejects invalid winner address', async () => {
-    await acceptSubmissionsCmd.parseAsync(
-      ['node', 'accept-submissions', TASK, '--winner', 'notanaddr:10000'],
-      { from: 'node' }
-    );
+    await expect(
+      acceptSubmissionsCmd.parseAsync(
+        ['node', 'accept-submissions', TASK, '--winner', 'notanaddr:10000'],
+        { from: 'node' }
+      )
+    ).rejects.toThrow('renderFailure');
 
-    expect(mockPrintError).toHaveBeenCalledWith(expect.stringContaining('Invalid worker address'));
+    expect(mockRenderFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('Invalid worker address') })
+    );
     expect(mockX402Post).not.toHaveBeenCalled();
   });
 
   it('rejects invalid share value', async () => {
-    await acceptSubmissionsCmd.parseAsync(
-      ['node', 'accept-submissions', TASK, '--winner', `${WORKER_A}:99999`],
-      { from: 'node' }
-    );
+    await expect(
+      acceptSubmissionsCmd.parseAsync(
+        ['node', 'accept-submissions', TASK, '--winner', `${WORKER_A}:99999`],
+        { from: 'node' }
+      )
+    ).rejects.toThrow('renderFailure');
 
-    expect(mockPrintError).toHaveBeenCalledWith(expect.stringContaining('Invalid share'));
+    expect(mockRenderFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('Invalid share') })
+    );
     expect(mockX402Post).not.toHaveBeenCalled();
   });
 });

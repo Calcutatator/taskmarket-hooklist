@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../src/lib/keystore.js', () => ({
-  loadKeystore: vi.fn().mockResolvedValue({ walletAddress: '0xownwallet00000000000000000000000000001' }),
+  loadKeystore: vi
+    .fn()
+    .mockResolvedValue({ walletAddress: '0xownwallet00000000000000000000000000001' }),
 }));
 
 vi.mock('../../src/lib/api.js', () => ({
@@ -10,6 +12,9 @@ vi.mock('../../src/lib/api.js', () => ({
 
 vi.mock('../../src/lib/output.js', () => ({
   printResult: vi.fn(),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 import { statsCommand } from '../../src/commands/stats.js';
@@ -60,9 +65,7 @@ describe('stats command', () => {
     await statsCommand.parseAsync(['node', 'stats'], { from: 'node' });
 
     expect(apiGet).toHaveBeenCalledWith(expect.stringContaining(ADDR));
-    expect(printResult).toHaveBeenCalledWith(
-      expect.objectContaining({ credibility: 333 })
-    );
+    expect(printResult).toHaveBeenCalledWith(expect.objectContaining({ credibility: 333 }));
   });
 
   it('includes dreamsPerUsdc and pendingDreamsUsd when claimable and rate are both set', async () => {

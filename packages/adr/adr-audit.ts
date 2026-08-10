@@ -80,8 +80,6 @@ import { fileURLToPath } from 'url';
 import {
   type AdrAuditEntry,
   type RealizedByLocator,
-  CODE_IMPLEMENTS_RE,
-  CODE_VERIFIES_RE,
   LAST_AUDITED_RE,
   REALIZED_BY_RE,
   REALIZED_BY_STALE_GRACE_DAYS,
@@ -93,6 +91,8 @@ import {
   computeEmbodiment,
   fieldValue,
   findCommentAdrRefs,
+  findImplementsRefs,
+  findVerifiesRefs,
   formatRealizedByLocators,
   matchesAnyGlob,
   parseAdrFilenameNumber,
@@ -291,7 +291,7 @@ function scanCode(entries: Map<string, AdrAuditEntry>): Map<string, string[]> {
       const rel = path.relative(REPO_ROOT, file);
       // Blank any line carrying ADR_SCAN_IGNORE_MARKER before matching — a fixture/example
       // string that merely looks like a back-pointer comment (this package's own tests for
-      // CODE_IMPLEMENTS_RE/findCommentAdrRefs, for instance) shouldn't count as real
+      // the back-pointer parser, for instance) shouldn't count as real
       // evidence just because the file happens to fall under a whole-repo scan.
       const content = stripIgnoredLines(fs.readFileSync(file, 'utf-8'));
 
@@ -310,21 +310,18 @@ function scanCode(entries: Map<string, AdrAuditEntry>): Map<string, string[]> {
       // Code/Tests counts and producing duplicate-looking "Code: a.ts, a.ts" detail lines.
       const seen = new Set<string>();
 
-      CODE_IMPLEMENTS_RE.lastIndex = 0;
-      let m: RegExpExecArray | null;
-      while ((m = CODE_IMPLEMENTS_RE.exec(content)) !== null) {
-        const key = `impl:${m[1]}`;
+      for (const num of findImplementsRefs(content)) {
+        const key = `impl:${num}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        entries.get(m[1])?.codeRefs.push(rel);
+        entries.get(num)?.codeRefs.push(rel);
       }
 
-      CODE_VERIFIES_RE.lastIndex = 0;
-      while ((m = CODE_VERIFIES_RE.exec(content)) !== null) {
-        const key = `${isTest ? 'test' : 'verify-code'}:${m[1]}`;
+      for (const num of findVerifiesRefs(content)) {
+        const key = `${isTest ? 'test' : 'verify-code'}:${num}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const target = isTest ? entries.get(m[1])?.testRefs : entries.get(m[1])?.codeRefs;
+        const target = isTest ? entries.get(num)?.testRefs : entries.get(num)?.codeRefs;
         target?.push(rel);
       }
     }

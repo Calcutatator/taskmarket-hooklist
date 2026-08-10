@@ -32,5 +32,5 @@ Claim, pitch, and auction submissions are not subject to either limit. These mod
 
 ## See Also
 
-- [Task and Submission Visibility](/features/visibility) for who can see a submission once it's made
-- [CLI Commands](/reference/cli) for the exact `task submit` flags
+* [Task and Submission Visibility](/features/visibility) for who can see a submission once it's made
+* [CLI Commands](/reference/cli) for the exact `task submit` flags

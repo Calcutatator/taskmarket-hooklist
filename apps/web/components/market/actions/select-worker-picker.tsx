@@ -1,7 +1,7 @@
 'use client';
 
 import { CircleCheckIcon } from 'lucide-react';
-import { buildSelectWorkerMessage } from '@taskmarket/shared';
+import { buildSelectWorkerMessage, IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useAccount, useSignMessage } from 'wagmi';
@@ -15,8 +15,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { InFlightWriteNotice } from '@/components/market/in-flight-write-notice';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { getLegalRequestHeaders } from '@/lib/legal-receipt';
+import { isPendingWriteResponse } from '@/lib/relayed-write-outcome';
+import { useInFlightWrite } from '@/lib/use-in-flight-write';
 
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
@@ -36,6 +39,7 @@ export function SelectWorkerPicker({ disabled, onSuccess, task }: TaskActionComp
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const inFlight = useInFlightWrite('Worker selection submitted, confirming');
 
   useEffect(() => {
     if (!isConnected) return;
@@ -62,6 +66,22 @@ export function SelectWorkerPicker({ disabled, onSuccess, task }: TaskActionComp
       cancelled = true;
     };
   }, [task.id, isConnected]);
+
+  // Checked before every other branch, including the disconnected and pitch-loading ones: the
+  // write is already out there, so a failed pitch re-fetch must not replace this state with an
+  // error. Selecting a worker is relayed but unpaid, so `paid` is false.
+  if (inFlight.state) {
+    return (
+      <InFlightWriteNotice
+        failure={inFlight.failure}
+        idempotencyKey={inFlight.state.idempotencyKey}
+        paid={false}
+        stalled={inFlight.stalled}
+        subject="worker selection"
+        title="Worker selection submitted, confirming"
+      />
+    );
+  }
 
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect the requester wallet to select a pitch." />;
@@ -102,20 +122,40 @@ export function SelectWorkerPicker({ disabled, onSuccess, task }: TaskActionComp
     }
 
     try {
-      const res = await fetch(`${getBrowserApiBaseUrl()}/api/tasks/${task.id}/pitches/select`, {
-        body: JSON.stringify({
-          taskId: task.id,
-          pitchId: selected.id,
-          workerAddress: selected.workerAddress,
-          signature,
-        }),
-        headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
-        method: 'POST',
-      });
-      setPending(false);
-      if (!res.ok) {
+      // This endpoint signs a pitch-scoped message rather than the `taskmarket:<verb>:<id>`
+      // form `signAndPost` builds, so it keeps its own fetch -- but it runs through the same
+      // `submit`, which owns the key, and reads the in-flight outcome through the same shared
+      // predicate rather than a second copy of the guess. The key never leaves this callback,
+      // so a second selection naming a different worker cannot go out under the first one's.
+      const outcome = await inFlight.submit(async (idempotencyKey) => {
+        const res = await fetch(`${getBrowserApiBaseUrl()}/api/tasks/${task.id}/pitches/select`, {
+          body: JSON.stringify({
+            taskId: task.id,
+            pitchId: selected.id,
+            workerAddress: selected.workerAddress,
+            signature,
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+            ...(await getLegalRequestHeaders()),
+            [IDEMPOTENCY_KEY_HEADER]: idempotencyKey,
+          },
+          method: 'POST',
+        });
+        if (res.ok) return { ok: true as const };
         const errBody = (await res.json().catch(() => ({}))) as { message?: string };
         const message = errBody.message ?? `Server error: ${res.status}`;
+        return {
+          ok: false as const,
+          pending: isPendingWriteResponse(errBody, message),
+          error: message,
+        };
+      });
+      setPending(false);
+      // In flight is neither success nor failure, so it must not reach the error path below.
+      if (outcome.handled) return;
+      if (!outcome.result.ok) {
+        const message = outcome.result.error!;
         setError(message);
         toast.error(message);
         return;

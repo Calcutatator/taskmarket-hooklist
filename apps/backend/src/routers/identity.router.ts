@@ -3,10 +3,14 @@ import { RegistrationSource } from '@taskmarket/shared';
 import { z } from 'zod';
 import { agents } from '../db/schema';
 import { sql } from 'drizzle-orm';
-import { contractRegisterIdentity } from '../services/contract';
+import { contractRegisterIdentityTx } from '../services/contract';
+import { apiError, intentStatusOf } from '../lib/api-error';
 import { lowerAddressEq } from '../lib/agents';
 import { getServerConfig } from '../config/env';
-import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
+import { settledPaymentReference } from '../middleware/x402';
+import { runRelayedIntent } from '../services/relayed-intent-request';
+import type { IdentityRegisterIntentPayload } from '../services/intents/identity-intents';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 
 // Only trust a cached agentId if it was minted against the currently configured
 // registry contract AND chain -- see register()'s cacheIsFresh usage for why
@@ -31,6 +35,7 @@ export const identityRouter = router({
   register: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/identity/register',
         tags: ['Identity'],
@@ -42,7 +47,15 @@ export const identityRouter = router({
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer?.toLowerCase();
       if (!payer) {
-        throw new Error('Payment required: missing payer');
+        // The x402 exchange did not leave a settled payment behind, so nothing was charged and
+        // there is no intent to poll -- exactly what `payment_rejected` names. UNAUTHORIZED
+        // rather than the reason's default 400, to answer the same status the sibling paid
+        // routes already answer their own missing payer with.
+        throw apiError({
+          code: 'UNAUTHORIZED',
+          message: 'Payment required: missing payer',
+          reason: 'payment_rejected',
+        });
       }
 
       const registeredVia = input.source ?? 'cli';
@@ -73,48 +86,62 @@ export const identityRouter = router({
         return { agentId: existing[0].agentId, alreadyRegistered: true };
       }
 
-      // Mint a new ERC-8004 identity via the server wallet
-      let agentIdBigInt: bigint;
-      try {
-        agentIdBigInt = await contractRegisterIdentity();
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'identity_register',
-          error,
-        });
-      }
-      const agentIdStr = agentIdBigInt.toString();
+      // Mint a new ERC-8004 identity via the server wallet. The agentId the caller gets back
+      // is decoded from the mint's own Registered event by the completion handler and read
+      // back from the row here, rather than returned by the chain call: the completion is
+      // the one copy of that work that also runs when a reconciler finishes the intent.
+      const { intent } = await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'identity.register',
+        payer,
+        payment: settledPaymentReference(ctx.res),
+        payload: {
+          chainId,
+          existingAddress: existing[0]?.address ?? null,
+          payer,
+          registeredVia,
+          registryAddress,
+        } satisfies IdentityRegisterIntentPayload,
+        send: () => contractRegisterIdentityTx(),
+      });
 
-      if (existing[0]) {
-        // A row already exists for this address under a different casing (e.g. a
-        // public key published before this endpoint consistently lowercased
-        // addresses). agents.address has no case-insensitive uniqueness
-        // constraint, so onConflictDoUpdate below would not match it and would
-        // create a second row instead -- update the row we already found by its
-        // exact stored address rather than inserting a new one.
-        await ctx.db
-          .update(agents)
-          .set({
-            agentId: agentIdStr,
-            identityRegistryAddress: registryAddress,
-            chainId,
-            updatedAt: new Date(),
-          })
-          .where(sql`${agents.address} = ${existing[0].address}`);
-      } else {
-        await ctx.db
-          .insert(agents)
-          .values({
-            address: payer,
-            agentId: agentIdStr,
-            identityRegistryAddress: registryAddress,
-            chainId,
-            registeredVia,
-          })
-          .onConflictDoNothing();
+      // Read back through the same freshness test the cache lookup above used, not a bare
+      // `agentId is not null`. The row a bare check accepts may be exactly the stale one
+      // `cacheIsFresh` just rejected on the way in -- an agentId minted against a different
+      // registry or a different chain -- and returning it here would report the previous
+      // identity as the one this mint produced. Ignoring it leaves the path at
+      // `intent_completion_deferred`, which is the truth: the mint is confirmed and the
+      // agentId for the current registry and chain has not been recorded yet.
+      const registered = await ctx.db
+        .select({
+          agentId: agents.agentId,
+          identityRegistryAddress: agents.identityRegistryAddress,
+          chainId: agents.chainId,
+        })
+        .from(agents)
+        .where(lowerAddressEq(payer))
+        .orderBy(sql`${agents.agentId} is not null desc`)
+        .limit(1);
+
+      const agentIdStr = isCacheFresh(registered[0], registryAddress, chainId)
+        ? registered[0]?.agentId
+        : undefined;
+      if (!agentIdStr) {
+        // Not a failed chain call: the mint is confirmed and the identity exists, only the
+        // read-back of the agentId the completion decodes has not landed yet. That is
+        // `intent_completion_deferred` -- nothing to refund, nothing to resubmit, and the
+        // reconciler finishes the recording on its own. The intent id is what makes that
+        // actionable, so it goes on the envelope for the caller to poll `intents.get` with;
+        // without it the caller is told to wait with no handle to wait on.
+        throw apiError({
+          idempotencyKey: ctx.idempotencyKey,
+          intentId: intent.id,
+          intentStatus: intentStatusOf(intent.status),
+          message: 'Identity registered on chain but the agent id was not recorded',
+          operation: 'identity.register',
+          reason: 'intent_completion_deferred',
+        });
       }
 
       return { agentId: agentIdStr, alreadyRegistered: false };

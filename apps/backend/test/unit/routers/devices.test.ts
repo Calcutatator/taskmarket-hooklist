@@ -1,10 +1,11 @@
 // Verifies: ADR-0018 (devices.register requires signature proof of address ownership)
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createHash } from 'crypto';
-import { createMockCtx, makeChain } from '../helpers';
+import { createIntentCtx, makeChain } from '../helpers';
 
 vi.mock('../../../src/services/contract', () => ({
-  contractRegisterIdentity: vi.fn().mockResolvedValue(42n),
+  contractRegisterIdentityTx: vi.fn().mockResolvedValue('0xregistertx'),
+  resolveRegisteredAgentId: vi.fn().mockResolvedValue(42n),
 }));
 
 vi.mock('../../../src/config/env', () => ({
@@ -26,7 +27,8 @@ vi.mock('viem', async (importOriginal) => {
 });
 
 import { devicesRouter } from '../../../src/routers/devices.router';
-import { contractRegisterIdentity } from '../../../src/services/contract';
+import { contractRegisterIdentityTx } from '../../../src/services/contract';
+import { agents as agentsTable, devices as devicesTable } from '../../../src/db/schema';
 import { recoverMessageAddress } from 'viem';
 import { getServerConfig } from '../../../src/config/env';
 
@@ -59,7 +61,7 @@ describe('devices router', () => {
 
   describe('register', () => {
     it('throws when signature is invalid', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       const caller = devicesRouter.createCaller(ctx);
       vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('invalid sig'));
 
@@ -69,7 +71,7 @@ describe('devices router', () => {
     });
 
     it('throws when signature is from a different address', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       const caller = devicesRouter.createCaller(ctx);
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
         '0xSomeoneElse0000000000000000000000000001' as `0x${string}`
@@ -81,7 +83,7 @@ describe('devices router', () => {
     });
 
     it('returns deviceId, apiToken, deviceEncryptionKey, and null agentId (registration is async)', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       // agents lookup returns empty (new wallet)
       ctx.db.select.mockReturnValueOnce(makeChain([]));
       const caller = devicesRouter.createCaller(ctx);
@@ -100,22 +102,79 @@ describe('devices router', () => {
     });
 
     it('inserts device and registers new identity when wallet is new', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([]));
       const caller = devicesRouter.createCaller(ctx);
       mockValidSignature();
 
       await caller.register({ walletAddress: WALLET, signature: SIGNATURE });
-      // Flush microtasks so the background .then() completes
-      await Promise.resolve();
+      // The mint is dispatched without being awaited, so let it settle before asserting.
+      await new Promise((resolve) => setImmediate(resolve));
 
-      // 3 inserts: devices, agent placeholder, agent update from background job
-      expect(ctx.db.insert).toHaveBeenCalledTimes(3);
-      expect(contractRegisterIdentity).toHaveBeenCalledOnce();
+      expect(ctx.insertChain(devicesTable).values).toHaveBeenCalledOnce();
+      expect(ctx.insertChain(agentsTable).values).toHaveBeenCalledOnce();
+      expect(contractRegisterIdentityTx).toHaveBeenCalledOnce();
+    });
+
+    // Verifies: ADR-0045
+    it('records the identity intent durably before returning, and dispatches it unawaited', async () => {
+      const ctx = createIntentCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([]));
+      mockValidSignature();
+
+      const result = await devicesRouter.createCaller(ctx).register({
+        walletAddress: WALLET,
+        signature: SIGNATURE,
+      });
+
+      // The durable row exists by the time the request answers -- that is the guarantee that
+      // replaces ADR-0019's bare .catch(), where a failed mint left agentId permanently null
+      // with no error, no retry and nothing recording that it had happened.
+      expect(ctx.intents).toHaveLength(1);
+      const intent = ctx.intents[0]!;
+      expect(intent.operation).toBe('identity.register');
+      expect(intent.paymentTxHash).toBeNull();
+      // ...but the response does not wait for the chain: the contract is still "poll until
+      // agentId appears", exactly as before.
+      expect(result.agentId).toBeNull();
+
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(intent.status).toBe('completed');
+    });
+
+    // Verifies: ADR-0045
+    it('still answers the request when the identity mint fails', async () => {
+      // Records that the rejecting call really ran, so the assertions below are about the mint
+      // failing rather than about a mint that was never reached.
+      let mintAttempted = false;
+      vi.mocked(contractRegisterIdentityTx).mockImplementationOnce(async () => {
+        mintAttempted = true;
+        throw new Error('rpc down');
+      });
+      const ctx = createIntentCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([]));
+      mockValidSignature();
+
+      const result = await devicesRouter.createCaller(ctx).register({
+        walletAddress: WALLET,
+        signature: SIGNATURE,
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // Prove the failure is the one under test. A `recorded` intent is also what a run that
+      // never reached the mint at all would leave behind, so the status alone says nothing
+      // unless the rejecting call is known to have happened.
+      expect(contractRegisterIdentityTx).toHaveBeenCalledOnce();
+      expect(mintAttempted).toBe(true);
+
+      expect(result.deviceId).toBeTruthy();
+      // Left claimable rather than lost: the worker picks it up and tries again, which is the
+      // whole difference from the fire-and-forget promise this replaced.
+      expect(ctx.intents[0]!.status).toBe('recorded');
     });
 
     it('returns existing agentId without re-registering when wallet already has identity', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       // agents lookup returns existing agent
       ctx.db.select.mockReturnValueOnce(makeChain([{ agentId: '99' }]));
       const caller = devicesRouter.createCaller(ctx);
@@ -124,12 +183,13 @@ describe('devices router', () => {
       const result = await caller.register({ walletAddress: WALLET, signature: SIGNATURE });
 
       expect(result.agentId).toBe('99');
-      expect(contractRegisterIdentity).not.toHaveBeenCalled();
-      expect(ctx.db.insert).toHaveBeenCalledTimes(1); // only devices, not agents
+      expect(contractRegisterIdentityTx).not.toHaveBeenCalled();
+      expect(ctx.insertChain(devicesTable).values).toHaveBeenCalledOnce();
+      expect(ctx.intents).toHaveLength(0);
     });
 
     it('generates unique deviceId and apiToken on each call', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([])).mockReturnValueOnce(makeChain([]));
       const caller = devicesRouter.createCaller(ctx);
       const input = { walletAddress: WALLET, signature: SIGNATURE };
@@ -146,7 +206,7 @@ describe('devices router', () => {
 
   describe('key', () => {
     it('throws when device is not found', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([]));
       const caller = devicesRouter.createCaller(ctx);
 
@@ -156,7 +216,7 @@ describe('devices router', () => {
     });
 
     it('throws when apiToken hash does not match', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeDevice({ apiTokenHash: 'wrong-hash' })]));
       const caller = devicesRouter.createCaller(ctx);
 
@@ -166,7 +226,7 @@ describe('devices router', () => {
     });
 
     it('throws when device is revoked', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeDevice({ revokedAt: new Date() })]));
       const caller = devicesRouter.createCaller(ctx);
 
@@ -177,7 +237,7 @@ describe('devices router', () => {
 
     it('returns deviceEncryptionKey on valid token', async () => {
       const token = 'test-token';
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeDevice({ apiTokenHash: sha256Hex(token) })])
       );
@@ -192,8 +252,8 @@ describe('devices router', () => {
     it('returns deterministic DEK for same deviceId', async () => {
       const token = 'test-token';
       const deviceId = 'test-device-id';
-      const ctx1 = createMockCtx();
-      const ctx2 = createMockCtx();
+      const ctx1 = createIntentCtx();
+      const ctx2 = createIntentCtx();
       ctx1.db.select.mockReturnValueOnce(
         makeChain([makeDevice({ apiTokenHash: sha256Hex(token) })])
       );
@@ -218,7 +278,7 @@ describe('devices router', () => {
         CHAIN_ID: 84532,
       } as ReturnType<typeof getServerConfig>);
       const token = 'test-token';
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeDevice({ apiTokenHash: sha256Hex(token) })])
       );
@@ -232,7 +292,7 @@ describe('devices router', () => {
 
   describe('status', () => {
     it('throws when device is not found', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([]));
       const caller = devicesRouter.createCaller(ctx);
 
@@ -242,7 +302,7 @@ describe('devices router', () => {
     });
 
     it('throws when apiToken does not match', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeDevice({ apiTokenHash: 'wrong-hash' })]));
       const caller = devicesRouter.createCaller(ctx);
 
@@ -253,7 +313,7 @@ describe('devices router', () => {
 
     it('returns active=true for non-revoked device', async () => {
       const token = 'test-token';
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeDevice({ apiTokenHash: sha256Hex(token), revokedAt: null })])
       );
@@ -267,7 +327,7 @@ describe('devices router', () => {
 
     it('returns active=false for revoked device', async () => {
       const token = 'test-token';
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeDevice({ apiTokenHash: sha256Hex(token), revokedAt: new Date() })])
       );

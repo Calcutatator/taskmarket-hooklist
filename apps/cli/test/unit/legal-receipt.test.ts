@@ -16,6 +16,7 @@ describe('legal acceptance receipt headers', () => {
     vi.clearAllMocks();
     mockFetch.mockResolvedValue({
       json: async () => ({ ok: true }),
+      text: async () => JSON.stringify({ ok: true }),
       ok: true,
       status: 200,
     });
@@ -56,10 +57,8 @@ describe('legal acceptance receipt headers', () => {
 
     await apiPost('/api/tasks', { description: 'task' });
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/tasks'),
-      expect.objectContaining({ headers: { 'Content-Type': 'application/json' } })
-    );
+    const headers = mockFetch.mock.calls[0][1].headers as Record<string, string>;
+    expect(headers['X-Taskmarket-Legal-Receipt']).toBeUndefined();
   });
 
   it('omits the receipt from ordinary public GET requests', async () => {

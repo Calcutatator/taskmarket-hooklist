@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { apiPost } from '../../lib/api.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, printError, renderFailure } from '../../lib/output.js';
 import { signReadAuth } from '../../lib/read-auth.js';
 
 /**
@@ -20,13 +20,13 @@ export const inviteCmd = new Command('invite')
     }
 
     try {
-      const result = await apiPost(
+      const { data: result, idempotencyKey } = await apiPost<Record<string, unknown>>(
         `/api/tasks/${taskId}/private-access/viewers`,
         { taskId, viewerAddress: address },
         { headers: auth.headers }
       );
-      printResult(result as Record<string, unknown>);
+      printResult(result, { idempotencyKey });
     } catch (err: unknown) {
-      printError(err instanceof Error ? err.message : 'Failed to invite viewer.');
+      renderFailure(err, { fallback: 'Failed to invite viewer.' });
     }
   });

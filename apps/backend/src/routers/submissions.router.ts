@@ -30,7 +30,12 @@ import { randomUUID } from 'crypto';
 import { keccak256 } from 'viem';
 import { TRPCError } from '@trpc/server';
 import { contractSubmitWork } from '../services/contract';
-import { assertUnderHardSubmissionCeilingForInsert } from '../services/submission-allowance';
+import { settledPaymentReference } from '../middleware/x402';
+import { runRelayedIntent } from '../services/relayed-intent-request';
+import type { IntentPaymentReference } from '../services/relayed-intents';
+import { derivedIdempotencyKey } from '../services/relayed-intents';
+import { apiError } from '../lib/api-error';
+import type { SubmissionsSubmitIntentPayload } from '../services/intents/submissions-intents';
 import { buildArtifactManifestHash } from '../lib/canonical-hashes';
 import { sha256Hex } from '../lib/hash';
 import { verifySignedAddressOrThrow } from '../lib/agents';
@@ -41,6 +46,7 @@ import {
   type CanViewTask,
 } from '../lib/task-visibility';
 import type { Context } from '../context';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 
 type ArtifactInsertRow = Omit<
   NewArtifact,
@@ -307,6 +313,53 @@ async function assertCanSubmitToTask(
   });
 }
 
+/**
+ * Requires a paid submission's fee to have been paid by the worker who authored it.
+ *
+ * **This is not authentication, and must not be read as such.** Both submission endpoints
+ * authenticate with `verifySignedAddressOrThrow` over `buildSubmitMessage`, bound to the exact
+ * bytes or keys being submitted (issue #323); the x402 charge is RFC-0006 anti-spam pricing past
+ * the free allowance. A fee, not a credential. That is the opposite of `pitches.select` and
+ * `proofs.submit`, whose `signature` field is vestigial and whose settled payer *is* their
+ * identity -- remove their equality check and anyone can act as anyone. Removing this one would
+ * not do that, so the reason to have it has to stand on its own.
+ *
+ * It does. A submission funded by a third party is not a product feature and never was: the CLI
+ * signs the submission and the payment with one key, and the web app uses the connected wallet
+ * for both. The divergence is reachable only by hand-crafting a raw API call in order to create
+ * it. Left open, the address recorded as having initiated the intent -- ADR-0059's initiator,
+ * which is the settled payer on a paid route (ADR-0057) -- can be someone other than the author
+ * of the work, so the read granted by `intents.get` lands on a party who did not do the writing.
+ * That is an unintended state with nothing on the other side of the ledger, and it is closed for
+ * that reason alone.
+ *
+ * The free path is untouched, and is checked first: past nothing but the allowance gate most
+ * submissions carry no payment at all, and `settledPaymentReference` returns `undefined` for
+ * every one of them.
+ *
+ * Ordering: `pitches.router.ts` warns that its payer check must run after identity is resolved,
+ * or the FORBIDDEN-versus-payment-error difference becomes a private-task membership oracle.
+ * That concern does not reach here, because there the payer check *is* the identity resolution.
+ * Here identity is already resolved by the signature, and this compares the payer against an
+ * address the caller has proven they control -- it reveals only whether two addresses the caller
+ * chose are equal, and branches on no task state at all. It therefore runs immediately after the
+ * signature check and before any private-task lookup, which is also the placement that spends no
+ * queries on a request that cannot proceed.
+ *
+ * The fee is already settled by the time this runs -- the x402 middleware settles before tRPC --
+ * so a rejection here forfeits it, exactly as the equivalent rejection in `pitches.submit` and
+ * `proofs.submit` does. Nothing refunds it, because only intent settlement decides that
+ * (ADR-0048) and no intent is recorded for a request refused here.
+ */
+function assertPaidByWorker(payment: IntentPaymentReference | undefined, workerAddress: string) {
+  if (!payment) return;
+  if (payment.payer.toLowerCase() === workerAddress.toLowerCase()) return;
+  throw apiError({
+    reason: 'payment_payer_mismatch',
+    message: 'The submission fee must be paid by the worker submitting the work',
+  });
+}
+
 function toArtifactResponse(
   row: Artifact,
   workerAddress: string,
@@ -338,6 +391,7 @@ export const submissionsRouter = router({
   submit: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/submissions',
         tags: ['Tasks'],
@@ -406,6 +460,10 @@ export const submissionsRouter = router({
           }),
       });
 
+      // Undefined on the free path (RFC-0006's allowance), which is most submissions.
+      const payment = settledPaymentReference(ctx.res);
+      assertPaidByWorker(payment, input.workerAddress);
+
       // Only compared once the caller has cryptographically proven ownership of
       // workerAddress above -- comparing task.claimedBy against an unauthenticated
       // input.workerAddress would let an attacker submit an arbitrary candidate
@@ -435,7 +493,15 @@ export const submissionsRouter = router({
       await assertCanSubmitToTask(ctx.db, task, input.workerAddress);
 
       const storage = getStorageBackend();
-      const submissionId = randomUUID();
+      // Derived from the caller's own key rather than random. The payload is compared
+      // against the stored one to tell a retry from a different write (ADR-0061), and these
+      // ids travel inside it -- fresh ones on every attempt would make an honest retry of a
+      // free-allowance submission look like a change of arguments and get it refused. Every
+      // artifact id and storage key hangs off this one, so deriving it makes the whole
+      // payload a pure function of the request.
+      const submissionId = derivedIdempotencyKey(
+        `${ctx.idempotencyKey}:submissions.submit:submissionId`
+      );
 
       const artifactInputs = input.artifacts.map((artifact, index) => ({
         fileName: artifact.fileName,
@@ -462,7 +528,7 @@ export const submissionsRouter = router({
         });
 
         artifactRows.push({
-          id: randomUUID(),
+          id: derivedIdempotencyKey(`${submissionId}:artifact:${artifactInput.displayOrder}`),
           taskId: input.taskId,
           submissionId,
           role: artifactInput.role,
@@ -479,47 +545,45 @@ export const submissionsRouter = router({
 
       const deliverableHash = buildArtifactManifestHash(artifactRows);
 
-      const submitTxHash = await contractSubmitWork(
-        input.taskId as `0x${string}`,
-        input.workerAddress as `0x${string}`,
-        deliverableHash,
-        task.contractAddress
-      );
-
-      await ctx.db.transaction(async (tx) => {
-        // RFC-0006 Tier 2 (ADR-0037): submissionAllowanceGate's own hard-ceiling check
-        // ran in middleware, before file uploads and the on-chain submitWork call above --
-        // a real gap wide enough for concurrent requests to all read the same
-        // under-ceiling count. Re-validate atomically, immediately before the insert it
-        // actually guards, inside the same transaction.
-        if (task.mode === 'bounty' || task.mode === 'benchmark') {
-          await assertUnderHardSubmissionCeilingForInsert(tx, input.taskId, input.workerAddress);
-        }
-
-        await tx.insert(submissions).values({
-          id: submissionId,
+      // Free, but still an intent (ADR-0045), and this is the path where it matters most: a
+      // worker whose deliverable hash the chain has committed to, and whose submission row
+      // never got written because the receipt arrived after the request ended, has done work
+      // the product cannot see, show or pay for. The completion handler owns every write that
+      // used to run inline below it -- including the Tier 2 ceiling re-check, which has to
+      // stay in the same transaction as the insert it guards.
+      await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'submissions.submit',
+        payer: input.workerAddress,
+        // Present only past the free allowance (RFC-0006 Tier 1): the first few submissions
+        // bypass x402 entirely and have nothing to refund, and the ones after it are charged
+        // the flat action fee. Before this the paid ones recorded no payment reference at
+        // all, so a submission that never reached the chain could not be refunded either.
+        payment,
+        payload: {
+          artifacts: artifactRows,
+          contractAddress: task.contractAddress,
+          deliverableHash,
+          mode: task.mode,
+          signature: input.signature,
+          submissionId,
           taskId: input.taskId,
           workerAddress: input.workerAddress,
-          fileUrl: artifactRows[0]!.storageUri,
-          signature: input.signature,
-          deliverableHash,
-          submitTxHash,
-        });
-
-        await tx.insert(artifacts).values(artifactRows);
-
-        // Bounty/Benchmark are open contests: the task stays `open` and keeps
-        // accepting submissions until the requester accepts one or it expires. No
-        // status flip on submit -- "has submissions" is derived from the submissions
-        // table, and the requester keeps full cancel/update control while live.
-        // Claim/pitch/auction have a single designated worker, so flip to
-        // pending_approval on submission so the requester can accept.
-        if (task.mode !== 'bounty' && task.mode !== 'benchmark') {
-          await tx
-            .update(tasks)
-            .set({ status: 'pending_approval' })
-            .where(eq(tasks.id, input.taskId));
-        }
+        } satisfies SubmissionsSubmitIntentPayload,
+        send: () =>
+          contractSubmitWork(
+            input.taskId as `0x${string}`,
+            input.workerAddress as `0x${string}`,
+            deliverableHash,
+            task.contractAddress
+          ),
+        // The completion can fail for one reason a worker can act on -- the Tier 2 ceiling
+        // (ADR-0037) -- and the generic "it will be retried" message would tell them nothing
+        // about why their submission is not showing up. The specific reason is on the intent's
+        // lastError either way; this is what puts it in front of the person who hit it.
+        describeCompletionFailure: (intentId) =>
+          `Your work was committed on chain but recording the submission did not complete; it will be retried automatically (intent ${intentId}). If this task is at its submission limit, the submission will not be recorded.`,
       });
 
       return { success: true, submissionId };
@@ -592,6 +656,7 @@ export const submissionsRouter = router({
   submitFromKeys: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/submissions/from-keys',
         tags: ['Tasks'],
@@ -658,6 +723,10 @@ export const submissionsRouter = router({
           }),
       });
 
+      // Undefined on the free path (RFC-0006's allowance), which is most submissions.
+      const payment = settledPaymentReference(ctx.res);
+      assertPaidByWorker(payment, input.workerAddress);
+
       // Only compared once the caller has cryptographically proven ownership of
       // workerAddress above -- comparing task.claimedBy against an unauthenticated
       // input.workerAddress would let an attacker submit an arbitrary candidate
@@ -687,7 +756,15 @@ export const submissionsRouter = router({
       await assertCanSubmitToTask(ctx.db, task, input.workerAddress);
 
       const storage = getStorageBackend();
-      const submissionId = randomUUID();
+      // Derived from the caller's own key rather than random. The payload is compared
+      // against the stored one to tell a retry from a different write (ADR-0061), and these
+      // ids travel inside it -- fresh ones on every attempt would make an honest retry of a
+      // free-allowance submission look like a change of arguments and get it refused. Every
+      // artifact id and storage key hangs off this one, so deriving it makes the whole
+      // payload a pure function of the request.
+      const submissionId = derivedIdempotencyKey(
+        `${ctx.idempotencyKey}:submissions.submit:submissionId`
+      );
 
       // Reject keys that were not generated by requestUploadUrl for this task, or
       // that were issued to a different worker -- the task-id prefix alone doesn't
@@ -739,7 +816,7 @@ export const submissionsRouter = router({
         }
 
         artifactRows.push({
-          id: randomUUID(),
+          id: derivedIdempotencyKey(`${submissionId}:artifact:${index}`),
           taskId: input.taskId,
           submissionId,
           role: artifactInput.role,
@@ -756,42 +833,42 @@ export const submissionsRouter = router({
 
       const deliverableHash = buildArtifactManifestHash(artifactRows);
 
-      const submitTxHash = await contractSubmitWork(
-        input.taskId as `0x${string}`,
-        input.workerAddress as `0x${string}`,
-        deliverableHash,
-        task.contractAddress
-      );
-
-      await ctx.db.transaction(async (tx) => {
-        // RFC-0006 Tier 2 (ADR-0037): see the sibling `submit` mutation's identical
-        // guard above for why this re-check exists and runs here, atomically, rather
-        // than only in submissionAllowanceGate's earlier, race-prone middleware check.
-        if (task.mode === 'bounty' || task.mode === 'benchmark') {
-          await assertUnderHardSubmissionCeilingForInsert(tx, input.taskId, input.workerAddress);
-        }
-
-        await tx.insert(submissions).values({
-          id: submissionId,
+      // Same operation as the sibling `submit` mutation: the two differ only in how they
+      // obtain the artifact rows, and by this point both hold the same deliverable hash. One
+      // intent kind, one completion handler (ADR-0045).
+      await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'submissions.submit',
+        payer: input.workerAddress,
+        // Present only past the free allowance (RFC-0006 Tier 1): the first few submissions
+        // bypass x402 entirely and have nothing to refund, and the ones after it are charged
+        // the flat action fee. Before this the paid ones recorded no payment reference at
+        // all, so a submission that never reached the chain could not be refunded either.
+        payment,
+        payload: {
+          artifacts: artifactRows,
+          contractAddress: task.contractAddress,
+          deliverableHash,
+          mode: task.mode,
+          signature: input.signature,
+          submissionId,
           taskId: input.taskId,
           workerAddress: input.workerAddress,
-          fileUrl: artifactRows[0]!.storageUri,
-          signature: input.signature,
-          deliverableHash,
-          submitTxHash,
-        });
-
-        await tx.insert(artifacts).values(artifactRows);
-
-        // Bounty/Benchmark stay `open` while accepting submissions -- no status flip.
-        // Claim/pitch/auction have a single designated worker, so flip to
-        // pending_approval on submission so the requester can accept.
-        if (task.mode !== 'bounty' && task.mode !== 'benchmark') {
-          await tx
-            .update(tasks)
-            .set({ status: 'pending_approval' })
-            .where(eq(tasks.id, input.taskId));
-        }
+        } satisfies SubmissionsSubmitIntentPayload,
+        send: () =>
+          contractSubmitWork(
+            input.taskId as `0x${string}`,
+            input.workerAddress as `0x${string}`,
+            deliverableHash,
+            task.contractAddress
+          ),
+        // The completion can fail for one reason a worker can act on -- the Tier 2 ceiling
+        // (ADR-0037) -- and the generic "it will be retried" message would tell them nothing
+        // about why their submission is not showing up. The specific reason is on the intent's
+        // lastError either way; this is what puts it in front of the person who hit it.
+        describeCompletionFailure: (intentId) =>
+          `Your work was committed on chain but recording the submission did not complete; it will be retried automatically (intent ${intentId}). If this task is at its submission limit, the submission will not be recorded.`,
       });
 
       return { success: true, submissionId };

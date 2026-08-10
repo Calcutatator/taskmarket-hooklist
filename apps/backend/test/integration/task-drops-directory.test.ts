@@ -45,6 +45,7 @@ function directoryApp() {
         req,
         res,
         caller: undefined,
+        idempotencyKey: undefined,
         taskAccessGrant: undefined,
       }),
     })
