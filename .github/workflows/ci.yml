@@ -175,6 +175,31 @@ jobs:
 
       - run: make install
 
+      # Foundry compiles from cold on every run otherwise, and that is the bulk of this job:
+      # the ABI freshness check below is a full `forge build` measured at 13.5 minutes, after
+      # which every other contract step finishes in seconds off the same artifacts. This job
+      # gates every PR, including ones that touch no Solidity at all.
+      #
+      # Restoring the cache is safe rather than merely fast. Foundry keys artifacts by a hash of
+      # each source file and its settings, so anything that does not match is rebuilt -- a stale
+      # entry costs a recompile, never a wrong artifact. The two gates that would care, ABI
+      # freshness and the gas snapshot, regenerate and diff, so a bad cache surfaces as a failure
+      # and not as a false pass.
+      #
+      # `restore-keys` is the part that earns its keep: on a partial hit a PR touching one facet
+      # rebuilds that facet instead of all 126 files. Artifacts are small -- 21MB of `out/` and
+      # under a megabyte of `cache/`.
+      - name: Cache Foundry build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/contracts/out
+            packages/contracts/cache
+            ~/.svm
+          key: forge-${{ runner.os }}-${{ hashFiles('packages/contracts/src/**', 'packages/contracts/test/**', 'packages/contracts/script/**', 'packages/contracts/foundry.toml', 'packages/contracts/remappings.txt') }}
+          restore-keys: |
+            forge-${{ runner.os }}-
+
       # The committed ABI under packages/contracts/abi/ is what the backend indexer
       # reads its event definitions from, so a stale copy would silently defeat the
       # indexer's drift guard. Same shape as the gas snapshot check below.
