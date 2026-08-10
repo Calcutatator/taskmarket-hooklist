@@ -143,7 +143,13 @@ jobs:
 
   quality-contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Raised from 30. This job installs Foundry and Slither, then runs the contract suite, the
+    # gas snapshot check, Slither, and coverage in sequence -- and coverage recompiles everything
+    # under `--ir-minimum`, which is the slowest step by a distance. rev020 adds a facet, taking
+    # the total from ~19 minutes to past the old cap, where coverage was killed mid-compile with
+    # SIGTERM and every preceding step green. The cap was measuring the suite's growth rather
+    # than catching a hang.
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v7
