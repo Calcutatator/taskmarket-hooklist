@@ -70,9 +70,11 @@ function indexedDb(rows: StoredRow[] = []) {
         where: (predicate: { getSQL: () => never }) => ({
           returning: async () => {
             const query = dialect.sqlToQuery(predicate.getSQL());
+            // Matched against every bound parameter rather than `params[0]`: these predicates
+            // are scoped by chain now (ADR-0078), so the key is no longer the first one.
             const row = rows.find(
               (candidate) =>
-                candidate.idempotencyKey === query.params[0] && candidate.status === 'reserved'
+                query.params.includes(candidate.idempotencyKey) && candidate.status === 'reserved'
             );
             if (!row) return [];
             Object.assign(row, values);
@@ -89,7 +91,7 @@ function indexedDb(rows: StoredRow[] = []) {
             const column = query.sql.includes('payment_tx_hash')
               ? 'paymentTxHash'
               : 'idempotencyKey';
-            return rows.filter((row) => row[column] === query.params[0]);
+            return rows.filter((row) => query.params.includes(row[column]));
           },
         }),
       }),

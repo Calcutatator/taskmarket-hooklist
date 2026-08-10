@@ -16,7 +16,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { relayedIntents } from '../../src/db/schema';
 import { createIsolatedMigratedDatabase } from '../helpers/integration-database';
 import { stubServerEnvironment } from '../helpers/server-environment';
@@ -49,6 +49,14 @@ async function insertIntent(chainId: number, idempotencyKey: string, paymentTxHa
 }
 
 describeWithDatabase('relayed intent keys are scoped to their chain', () => {
+  beforeAll(async () => {
+    await isolatedDatabase.start();
+  });
+
+  afterAll(async () => {
+    await isolatedDatabase.stop();
+  });
+
   it('accepts the same idempotency key on two different chains', async () => {
     // The defect, stated as a passing test: before the composite index this second insert was
     // rejected as a duplicate, so a multi-chain backend could not have served both callers.
