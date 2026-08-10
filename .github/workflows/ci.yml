@@ -204,6 +204,30 @@ jobs:
       - name: Slither static analysis
         run: make contract audit
 
+      # Restored after removing it broke this branch. The evidence is three runs: without swap
+      # the coverage step is killed mid-compile (exit 143, post-steps skipped) at 28 minutes
+      # against a 45-minute cap, so it is not the timeout; with swap the same commit passed
+      # 11/11.
+      #
+      # main does not need this and rev020 does, which is the part worth understanding: main's
+      # contract changes are cached, so its ABI build compiles 66 files and coverage 124. This
+      # branch changes contracts, so the cache key differs, the ABI build compiles ~126 and takes
+      # 1044s, and coverage compiles 126. Same 2-core/7GB runner, materially more work.
+      #
+      # Added ALONGSIDE the runner's own /swapfile -- `swapon` takes several areas, and an
+      # earlier version that ran `swapoff -a` first took the machine down mid-job. Non-fatal, so
+      # a refused allocation lets the coverage step fail on its own terms rather than being
+      # skipped by this one.
+      - name: Add swap for the coverage compile
+        run: |
+          sudo fallocate -l 8G /mnt/swap-coverage || sudo dd if=/dev/zero of=/mnt/swap-coverage bs=1M count=8192
+          sudo chmod 600 /mnt/swap-coverage
+          sudo mkswap /mnt/swap-coverage
+          sudo swapon /mnt/swap-coverage
+          swapon --show
+          free -h
+        continue-on-error: true
+
       - name: Coverage check
         run: make contract coverage-check
 
