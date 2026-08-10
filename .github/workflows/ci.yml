@@ -203,6 +203,25 @@ jobs:
       - name: Slither static analysis
         run: make contract audit
 
+      # This repo is private, so `ubuntu-latest` is a 2-core/7GB runner. solc under `--ir-minimum`
+      # compiling 126 files does not fit: the step is killed mid-compile at a consistent ~3
+      # minutes, with `make` reporting no child left to wait on. It completes comfortably on a
+      # 16GB developer machine (153s, ~3.1GB peak), which is why this reads as a CI-only fault.
+      #
+      # Swap is added ALONGSIDE the runner's own /swapfile -- `swapon` takes several areas, and
+      # an earlier attempt that ran `swapoff -a` first left the machine with none at the worst
+      # moment. `|| true` because a coverage gate is not worth failing the build over if the
+      # allocation is refused; the step below then fails on its own terms, as it did before.
+      - name: Add swap for the coverage compile
+        run: |
+          sudo fallocate -l 8G /mnt/swap-coverage || sudo dd if=/dev/zero of=/mnt/swap-coverage bs=1M count=8192
+          sudo chmod 600 /mnt/swap-coverage
+          sudo mkswap /mnt/swap-coverage
+          sudo swapon /mnt/swap-coverage
+          swapon --show
+          free -h
+        continue-on-error: true
+
       - name: Coverage check
         run: make contract coverage-check
 
