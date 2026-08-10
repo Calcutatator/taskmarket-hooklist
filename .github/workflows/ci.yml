@@ -143,12 +143,12 @@ jobs:
 
   quality-contracts:
     runs-on: ubuntu-latest
-    # Raised from 30. Coverage recompiles everything under `--ir-minimum` and now does it with
-    # `-j 1`, which the contract suite requires anyway (AGENTS.md: RevNNN step scripts share one
-    # process-wide environment through `vm.setEnv`, so parallel suites retarget each other) and
-    # which also keeps solc's peak memory under what the runner allows -- an unserialised
-    # coverage run was killed mid-compile, leaving `make` with no child to wait on. Serialising
-    # trades wall-clock for memory, so the cap has to allow for the slower compile.
+    # Raised from 30, which this job outgrew. The bulk of it is the ABI freshness check -- a full
+    # `forge build` plus ABI generation, measured at 13.5 minutes on a cold cache -- after which
+    # everything else compiles from that cache in seconds. With rev020's extra facet the total
+    # crossed 30 and coverage, running last, was the step the cap cut off. Coverage itself is
+    # cheap: 153s and ~3.1GB peak measured locally on the same 16GB a runner has, so this is
+    # about the job's length and not about that step's cost.
     timeout-minutes: 45
 
     steps:
@@ -202,27 +202,6 @@ jobs:
 
       - name: Slither static analysis
         run: make contract audit
-
-      # solc under `--ir-minimum` is the memory peak of this job, and on rev020's file count it
-      # exceeds what the runner will give it: the compile was killed part-way and `make` reported
-      # no child left to wait on. Swap is the cheap remedy -- it costs wall-clock on the pages
-      # that spill and nothing otherwise, where the alternatives are a paid larger runner or
-      # dropping the gate. `--skip script` is not available: the Rev*Upgrade tests import the
-      # step scripts directly, so they have to compile.
-      - name: Add swap for the coverage compile
-        run: |
-          # Added ALONGSIDE the runner's existing /swapfile, never replacing it. An earlier
-          # version ran `swapoff -a` first and the runner did not survive the job -- steps after
-          # this one recorded no conclusion and the log was lost, which is what dropping the
-          # machine's only swap during the heaviest compile buys you. `swapon` takes multiple
-          # areas, so there is no reason to remove one.
-          sudo rm -f /mnt/swapfile-coverage
-          sudo fallocate -l 12G /mnt/swapfile-coverage
-          sudo chmod 600 /mnt/swapfile-coverage
-          sudo mkswap /mnt/swapfile-coverage
-          sudo swapon /mnt/swapfile-coverage
-          swapon --show
-          free -h
 
       - name: Coverage check
         run: make contract coverage-check
