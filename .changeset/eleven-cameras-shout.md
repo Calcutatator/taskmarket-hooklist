@@ -2,17 +2,17 @@
 '@lucid-agents/taskmarket': minor
 ---
 
-Name every write, say why it failed, and appoint an evaluator after a task is live.
+Add idempotency keys to every write, machine-readable failure reasons, and `task assign-evaluator`.
 
-**Every relayed write carries an idempotency key.** Each write the CLI makes sends `X-Taskmarket-Idempotency-Key`, a key that names the operation and is generated before the request leaves your machine. Both rounds of a paid x402 exchange carry the same key, because they are one write. If a request is ever presented again under its key, Taskmarket returns the operation it already has instead of doing the work, and charging for it, a second time.
+**Every write carries an idempotency key.** Each write sends `X-Taskmarket-Idempotency-Key`, generated before the request leaves your machine. Present the same key again and Taskmarket returns the operation it already has rather than doing — and charging for — the work twice. Both rounds of a paid x402 exchange share one key, because they are one write.
 
-The key is the identifier that survives a lost response. The id Taskmarket assigns to a write can only be learned from a reply that a dropped connection might never deliver; the key exists before there is a reply to lose. Any command that wrote prints the key it used on its JSON envelope as `idempotencyKey`, on success and on failure alike, so you always hold the handle to ask what became of the write. To present that same operation again under that key, set `TASKMARKET_IDEMPOTENCY_KEY` for a single invocation:
+Every command that writes prints the key it used as `idempotencyKey`, on success and on failure. That matters most when a response never arrives: the id Taskmarket assigns can only be learned from a reply, while the key exists before there is a reply to lose. To re-present an operation under its key:
 
 ```bash
 TASKMARKET_IDEMPOTENCY_KEY=<key from the envelope> taskmarket identity register
 ```
 
-**Failures say why, in a field a script can read.** Every command's JSON failure envelope carries the reason Taskmarket gives for the failure, alongside the message it always printed:
+**Failures carry a reason a script can branch on.** The JSON failure envelope now includes `reason`, `status`, and `pending`:
 
 ```json
 {
@@ -22,21 +22,18 @@ TASKMARKET_IDEMPOTENCY_KEY=<key from the envelope> taskmarket identity register
   "idempotencyKey": "018f...c3",
   "reason": "intent_in_flight",
   "intentId": "int_9f2",
-  "intentStatus": "broadcast",
   "pending": true
 }
 ```
 
-`pending` is the field to branch on. `true` means the write may still succeed: it was broadcast on chain and no outcome has been established yet, so running the command again is a second payment rather than a retry. Wait and check `taskmarket task get`, or ask about the write directly by its `intentId` or its `idempotencyKey`. `false` means the outcome is settled and the command genuinely did not do what you asked.
+`pending: true` means the write may still succeed — it was broadcast on chain and no outcome is established yet, so running the command again is a second payment, not a retry. Poll with `taskmarket task get`, or ask about the write by its `intentId` or `idempotencyKey`. `pending: false` means the command genuinely did not do what you asked.
 
-`reason` says which kind of failure it was -- among others, `intent_in_flight` for a write still landing, `idempotency_key_reused` for an operation you have already started, `payment_rejected` for one that was never charged, and `payment_already_spent` for a payment that funded a different write.
+**Treat a missing `pending` as unknown, never as safe.** When Taskmarket sends no classification, the field is absent rather than `false`, because an unclassified failure is not evidence that nothing is in flight. Holding a key does not make an automatic retry safe either — re-present one only after an explicit terminal signal.
 
-When Taskmarket sends no classification at all, `pending` is absent rather than `false`. An unclassified failure is not evidence that nothing is in flight, so treat a missing `pending` as unknown and never as safe to retry. Holding a key does not by itself make an automatic retry safe either: re-presenting a key is a decision to take after an explicit terminal signal, not something to script around a failure. Re-running a command without the variable is a new operation and a second payment.
+`reason` values include `intent_in_flight` for a write still landing, `idempotency_key_reused` for an operation already started, `payment_rejected` for one never charged, and `payment_already_spent` for a payment that funded a different write.
 
-This holds for every command without exception, including `task refund-expired`, `task reject-submission`, `task reject-all-submissions`, `task accept-submissions`, and `task resolve-dispute`. A batch command reports `pending: true` when any one of the writes it made may still be landing, and lists each write's own outcome beside it.
+This applies to every command, including batch ones such as `task reject-all-submissions`, which reports `pending: true` if any of its writes may still be landing and lists each write's outcome separately. Commands that make several writes report a key per write rather than one ambiguous key at the top level.
 
-**A key always names the write its envelope describes.** A command that makes several writes leaves `idempotencyKey` off the top level rather than picking one of them, and reports a key per write where there is somewhere to put it -- `task reject-all-submissions` puts one beside each rejection in `results`. A failure carries the key of the write that failed, including failures with no response behind them at all, such as a dropped connection or a signing error. A key that named a different write would look up that other operation and report its outcome as yours, so there is deliberately no top-level key rather than a plausible one.
+The envelope survives a pipe — `taskmarket task create ... 2>&1 | jq` receives the complete JSON, and the process still exits non-zero.
 
-The envelope is also written whole when stderr is piped, which is how an agent consumes it: `taskmarket task create ... 2>&1 | jq` receives the complete JSON and the process still exits non-zero.
-
-**`taskmarket task assign-evaluator <taskId> --evaluator <address>`** appoints an evaluator to a task that is already live, for the case where the decision comes later than task creation. It takes the same optional `--evaluator-fee-bps`, `--evaluation-window`, `--appeal-window`, and `--dispute-resolver` settings as `task create`. Only the task's requester may assign, the task must still be open and unclaimed with no evaluator already appointed, and the call costs 0.001 USDC. A worker claim can land within milliseconds of a task going live, so use the `task create` flags whenever the evaluator is known up front.
+**`taskmarket task assign-evaluator <taskId> --evaluator <address>`** appoints an evaluator to a task that is already live, for when the decision comes after creation. It accepts the same optional `--evaluator-fee-bps`, `--evaluation-window`, `--appeal-window`, and `--dispute-resolver` flags as `task create`. Only the requester may assign, the task must be open and unclaimed with no evaluator already set, and the call costs 0.001 USDC. A claim can land within milliseconds of a task going live, so prefer the `task create` flags when the evaluator is known up front.
