@@ -186,6 +186,11 @@ jobs:
       # freshness and the gas snapshot, regenerate and diff, so a bad cache surfaces as a failure
       # and not as a false pass.
       #
+      # `out-coverage` is cached alongside `out` and kept separate from it on purpose. Coverage
+      # compiles under `--ir-minimum`, and while it shared `out/` it overwrote the default-profile
+      # artifacts the ABI check and gas snapshot need -- so the cache saved coverage's build and
+      # the next run recompiled 66 of 126 files at 750s. Two directories, two profiles, both warm.
+      #
       # `restore-keys` is the part that earns its keep: on a partial hit a PR touching one facet
       # rebuilds that facet instead of all 126 files. Artifacts are small -- 21MB of `out/` and
       # under a megabyte of `cache/`.
@@ -194,6 +199,7 @@ jobs:
         with:
           path: |
             packages/contracts/out
+            packages/contracts/out-coverage
             packages/contracts/cache
             ~/.svm
           key: forge-${{ runner.os }}-${{ hashFiles('packages/contracts/src/**', 'packages/contracts/test/**', 'packages/contracts/script/**', 'packages/contracts/foundry.toml', 'packages/contracts/remappings.txt') }}

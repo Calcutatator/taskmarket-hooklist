@@ -10,3 +10,4 @@ reports/
 # IDE
 .vscode/
 .idea/
+out-coverage/

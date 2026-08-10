@@ -612,12 +612,15 @@ contract:
 		cd packages/contracts && set -o pipefail && slither . --config-file slither.config.json 2>&1 | tee reports/slither-audit.md && \
 		echo "Report written to packages/contracts/reports/slither-audit.md"; \
 	elif [ "$(word 1,$(ARGS))" = "coverage" ]; then \
+		: "FOUNDRY_OUT: coverage compiles under --ir-minimum, which is a different settings" ; \
+		: "hash from the default profile. Sharing out/ meant each build discarded the other's" ; \
+		: "artifacts -- CI cached whichever ran last and then recompiled 66 of 126 files." ; \
 		mkdir -p packages/contracts/reports/coverage && \
-		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "(script/|src/mocks/|test/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info && \
+		cd packages/contracts && FOUNDRY_OUT=out-coverage forge coverage --ir-minimum --no-match-coverage "(script/|src/mocks/|test/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info && \
 		echo "lcov report written to packages/contracts/reports/coverage/lcov.info"; \
 	elif [ "$(word 1,$(ARGS))" = "coverage-check" ]; then \
 		mkdir -p packages/contracts/reports/coverage && \
-		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "(script/|src/mocks/|test/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info | tee /tmp/forge-coverage.txt && \
+		cd packages/contracts && FOUNDRY_OUT=out-coverage forge coverage --ir-minimum --no-match-coverage "(script/|src/mocks/|test/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info | tee /tmp/forge-coverage.txt && \
 		echo "lcov report written to reports/coverage/lcov.info" && \
 		bash scripts/check-coverage.sh /tmp/forge-coverage.txt; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot" ]; then \
