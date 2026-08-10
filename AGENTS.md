@@ -204,6 +204,24 @@ Cover every meaningful branch, not just the happy path:
 - `DEV_PRIVATE_KEY` — fallback if specific keys not set
 - `UPGRADE_OWNER_KEY` / `FORGE_DEV_PRIVATE_KEY` — the diamond owner's key. Needed only by smoke tests that mutate protocol configuration (see below). Unlike every other key here, this one sends transactions directly and must hold ETH for gas, because owner-only functions check `msg.sender` and have no forwarder path.
 
+### Verifying a diamond cut on a shared network
+
+After applying a revision to testnet or mainnet, verify it by **reading the chain**:
+
+```
+cast call $DIAMOND "diamondVersion()(uint256)" --rpc-url $RPC
+cast call $DIAMOND "facetAddress(bytes4)(address)" $SELECTOR --rpc-url $RPC
+```
+
+That answers whether the cut landed, costs nothing, and changes nothing.
+
+**Do not use `make smoke upgrade` for this.** It proves the upgrade *mechanism* by removing a live
+selector and adding it back, so mid-run the diamond is missing `getTask`. On a disposable Anvil
+that is free; on a shared network it is a real outage window. It has already stranded the selector
+on Base Sepolia once -- an RPC read lagged behind the REMOVE, the assertion threw, and the restore
+never ran. The restore is now in a `finally` and the reads retry, but the exposure is what the test
+does, not a defect in it. Run it against a chain you are willing to break.
+
 ### Smoke tests that mutate protocol configuration
 
 `smoke-evaluator.ts`, `smoke-concurrent-tasks.ts` and `smoke-nonce.ts` spend most of their runtime waiting out a task's appeal window, and rev017 enforces a protocol-wide floor on that window (300s by default). Rather than have every run wait five minutes, each lowers the floor via `AdminFacet.setMinAppealWindowSecs` for the duration of the run and restores it in a `finally` — including when the run throws — asserting afterwards that the value actually went back.
