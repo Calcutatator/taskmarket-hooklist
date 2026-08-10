@@ -251,11 +251,15 @@ make upgrade testnet
 make upgrade mainnet
 ```
 
-`packages/contracts/script/upgrade.sh` applies every pending upgrade step in sequence: it first
-runs `DiamondFullUpgrade.s.sol` (a one-time legacy bootstrap for any diamond whose `diamondVersion`
-is not yet tracked), then applies each `script/upgrades/RevNNNUpgrade.s.sol` step whose target
-revision is greater than the diamond's current `AdminFacet.diamondVersion()`, in order. Only the
-contract owner may upgrade.
+`packages/contracts/script/upgrade.sh` applies every pending upgrade step in sequence: each
+`script/upgrades/RevNNNUpgrade.s.sol` step whose target revision is greater than the diamond's
+current `AdminFacet.diamondVersion()`, in order. Only the contract owner may upgrade.
+
+A freshly deployed diamond seeds `diamondVersion` from `LibRevision.CURRENT_REVISION`, so it is
+already at the current revision and has nothing pending. Rev020 removed the one-time
+`DiamondFullUpgrade.s.sol` bootstrap that used to run first for a diamond whose `diamondVersion`
+read 0: no such diamond exists, and `upgrade.sh` now refuses to proceed rather than guessing if it
+ever encounters one -- that cut would have to be reconstructed by hand from git history.
 
 To apply one specific step directly instead of the full pending sequence, pass its revision:
 
@@ -266,7 +270,9 @@ make upgrade testnet rev012
 Adding a new revision requires no Makefile changes -- drop a new
 `script/upgrades/RevNNNUpgrade.s.sol` file (contract name `RevNNNUpgrade`) that asserts the
 diamond is at the expected prior version, applies its `diamondCut`, and calls
-`AdminFacet.setDiamondVersion(NNN)`; the next `make upgrade` run picks it up automatically.
+`AdminFacet.setDiamondVersion(NNN)`; the next `make upgrade` run picks it up automatically. Bump
+`LibRevision.CURRENT_REVISION` to `NNN` in the same change -- `test/DiamondSelectorParity.t.sol`
+enumerates `script/upgrades/` and fails if the highest step script disagrees with that constant.
 
 ## Admin Operations
 

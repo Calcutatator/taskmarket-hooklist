@@ -283,6 +283,11 @@ adrs:
     title: A reused idempotency key with different arguments is refused
     status: Accepted
     date: "2026-08-04"
+  - number: "0062"
+    file: "0062-retire-the-pre-rev011-bootstrap-and-seed-a-fresh-deploy-at-the-revision-it-runs.md"
+    title: "Retire the pre-rev011 bootstrap and seed a fresh deploy at the revision it runs"
+    status: Accepted
+    date: "2026-08-05"
   - number: "0063"
     file: "0063-the-reconciler-settles-a-nonce-spent-by-a-foreign-transaction.md"
     title: The reconciler settles a nonce spent by a foreign transaction

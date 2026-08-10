@@ -273,6 +273,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0059 — An intent is readable by the address recorded as having initiated it](0059-an-intent-is-readable-by-the-address-recorded-as-having-initiated-it.md)
 - [0060 — A relayed payload is sufficient, and a broadcaster is pure](0060-a-relayed-payload-is-sufficient-and-a-broadcaster-is-pure.md)
 - [0061 — A reused idempotency key with different arguments is refused](0061-a-reused-idempotency-key-with-different-arguments-is-refused.md)
+- [0062 — Retire the pre-rev011 bootstrap and seed a fresh deploy at the revision it runs](0062-retire-the-pre-rev011-bootstrap-and-seed-a-fresh-deploy-at-the-revision-it-runs.md)
 - [0063 — The reconciler settles a nonce spent by a foreign transaction](0063-the-reconciler-settles-a-nonce-spent-by-a-foreign-transaction.md)
 - [0064 — Deploy and owner operations use a separate EOA from the relayer](0064-deploy-and-owner-operations-use-a-separate-eoa-from-the-relayer.md)
 - [0065 — The backend decodes chain events from the generated ABI, and CI keeps that artifact current](0065-the-backend-decodes-chain-events-from-the-generated-abi.md)

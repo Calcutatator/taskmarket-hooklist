@@ -613,11 +613,11 @@ contract:
 		echo "Report written to packages/contracts/reports/slither-audit.md"; \
 	elif [ "$(word 1,$(ARGS))" = "coverage" ]; then \
 		mkdir -p packages/contracts/reports/coverage && \
-		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "(script/|src/mocks/|test/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info && \
+		cd packages/contracts && forge coverage -j 1 --ir-minimum --no-match-coverage "(script/|src/mocks/|test/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info && \
 		echo "lcov report written to packages/contracts/reports/coverage/lcov.info"; \
 	elif [ "$(word 1,$(ARGS))" = "coverage-check" ]; then \
 		mkdir -p packages/contracts/reports/coverage && \
-		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "(script/|src/mocks/|test/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info | tee /tmp/forge-coverage.txt && \
+		cd packages/contracts && forge coverage -j 1 --ir-minimum --no-match-coverage "(script/|src/mocks/|test/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info | tee /tmp/forge-coverage.txt && \
 		echo "lcov report written to reports/coverage/lcov.info" && \
 		bash scripts/check-coverage.sh /tmp/forge-coverage.txt; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot" ]; then \
@@ -637,9 +637,9 @@ contract:
 		cd packages/contracts && forge doc --out docs/natspec && \
 		echo "Docs written to packages/contracts/docs/natspec"; \
 	elif [ "$(word 1,$(ARGS))" = "test" ]; then \
-		cd packages/contracts && forge test --summary; \
+		cd packages/contracts && forge test -j 1 --summary; \
 	elif [ "$(word 1,$(ARGS))" = "test-ci" ]; then \
-		cd packages/contracts && FOUNDRY_PROFILE=ci forge test --summary; \
+		cd packages/contracts && FOUNDRY_PROFILE=ci forge test -j 1 --summary; \
 	elif [ "$(word 1,$(ARGS))" = "pause" ] || [ "$(word 1,$(ARGS))" = "unpause" ] || \
 	     [ "$(word 1,$(ARGS))" = "accept-ownership" ]; then \
 		case "$(word 1,$(ARGS))" in \
