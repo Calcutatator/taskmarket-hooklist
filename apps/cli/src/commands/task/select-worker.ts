@@ -15,12 +15,12 @@ export const selectWorkerCmd = new Command('select-worker')
     const message = buildSelectWorkerMessage(taskId, opts.pitch, opts.worker);
     const signature = await signMessage(message, keystore);
 
-    await apiPost(`/api/tasks/${taskId}/pitches/select`, {
+    const { idempotencyKey } = await apiPost(`/api/tasks/${taskId}/pitches/select`, {
       taskId,
       pitchId: opts.pitch,
       workerAddress: opts.worker,
       signature,
     });
 
-    printResult({ selected: true });
+    printResult({ selected: true }, { idempotencyKey });
   });

@@ -67,6 +67,16 @@ export const TASK_CREATE_ROUTE = '/api/tasks';
 export const IDENTITY_REGISTER_ROUTE = '/api/identity/register';
 
 /**
+ * Implements: ADR-0047 -- evaluator assignment has its own route.
+ *
+ * Deliberately not in PAID_TASK_ACTION_ROUTES below: that map is pinned to
+ * PAID_PENDING_ACTION_NAMES, and assigning an evaluator is an option a requester may take, not
+ * something the task is waiting on. Putting it there would oblige every open task to advertise
+ * it as an outstanding action.
+ */
+export const TASK_ASSIGN_EVALUATOR_ROUTE = '/api/tasks/:taskId/evaluator';
+
+/**
  * Submission-create routes gated by RFC-0006 Tier 1's submissionAllowanceGate rather
  * than an unconditional x402Middleware -- see
  * apps/backend/src/middleware/submissionAllowanceGate.ts.

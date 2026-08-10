@@ -6,6 +6,7 @@ import { PrivateTaskAccessGate } from '@/components/market/private-task-access-g
 import {
   fetchMarketStats,
   fetchTask,
+  fetchTaskEvaluationIdentities,
   fetchTaskModeData,
   fetchTaskSubmissions,
   type MarketStats,
@@ -82,9 +83,10 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
   }
 
   const needsSeparateSubmissionRead = task.mode !== 'bounty' && task.mode !== 'claim';
-  const [modeData, marketStats, separateSubmissions] = await Promise.all([
+  const [modeData, marketStats, evaluationIdentities, separateSubmissions] = await Promise.all([
     fetchTaskModeData(task),
     loadMarketStats(),
+    fetchTaskEvaluationIdentities(task),
     needsSeparateSubmissionRead
       ? fetchTaskSubmissions(task.id, { includePreviewUrls: 'none' }).catch(() => [])
       : Promise.resolve(null),
@@ -95,6 +97,7 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
       <TaskDetailPanel
+        evaluationIdentities={evaluationIdentities}
         htmlSubmissions={htmlSubmissions}
         initialArtifactId={initialArtifactId}
         marketStats={marketStats}

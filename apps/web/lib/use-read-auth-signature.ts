@@ -5,7 +5,11 @@ import {
   READ_AUTH_ADDRESS_HEADER,
   READ_AUTH_SIGNATURE_HEADER,
 } from '@taskmarket/shared';
-import { clearCachedReadAuthHeaders, setCachedReadAuthHeaders } from './read-auth';
+import {
+  clearCachedReadAuthHeaders,
+  hasCachedReadAuthHeaders,
+  setCachedReadAuthHeaders,
+} from './read-auth';
 
 // Proves ownership of the connected wallet (Phase 2's ctx.caller mechanism,
 // ADR-0016/ADR-0022) so reads that branch on caller identity -- agents.inbox's
@@ -59,6 +63,19 @@ export function useReadAuthSignatureState(
       setRequestedFor(undefined);
       setError(null);
       setStatus('idle');
+      return;
+    }
+
+    // A signature for this wallet is already held, so there is nothing to prove again. The
+    // read-auth message carries no nonce, so one signature covers the whole session -- and a
+    // second consumer mounting later (an in-flight write starting to poll, say) must not put a
+    // wallet prompt in front of someone who already signed. Ahead of the autoStart branch
+    // below, which would otherwise clear the very cache this reads.
+    if (hasCachedReadAuthHeaders(address)) {
+      pendingRef.current = null;
+      setReadyFor(normalizedAddress);
+      setError(null);
+      setStatus('ready');
       return;
     }
 

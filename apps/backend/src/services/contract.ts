@@ -1,10 +1,11 @@
-import { randomBytes } from 'crypto';
+// Implements: ADR-0055
+// Implements: ADR-0075
+// Implements: ADR-0076
 import {
   parseAbi,
   parseAbiItem,
   decodeEventLog,
   keccak256,
-  encodeAbiParameters,
   encodeFunctionData,
   ContractFunctionRevertedError,
   BaseError,
@@ -12,9 +13,14 @@ import {
 } from 'viem';
 import { TRPCError } from '@trpc/server';
 import { createServerWallet, dispatchServerWalletTransaction } from '../lib/wallet';
+import { ServerTransactionPendingError } from '../lib/server-transaction-dispatcher';
+import { UndeterminedRelayError, classifyRelayFailure } from '../lib/relay-failure';
 import { getPublicClient, runWithRpcApplicationAttempt } from '../lib/rpc-gateway';
 import { getServerConfig } from '../config/env';
+import { logger } from '../lib/logger';
 import { SETTLEMENT_READ_ABI, TASK_COMPLETED_EVENT } from './settlement-contract';
+import { currentRelayEnvelope, currentRelayOutboxLink, newRelayEnvelope } from './relay-envelope';
+import { computeRelayReceiptHash } from './relay-receipt';
 import {
   projectSettlementLogs,
   toSettlementCompletionLogs,
@@ -104,6 +110,9 @@ const KNOWN_ERRORS: Record<string, string> = {
   // EvaluatorFacet -- evaluate/appeal/resolveDispute/evaluatorTimeout/rate.
   '0xd4ce3f2d': 'EvaluatorAlreadyAssigned',
   '0x46500a43': 'InvalidEvaluator',
+  // Reachable from createTask as well as assignEvaluator since rev016, because the creation
+  // path applies the same evaluator validation rather than a weaker copy of it.
+  '0x663885fb': 'FeeBpsTooHigh',
   '0x83e2a1e8': 'WrongStatusForEvaluation',
   '0x7401943d': 'AppealWindowClosed',
   '0x06395591': 'AppealWindowStillOpen',
@@ -144,7 +153,19 @@ const KNOWN_ERRORS: Record<string, string> = {
   '0xaea4a319': 'WorkerNotSelected',
   '0x5378dda1': 'WorkerRequired',
   '0xefd1521e': 'TaskNotYetExpired',
+  // A refund that has already happened, and an update that changes nothing (ADR-0054). Both are
+  // permanently true once true, so they must decode: an unmapped Diamond revert resolves to
+  // 'unknown revert', which classifyRelayFailure treats as transient and therefore retries for
+  // ever. Adding a custom error to a facet is not finished until it appears here.
   '0x128dbd39': 'HookCheckSelectWorkerRejected',
+  // ADR-0054's two replay guards. These are the reverts a *rebroadcast* of tasks.refundExpired
+  // or tasks.update lands on once the first attempt has already applied, so they are what makes
+  // giving those two operations a broadcaster safe -- and they only work as guards if they are
+  // decodable. An undecoded revert reaches classifyRelayFailure as "unknown revert", which it
+  // deliberately reads as transient, so the worker would hand the intent straight back and
+  // re-send a call that can only ever revert again -- ADR-0047's unbounded loop, re-entered
+  // through a missing map entry. Decoded, the same revert is deterministic and terminal on the
+  // first attempt.
   // Settlement/payout invariant failures -- internal transfer failures during
   // acceptance, cancellation, dispute resolution, or expiry refund.
   '0x56886241': 'WorkerPaymentFailed',
@@ -194,7 +215,16 @@ const KNOWN_ERRORS: Record<string, string> = {
   // relay(), so decodeRelayRevert (used only for relayed calls) can never see them.
 };
 
-function decodeRelayRevert(err: unknown): string {
+/**
+ * The revert reason this failure names, or `null` when none could be decoded.
+ *
+ * `null` rather than the old `'unknown revert'` string. That string was read by two different
+ * audiences with two different meanings -- a caller saw it as the contract's stated reason, and
+ * `classifyRelayFailure` saw it as the token meaning "no verdict, retry" -- and a value that
+ * means both cannot be right for either. Here the absence of a reason is an absence, and each
+ * caller says in its own words what it does about it.
+ */
+function decodeRelayRevert(err: unknown): string | null {
   if (err instanceof BaseError) {
     const revertError = err.walk((e) => e instanceof ContractFunctionRevertedError);
     if (revertError instanceof ContractFunctionRevertedError) {
@@ -222,7 +252,26 @@ function decodeRelayRevert(err: unknown): string {
       if (KNOWN_ERRORS[sel]) return KNOWN_ERRORS[sel];
     }
   }
-  return 'unknown revert';
+  return null;
+}
+
+/** The message a decoded revert reaches a caller and `classifyRelayFailure` under. */
+function relayRevertMessage(reason: string): string {
+  return `Contract call rejected: ${reason}`;
+}
+
+/** How an undecodable failure describes itself, without asserting a rejection nobody saw. */
+function undeterminedRelayMessage(detail: string): string {
+  return (
+    'Contract call did not reach a decodable outcome and may still be landing; ' +
+    `poll the intent rather than resubmitting (${detail}).`
+  );
+}
+
+/** The detail half of the message above, for a failure that is an error rather than a receipt. */
+function relayFailureDetail(err: unknown): string {
+  if (err === undefined) return 'every attempt failed without an answer from the node';
+  return `last attempt: ${err instanceof Error ? err.message : String(err)}`;
 }
 
 const ERC20_ABI = parseAbi([
@@ -244,7 +293,16 @@ const ERC20_ABI = parseAbi([
   'error ERC20InvalidSpender(address spender)',
 ]);
 const MARKET_ABI = parseAbi([
-  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes4,(bool,uint16),(address[],bytes),(bytes32,string,bytes32[])) returns (bytes32)',
+  // The trailing tuple is TaskEvaluatorConfig (evaluator, stake, feeBps, evaluationWindow,
+  // appealWindow, disputeResolver), added at rev016 so a task with an evaluator is one
+  // transaction. Adding the parameter changed the selector, and rev016 removes the old one from
+  // the diamond, so this string and the deployed contract must move together.
+  // Five calldata structs, not ten loose arguments (rev018). The six former scalars --
+  // reward, duration, mode, pitchDeadline, bidDeadline, auctionSubtype -- are the same fields
+  // in the same order, wrapped one level deeper in TaskConfig. Selector 0xa810726c; the
+  // pre-rev018 form 0xa595d889 survives as a deprecated shim until rev019 removes it, so this
+  // must not be encoded against the old shape once the facet is cut in.
+  'function createTask((uint256,uint256,bytes4,uint256,uint256,bytes4),(bool,uint16),(address[],bytes),(bytes32,string,bytes32[]),(address,uint256,uint16,uint32,uint32,address)) returns (bytes32)',
   'function claimTask(bytes32,uint256)',
   'function selectWorker(bytes32,address)',
   'function acceptSubmission(bytes32,address,bytes32,uint256)',
@@ -328,12 +386,22 @@ const TX_RECEIPT_TIMEOUT = 60_000; // 1 minute
 const SERVER_TX_RECEIPT_TIMEOUT = 60_000;
 const GAS_MULTIPLIER = 2n;
 // Receipt validity window for relay calls (5 minutes)
-const RELAY_VALID_WINDOW_SECS = 300;
-// Retry config for relay simulation failures (RPC read-after-write lag).
-// 6 attempts, 5 gaps of 6s = ~30s total retry window -- sized against Base's
-// ~12s block time. Only helps if the failure is transient lag; a persistent
-// revert still fails after exhausting the window.
+// Retry config for relay failures (ADR-0075).
+//
+// The window exists for RPC read-after-write lag: a node that has confirmed a receipt but whose
+// simulation still reads pre-transaction state, so a call that will succeed reverts for a reason
+// that is true only right now.
+//
+// The sizing note this comment used to carry said "~12s block time" and was wrong -- that is
+// Ethereum L1. Base is OP Stack at ~2s blocks (and the sandbox's Anvil runs at --block-time 1),
+// so one 6s gap is about three block boundaries and the full budget below is about fifteen.
+// Lag that outlives fifteen blocks is a broken node, not lag.
 const RELAY_MAX_RETRIES = 6;
+// A decoded revert is the chain answering on its own terms, so a later attempt can only differ if
+// the answer itself was a product of lag. One gap (~3 blocks) covers that; more only spends
+// nonces and wall-clock reaching a verdict already in hand (ADR-0075). Not 1: that would be no
+// retry at all, which removes the recovery this loop exists for.
+const RELAY_DETERMINISTIC_MAX_RETRIES = 2;
 const RELAY_RETRY_DELAY_MS = 6000;
 
 function resolveForwarderAddress(): `0x${string}` {
@@ -371,12 +439,50 @@ async function retryWithBackoff<T>(
   throw lastError;
 }
 
+/**
+ * Price a first send, bounded by the same absolute ceiling replacements answer to (ADR-0076).
+ *
+ * `GAS_MULTIPLIER` doubles whatever the oracle returns, and until ADR-0076 nothing bounded the
+ * result -- ADR-0051 had given the replacement path a full escalation policy with a ceiling while
+ * its sibling, the send every paid write makes, had none. That asymmetry was never decided; it is
+ * what happens when one path gets a policy and the other does not.
+ *
+ * The ceiling is absolute rather than a multiple of the oracle on purpose. A sandbox run drained
+ * its relayer wallet because each send raised the base fee that priced the next one, so the
+ * oracle itself was what climbed -- and a bound derived from the signal that ran away runs away
+ * with it. Only a fixed number holds in that case.
+ *
+ * Clamping never refuses the send. A transaction priced at the ceiling is broadcast; if the market
+ * has moved past it, it waits in the mempool and the replacement path escalates it under ADR-0051.
+ * Slow is recoverable by machinery that already exists; overspent is not.
+ */
 async function getGasParams(publicClient: ReturnType<typeof getPublicClient>) {
   const fees = await retryWithBackoff(() => publicClient.estimateFeesPerGas(), 3, 500);
-  return {
-    maxFeePerGas: fees.maxFeePerGas * GAS_MULTIPLIER,
-    maxPriorityFeePerGas: (fees.maxPriorityFeePerGas ?? 1_000_000n) * GAS_MULTIPLIER,
-  };
+  const maxFeePerGas = fees.maxFeePerGas * GAS_MULTIPLIER;
+  const maxPriorityFeePerGas = (fees.maxPriorityFeePerGas ?? 1_000_000n) * GAS_MULTIPLIER;
+
+  const ceiling = getServerConfig().REPLACEMENT_GAS_MAX_FEE_WEI;
+  if (ceiling === undefined) return { maxFeePerGas, maxPriorityFeePerGas };
+
+  const cappedMaxFee = maxFeePerGas > ceiling ? ceiling : maxFeePerGas;
+  // A priority fee above the max fee is not a meaningful bid, so it follows the same ceiling
+  // rather than being left to exceed the total this send is willing to pay.
+  const cappedPriority = maxPriorityFeePerGas > cappedMaxFee ? cappedMaxFee : maxPriorityFeePerGas;
+
+  if (cappedMaxFee !== maxFeePerGas || cappedPriority !== maxPriorityFeePerGas) {
+    // Reaching the ceiling says something about the configuration, not about this write -- the
+    // same thing `cappedBelowOpeningBid` reports on the replacement side. It is only visible here
+    // because a clamped send otherwise looks exactly like an ordinary slow one.
+    logger.warn('Gas fees clamped to REPLACEMENT_GAS_MAX_FEE_WEI', {
+      ceilingWei: ceiling.toString(),
+      requestedMaxFeePerGas: maxFeePerGas.toString(),
+      appliedMaxFeePerGas: cappedMaxFee.toString(),
+      requestedMaxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
+      appliedMaxPriorityFeePerGas: cappedPriority.toString(),
+    });
+  }
+
+  return { maxFeePerGas: cappedMaxFee, maxPriorityFeePerGas: cappedPriority };
 }
 
 function assertSuccess(receipt: { status: string }, label: string) {
@@ -393,6 +499,37 @@ type RelayResult = {
   blockNumber: bigint;
   logs: readonly Log[];
 };
+
+/**
+ * Rebuild a RelayResult from nothing but a confirmed transaction hash.
+ *
+ * A relayed intent's completion handler may run in a process that never made the call --
+ * hours later, from the reconciler (ADR-0045) -- so anything the original request read off
+ * the receipt has to be re-derivable from the hash alone. The receipt is the durable copy
+ * of that information; the request's in-memory one is not.
+ */
+export async function relayResultFromTxHash(txHash: `0x${string}`): Promise<RelayResult> {
+  const receipt = await retryWithBackoff(
+    () => getPublicClient().getTransactionReceipt({ hash: txHash }),
+    5,
+    500
+  );
+  return { blockNumber: receipt.blockNumber, logs: receipt.logs, txHash };
+}
+
+/** Block timestamp of a confirmed transaction, in seconds. */
+export async function blockTimestampForTx(txHash: `0x${string}`): Promise<number> {
+  const { blockNumber } = await relayResultFromTxHash(txHash);
+  // Same load-balanced-RPC-lag concern as contractEvaluate's getBlock call: the transaction
+  // is already confirmed, so a read served by a lagging node is worth retrying, not failing.
+  const block = await retryWithBackoff(() => getPublicClient().getBlock({ blockNumber }), 5, 500);
+  return Number(block.timestamp);
+}
+
+/** Block number of a confirmed transaction. */
+export async function blockNumberForTx(txHash: `0x${string}`): Promise<number> {
+  return Number((await relayResultFromTxHash(txHash)).blockNumber);
+}
 
 /**
  * Decode TaskCompleted logs out of a transaction receipt. The contract only
@@ -474,6 +611,8 @@ async function relayThroughForwarderResult(
         ] as const,
       };
       const { receipt } = await dispatchServerWalletTransaction({
+        // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).
+        fees: gas,
         simulate: () => publicClient.simulateContract({ ...approveArgs, account: account.address }),
         send: (nonce) => client.writeContract({ ...approveArgs, ...gas, nonce }),
         confirm: (hash) =>
@@ -481,10 +620,41 @@ async function relayThroughForwarderResult(
             hash,
             timeout: SERVER_TX_RECEIPT_TIMEOUT,
           }),
+        // A reverted receipt is not a confirmation; the outbox row must say so (ADR-0073).
+        succeeded: (receipt) => receipt.status === 'success',
       });
       assertSuccess(receipt, 'approve');
     }
   }
+
+  // The envelope is resolved once, outside the retry loop, and every attempt sends the same
+  // deadline and the same receipt nonce. It used to be regenerated per attempt, which meant
+  // the deadline could never actually arrive -- each try bought another five minutes. When a
+  // relayed intent binds an envelope (relay-envelope.ts) that stored value is used instead, so
+  // a rebroadcast hours later still carries the deadline the original submission fixed, and
+  // TaskMarketForwarder.relay's ReceiptExpired is what ends it rather than a tuned counter.
+  const { receiptNonce, validBefore } = currentRelayEnvelope() ?? newRelayEnvelope();
+
+  // Read once, here, and applied only to the relay dispatch below. The approve above is the
+  // server wallet's own housekeeping and belongs to no intent; linking its outbox row to one
+  // would name the wrong transaction as the intent's (ADR-0069). Undefined outside the intent
+  // mechanism, where there is nothing durable to link to.
+  const outboxLink = currentRelayOutboxLink();
+
+  // Computed here, once, for the same reason the envelope is resolved here: this is the only
+  // place all seven of the forwarder's receipt inputs exist together. It is constant across the
+  // retry loop below, because every one of its inputs is -- the calldata, the payment and the
+  // envelope are all fixed before the first attempt, which is exactly why the resulting bit
+  // identifies the *intent* rather than one attempt at it (ADR-0071).
+  const receiptHash = computeRelayReceiptHash({
+    chainId: publicClient.chain?.id ?? config.CHAIN_ID,
+    data,
+    paymentAmount,
+    pgtrSender: pgtrSenderAddr,
+    receiptNonce,
+    taskMarket: config.CONTRACT_ADDRESS as `0x${string}`,
+    validBefore,
+  });
 
   // Retry loop to handle RPC read-after-write lag: the node may confirm a receipt
   // but simulation for the next call still sees the pre-tx state. Retrying after a
@@ -495,8 +665,6 @@ async function relayThroughForwarderResult(
       await new Promise<void>((resolve) => setTimeout(resolve, RELAY_RETRY_DELAY_MS));
     }
 
-    const validBefore = BigInt(Math.floor(Date.now() / 1000) + RELAY_VALID_WINDOW_SECS);
-    const receiptNonce = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
     const callArgs = {
       address: forwarderAddr,
       abi: FORWARDER_ABI,
@@ -508,6 +676,15 @@ async function relayThroughForwarderResult(
     let receipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>;
     try {
       const result = await dispatchServerWalletTransaction({
+        // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).
+        fees: gas,
+        // The receipt hash rides the allocation hook rather than being written separately:
+        // both must be durable before `send` is called, and a hash written after it would be
+        // missing on exactly the branch it exists for (ADR-0071).
+        onNonceAllocated: outboxLink
+          ? (transactionId: string) => outboxLink.onAllocated(transactionId, receiptHash)
+          : undefined,
+        onNonceReleased: outboxLink?.onReleased,
         simulate: () =>
           runWithRpcApplicationAttempt(attempt + 1, () =>
             publicClient.simulateContract({ ...callArgs, account: account.address })
@@ -523,44 +700,107 @@ async function relayThroughForwarderResult(
               timeout: SERVER_TX_RECEIPT_TIMEOUT,
             })
           ),
+        // A reverted receipt is not a confirmation; the outbox row must say so (ADR-0073).
+        succeeded: (receipt) => receipt.status === 'success',
       });
       hash = result.hash;
       receipt = result.receipt;
     } catch (err) {
+      // A pending transaction is not a failed one. This loop retries RPC read-after-write lag,
+      // where nothing was broadcast and another simulation costs only time. A receipt timeout is
+      // the opposite: `send` returned, the hash exists, the transaction is in the mempool and the
+      // outbox row is 'broadcast'. Retrying it spends a second nonce on work already live, and
+      // swallowing it denies the hash to the only two callers written to persist it
+      // (relayed-intent-request.ts, relayed-intent-registry.ts) -- so the intent stays 'recorded'
+      // with a NULL hash, every sweep reads that as never-sent, and the payment is refunded for
+      // work that lands on chain anyway (ADR-0045, ADR-0048).
+      if (err instanceof ServerTransactionPendingError) throw err;
       lastError = err;
+      // How many attempts this failure is worth, decided from the failure itself (ADR-0075).
+      //
+      // Read from the most recent attempt rather than fixed for the call: a first failure that
+      // was a timeout and a second that is a decoded revert are different evidence, and the
+      // later one is the relevant one. A decoded revert is the chain answering on its own
+      // terms, so the only way a further attempt differs is if that answer was itself a product
+      // of read-after-write lag -- which one gap covers.
+      const budget =
+        classifyRelayFailure(err) === 'deterministic'
+          ? RELAY_DETERMINISTIC_MAX_RETRIES
+          : RELAY_MAX_RETRIES;
+      if (attempt + 1 >= budget) break;
       continue;
     }
 
     if (receipt.status !== 'success') {
       // Replay via eth_call to decode the actual revert reason (e.g. SubmissionNotFound),
       // so callers that catch specific revert names see the same message format as pre-send failures.
-      let revertReason = 'unknown revert';
+      let revertReason: string | null = null;
       try {
-        const freshValidBefore = BigInt(Math.floor(Date.now() / 1000) + RELAY_VALID_WINDOW_SECS);
-        const freshNonce = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
+        // Replay the transaction that actually failed, argument for argument -- the same
+        // `validBefore` and the same `receiptNonce` the send used, not fresh ones.
+        //
+        // These used to be regenerated here, on the reasoning that a diagnostic should not trip
+        // over an expired deadline or a spent nonce on its way to the "real" revert. That reads
+        // backwards: an expired deadline and a spent nonce ARE real reverts, and they are the two
+        // this replay is least able to afford losing. A relay that failed ReceiptExpired or
+        // ReceiptAlreadyUsed cannot reproduce under a fresh envelope -- the replay succeeds and
+        // no revert is decoded, which used to leave `revertReason` at a literal 'unknown revert'
+        // that classifyRelayFailure read as transient, so a permanent failure arriving by this
+        // path was indistinguishable from a retryable one and got retried until it aged out.
+        // Replaying the original envelope is what makes the two separable, and it is still the
+        // only thing that does.
+        //
+        // This remains a read-only eth_call. simulateContract never signs and never broadcasts,
+        // so reusing the original nonce cannot spend it or re-send anything; the node evaluates
+        // the call against current state and discards it.
         await runWithRpcApplicationAttempt(attempt + 1, () =>
           publicClient.simulateContract({
             address: forwarderAddr,
             abi: FORWARDER_ABI,
             functionName: 'relay',
-            args: [pgtrSenderAddr, paymentAmount, freshValidBefore, freshNonce, data],
+            args: [pgtrSenderAddr, paymentAmount, validBefore, receiptNonce, data],
             account: account.address,
           })
         );
       } catch (simErr) {
         revertReason = decodeRelayRevert(simErr);
       }
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: `Contract call rejected: ${revertReason}`,
-      });
+      // A decoded reason is the contract's own verdict, and it is the case this replay exists
+      // for: callers match on `SubmissionNotFound` and the rest, and classifyRelayFailure reads
+      // the prefix as deterministic. Unchanged.
+      if (revertReason !== null) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: relayRevertMessage(revertReason) });
+      }
+
+      // No reason came back, so the replay reproduced nothing and this code has established
+      // nothing. Saying "Contract call rejected" here asserted a fact it did not have -- and
+      // asserted it, twice on one sandbox run, about a write that went on to complete with a
+      // successful receipt thirty seconds later. That is ADR-0049's third state, not a failure:
+      // the transaction is live under `hash`, settlement owns its outcome, and the caller is
+      // owed the handle and an instruction to poll rather than a 400 telling them the chain
+      // refused them (ADR-0070). `relayed-intent-request.ts` turns this into the same
+      // `intent_in_flight` envelope a receipt timeout produces.
+      throw new UndeterminedRelayError(
+        undeterminedRelayMessage(
+          `transaction ${hash} returned a failed receipt that a replay of the same envelope did not reproduce`
+        ),
+        hash
+      );
     }
     return { txHash: hash, blockNumber: receipt.blockNumber, logs: receipt.logs };
   }
-  throw new TRPCError({
-    code: 'BAD_REQUEST',
-    message: `Contract call rejected: ${decodeRelayRevert(lastError)}`,
-  });
+  // The loop is exhausted. Six attempts at RELAY_RETRY_DELAY_MS apart is a fixed wall-clock cost,
+  // which is why this throw arrived at the same thirty-second mark on every observed run -- the
+  // one detail that identified it as the loop timing out rather than anything about the write.
+  const exhaustedReason = decodeRelayRevert(lastError);
+  if (exhaustedReason !== null) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: relayRevertMessage(exhaustedReason) });
+  }
+
+  // Same rule as the replay above: nothing decoded, so nothing is established. No hash is passed
+  // because none was ever returned here -- and that is not evidence one does not exist, only
+  // that this code never saw it (ADR-0069).
+  throw new UndeterminedRelayError(undeterminedRelayMessage(relayFailureDetail(lastError)));
 }
 
 async function relayThroughForwarder(
@@ -572,32 +812,69 @@ async function relayThroughForwarder(
 }
 
 /**
- * Pre-compute the contract-generated task ID using the current requester nonce.
- * The contract generates: keccak256(abi.encode(chainId, contractAddress, requester, nonce))
- * Call this BEFORE contractCreateTask to know the ID before it's on-chain.
+ * The two shapes `TaskCreated` has had. Both are tried for the same reason the indexer keeps
+ * both (services/indexer.ts): rev014 appended non-indexed fields, which changes topic0, so a
+ * single ABI silently matches nothing on the other side of that line. `taskId` is the first
+ * indexed parameter in both, which is all this needs.
  */
-export async function precomputeTaskId(
-  requester: `0x${string}`,
-  contractAddress?: string | null
-): Promise<`0x${string}`> {
-  const config = getServerConfig();
-  const publicClient = getPublicClient();
-  const addr = (contractAddress ?? config.CONTRACT_ADDRESS) as `0x${string}`;
+const TASK_CREATED_EVENTS = [
+  parseAbiItem(
+    'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, bytes4 indexed mode, uint256 expiryTime, bool stakeRequired, uint16 stakeBps)'
+  ),
+  parseAbiItem(
+    'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, bytes4 indexed mode, uint256 expiryTime)'
+  ),
+] as const;
 
-  const nonce = (await publicClient.readContract({
-    address: addr,
-    abi: MARKET_ABI,
-    functionName: 'requesterNonce',
-    args: [requester],
-  })) as bigint;
+/**
+ * The id the chain assigned to a task, read out of that transaction's own `TaskCreated` log.
+ *
+ * This is the replacement for predicting the id from `requesterNonce` before the call. The
+ * formula was right and the nonce was not: `createTask` increments
+ * `s.requesterNonce[requester]` as it derives the id (CoreFacet), so anything else by the same
+ * requester landing between the read and the mine shifts the real id off the prediction. Two
+ * concurrent creates from one requester both read nonce N and both predict id(N) while the
+ * chain assigns N and N+1 -- the second request then persists the *first* task's id, and its
+ * completion's upsert overwrites that task's description, reward, tags and deadlines.
+ *
+ * A prediction is a guess about state another transaction can change. The log is the chain
+ * stating what it did, and it is re-derivable from the hash alone -- so a reconciler pass
+ * completing this intent hours later reads exactly what the original request would have
+ * (ADR-0045, the same reason `acceptance.rate` re-reads its block number from the receipt).
+ *
+ * Filtered to logs from the TaskMarket contract itself, for the same reason
+ * `decodeTaskCompletedLogs` filters: a requester-controlled hook can emit a byte-identical
+ * forged log, and a forged id here would hang an entire creation off a task of the attacker's
+ * choosing.
+ */
+export async function taskIdForTx(txHash: `0x${string}`): Promise<`0x${string}`> {
+  const { logs } = await relayResultFromTxHash(txHash);
+  const contractAddress = (getServerConfig().CONTRACT_ADDRESS as string).toLowerCase();
 
-  return keccak256(
-    encodeAbiParameters(
-      [{ type: 'uint256' }, { type: 'address' }, { type: 'address' }, { type: 'uint256' }],
-      [BigInt(config.CHAIN_ID), addr, requester, nonce]
-    )
-  ) as `0x${string}`;
+  for (const log of logs) {
+    if (log.address.toLowerCase() !== contractAddress) continue;
+    for (const event of TASK_CREATED_EVENTS) {
+      try {
+        const decoded = decodeEventLog({ abi: [event], data: log.data, topics: log.topics });
+        if (decoded.eventName !== 'TaskCreated') continue;
+        return (decoded.args as unknown as { taskId: `0x${string}` }).taskId;
+      } catch {
+        // Some other event, or the other revision's shape. Both are ordinary here.
+      }
+    }
+  }
+
+  // A confirmed transaction that created no task. There is no honest id to return and no safe
+  // one to invent, so this fails and the intent is retried rather than writing a task row
+  // under a made-up id.
+  throw new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: `No TaskCreated log found in transaction ${txHash}`,
+  });
 }
+
+/** The address the contract reads as "unset" for hooks, evaluators and dispute resolvers. */
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 
 export async function contractCreateTask(
   requester: `0x${string}`,
@@ -612,7 +889,23 @@ export async function contractCreateTask(
   hookContract: `0x${string}` = '0x0000000000000000000000000000000000000000',
   tags: readonly `0x${string}`[] = [],
   hookData: `0x${string}` = '0x',
-  paymentTxHash?: `0x${string}`
+  paymentTxHash?: `0x${string}`,
+  /**
+   * Evaluator terms, applied in the same transaction as the task itself.
+   *
+   * Omit for a task with no evaluator. This is not a convenience: assigning an evaluator in a
+   * following transaction races every worker agent watching for new tasks, because the task is
+   * claimable the instant this one mines and `assignEvaluator` reverts `TaskNotOpen` once a
+   * worker has claimed. Passing the terms here is the only way to configure an evaluator that
+   * cannot lose that race (ADR-0047 named this gap; rev016 closes it).
+   */
+  evaluatorConfig?: {
+    appealWindowSecs: number;
+    disputeResolver: `0x${string}`;
+    evaluationWindowSecs: number;
+    evaluator: `0x${string}`;
+    evaluatorFeeBps: number;
+  }
 ): Promise<`0x${string}`> {
   const publicClient = getPublicClient();
 
@@ -630,18 +923,33 @@ export async function contractCreateTask(
     abi: MARKET_ABI,
     functionName: 'createTask',
     args: [
-      reward,
-      durationSecs,
-      mode as `0x${string}`,
-      pitchDeadlineSecs,
-      bidDeadlineSecs,
-      auctionSubtype,
+      [
+        reward,
+        durationSecs,
+        mode as `0x${string}`,
+        pitchDeadlineSecs,
+        bidDeadlineSecs,
+        auctionSubtype,
+      ] as const,
       [stakeRequired, stakeBps] as const,
       [hookContracts, hookData] as const,
       [
         '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
         '',
         tags,
+      ] as const,
+      // A zero evaluator address means "no evaluator". The contract rejects a config that
+      // carries terms but no evaluator rather than dropping them silently, so the absent case
+      // must be all-zero, not merely evaluator-less.
+      [
+        (evaluatorConfig?.evaluator ?? ZERO_ADDRESS) as `0x${string}`,
+        // The backend has never staked an evaluator; the field exists because the on-chain
+        // config does, and a caller that wants a stake goes through assignEvaluator.
+        0n,
+        evaluatorConfig?.evaluatorFeeBps ?? 0,
+        evaluatorConfig?.evaluationWindowSecs ?? 0,
+        evaluatorConfig?.appealWindowSecs ?? 0,
+        (evaluatorConfig?.disputeResolver ?? ZERO_ADDRESS) as `0x${string}`,
       ] as const,
     ],
   });
@@ -763,6 +1071,35 @@ async function projectSettlementFromReceipt(
       message: `Settlement confirmed onchain (${result.txHash}) but block timestamp lookup failed: ${reason}`,
     });
   }
+}
+
+/**
+ * Project a settlement from a confirmed transaction hash rather than from a receipt held in
+ * memory. The form a relayed intent's completion handler needs (ADR-0045).
+ */
+export async function contractProjectSettlementForTx(
+  taskId: `0x${string}`,
+  txHash: `0x${string}`
+): Promise<{ settlement: ProjectedSettlement | null; settledAt: number | null }> {
+  return projectSettlementFromReceipt(taskId, await relayResultFromTxHash(txHash));
+}
+
+/**
+ * Broadcast finalizeVerdict and return only its hash.
+ *
+ * The form a relayed intent needs (ADR-0045): the settlement this transaction produces is
+ * projected by the completion handler from the hash, because that handler may run in a process
+ * that never made this call and has no receipt in hand.
+ */
+export async function contractFinalizeVerdictTx(taskId: `0x${string}`): Promise<`0x${string}`> {
+  // Anyone can call finalizeVerdict — use server wallet as the acting principal
+  const { address } = createServerWallet();
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'finalizeVerdict',
+    args: [taskId],
+  });
+  return relayThroughForwarder(address, 0n, data);
 }
 
 export async function contractFinalizeVerdict(
@@ -994,6 +1331,8 @@ export async function contractTransferWithAuthorization(
     args: [from, to, value, validAfter, validBefore, nonce, v, r, s] as const,
   };
   const { hash, receipt } = await dispatchServerWalletTransaction({
+    // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).
+    fees: gas,
     simulate: () => publicClient.simulateContract({ ...callArgs, account: account.address }),
     send: (transactionNonce) =>
       client.writeContract({ ...callArgs, ...gas, nonce: transactionNonce }),
@@ -1002,6 +1341,8 @@ export async function contractTransferWithAuthorization(
         hash: transactionHash,
         timeout: SERVER_TX_RECEIPT_TIMEOUT,
       }),
+    // A reverted receipt is not a confirmation; the outbox row must say so (ADR-0073).
+    succeeded: (receipt) => receipt.status === 'success',
   });
   assertSuccess(receipt, 'transferWithAuthorization');
   return hash;
@@ -1031,6 +1372,8 @@ export async function contractRefundOrphanedPayment(
     args: [payer, amount] as const,
   };
   const { hash, receipt } = await dispatchServerWalletTransaction({
+    // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).
+    fees: gas,
     simulate: () => publicClient.simulateContract({ ...callArgs, account: account.address }),
     send: (nonce) => client.writeContract({ ...callArgs, ...gas, nonce }),
     confirm: (transactionHash) =>
@@ -1038,6 +1381,8 @@ export async function contractRefundOrphanedPayment(
         hash: transactionHash,
         timeout: SERVER_TX_RECEIPT_TIMEOUT,
       }),
+    // A reverted receipt is not a confirmation; the outbox row must say so (ADR-0073).
+    succeeded: (receipt) => receipt.status === 'success',
   });
   assertSuccess(receipt, 'refund transfer');
   return hash;
@@ -1130,7 +1475,14 @@ export async function contractUpdateTask(
   return relayThroughForwarder(requester, additionalPayment, data);
 }
 
-export async function contractRegisterIdentity(): Promise<bigint> {
+/**
+ * Broadcast the registry mint and return only its hash.
+ *
+ * Split out from contractRegisterIdentity so a relayed intent can record the transaction and
+ * resolve the minted agentId separately (ADR-0045): the intent's completion handler may run
+ * in a process that never made this call, and can only work from the hash.
+ */
+export async function contractRegisterIdentityTx(): Promise<`0x${string}`> {
   const config = getServerConfig();
   const { client, account } = createServerWallet();
   const publicClient = getPublicClient();
@@ -1144,6 +1496,8 @@ export async function contractRegisterIdentity(): Promise<bigint> {
     args: [] as const,
   };
   const { hash, receipt } = await dispatchServerWalletTransaction({
+    // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).
+    fees: gas,
     simulate: () => publicClient.simulateContract({ ...callArgs, account: account.address }),
     send: (nonce) => client.writeContract({ ...callArgs, ...gas, nonce }),
     confirm: (transactionHash) =>
@@ -1151,8 +1505,22 @@ export async function contractRegisterIdentity(): Promise<bigint> {
         hash: transactionHash,
         timeout: SERVER_TX_RECEIPT_TIMEOUT,
       }),
+    // A reverted receipt is not a confirmation; the outbox row must say so (ADR-0073).
+    succeeded: (receipt) => receipt.status === 'success',
   });
   assertSuccess(receipt, 'registerIdentity');
+  return hash;
+}
+
+/** The agentId minted by a confirmed registerIdentity transaction. */
+export async function resolveRegisteredAgentId(hash: `0x${string}`): Promise<bigint> {
+  const config = getServerConfig();
+  const publicClient = getPublicClient();
+  const receipt = await retryWithBackoff(
+    () => publicClient.getTransactionReceipt({ hash }),
+    5,
+    500
+  );
 
   // Parse agentId from Registered(uint256 indexed agentId, ...) event.
   // Retry up to 5 times in case RPC logs lag behind the confirmed receipt.
@@ -1206,6 +1574,10 @@ export async function contractRegisterIdentity(): Promise<bigint> {
   });
 }
 
+export async function contractRegisterIdentity(): Promise<bigint> {
+  return resolveRegisteredAgentId(await contractRegisterIdentityTx());
+}
+
 export async function contractWithdrawDreamsRewards(
   worker: `0x${string}`,
   destination: `0x${string}`
@@ -1228,6 +1600,8 @@ export async function contractWithdrawDreamsRewards(
     args: [worker, destination] as const,
   };
   const { hash, receipt } = await dispatchServerWalletTransaction({
+    // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).
+    fees: gas,
     simulate: () => publicClient.simulateContract({ ...callArgs, account: account.address }),
     send: (nonce) => client.writeContract({ ...callArgs, ...gas, nonce }),
     confirm: (transactionHash) =>
@@ -1235,6 +1609,8 @@ export async function contractWithdrawDreamsRewards(
         hash: transactionHash,
         timeout: SERVER_TX_RECEIPT_TIMEOUT,
       }),
+    // A reverted receipt is not a confirmation; the outbox row must say so (ADR-0073).
+    succeeded: (receipt) => receipt.status === 'success',
   });
   assertSuccess(receipt, 'withdrawFor');
   return hash;

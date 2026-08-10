@@ -4,6 +4,8 @@
  *   B. REJECT verdict, no appeal, finalize → cancelled (refund + terminate,
  *      not reopened — see EvaluatorFacet.finalizeVerdict's REJECT branch)
  *   C. APPROVE verdict, worker appeals, dispute resolver settles → completed
+ *   D. Creation with an evaluator is a single transaction — the evaluator, its fee, both
+ *      windows and the dispute resolver are all live before any second call could be made
  *
  * EvaluatorFacet.assignEvaluator rejects evaluator == requester and
  * disputeResolver == requester (self-assignment guard), so this test signs
@@ -37,6 +39,7 @@ import {
   getAccounts,
   API_URL,
   pollTaskStatus,
+  pollUntil,
   sleep,
   nudgeChainForward,
   requireShortAppealWindow,
@@ -56,21 +59,44 @@ let shortWindowSecs = WANTED_SHORT_WINDOW_SECS;
 const APPEAL_INSIDE_WINDOW_SECS = 90;
 let disputeWindowSecs = APPEAL_INSIDE_WINDOW_SECS;
 
+/**
+ * The evaluator must be a different address from the requester. rev018 moved that from a
+ * convention to a contract guard: LibTaskMarket._applyEvaluatorConfig reverts
+ * EvaluatorCannotBeRequester when `cfg.evaluator == requester`, and
+ * DisputeResolverCannotBeRequester when `cfg.disputeResolver == requester` -- so a task created
+ * with the requester in either slot never escrows at all.
+ *
+ * rev018 does NOT require the dispute resolver to differ from the evaluator; the only two
+ * identity checks are the ones against the requester. One account is therefore enough to satisfy
+ * the contract for both slots, and that is what this returns.
+ *
+ * EVALUATOR_PRIVATE_KEY is set by scripts/cloud-env-setup.sh's generated .env. There is
+ * deliberately no fallback to DEV_PRIVATE_KEY/REQUESTER_PRIVATE_KEY: every such fallback lands
+ * back on the requester's own address on a default sandbox, which is precisely the state the
+ * contract now rejects, and a confusing on-chain revert is a worse failure than an explicit one
+ * here.
+ */
+function getEvaluatorAccount(requesterAddress: string) {
+  const key = process.env.EVALUATOR_PRIVATE_KEY as `0x${string}` | undefined;
+  if (!key) {
+    throw new Error(
+      'EVALUATOR_PRIVATE_KEY is required: the evaluator and dispute resolver must differ from ' +
+        'the requester (rev018 EvaluatorCannotBeRequester / DisputeResolverCannotBeRequester).'
+    );
+  }
+  const account = privateKeyToAccount(key);
+  if (account.address.toLowerCase() === requesterAddress.toLowerCase()) {
+    throw new Error(
+      `EVALUATOR_PRIVATE_KEY resolves to the requester address (${account.address}); ` +
+        'the contract rejects an evaluator or dispute resolver equal to the requester.'
+    );
+  }
+  return account;
+}
+
 function contentHash(payload: string): string {
   return createHash('sha256').update(Buffer.from(payload)).digest('hex');
 }
-
-const evaluatorKey = process.env.EVALUATOR_PRIVATE_KEY as `0x${string}` | undefined;
-if (!evaluatorKey) {
-  console.error(
-    'Missing EVALUATOR_PRIVATE_KEY.\n' +
-      'assignEvaluator now rejects evaluator == requester and disputeResolver == requester\n' +
-      '(self-assignment guard) -- set EVALUATOR_PRIVATE_KEY to a distinct account. Any\n' +
-      'freshly generated key works, same as WORKER_B_PRIVATE_KEY.'
-  );
-  process.exit(1);
-}
-const evaluator = privateKeyToAccount(evaluatorKey);
 
 async function pollStatus(taskId: string, expected: string[]): Promise<string> {
   const task = await pollTaskStatus<{ status: string }>(taskId, expected, {
@@ -98,11 +124,12 @@ async function runScenario(label: string, fn: () => Promise<void>): Promise<bool
 async function setupReviewTask(opts: {
   requester: ReturnType<typeof getAccounts>['requester'];
   worker: ReturnType<typeof getAccounts>['worker'];
+  evaluator: ReturnType<typeof getEvaluatorAccount>;
   label: string;
   evaluationWindowHours: number;
   appealWindowHours: number;
 }): Promise<string> {
-  const { requester, worker, label, evaluationWindowHours, appealWindowHours } = opts;
+  const { requester, worker, evaluator, label, evaluationWindowHours, appealWindowHours } = opts;
 
   log('1/5', `[${label}] Creating claim task with evaluator...`);
   const { taskId } = (await x402Post(
@@ -171,11 +198,13 @@ async function setupReviewTask(opts: {
 // --- Scenario A: APPROVE verdict, no appeal, finalize → completed ---
 async function scenarioA(
   requester: ReturnType<typeof getAccounts>['requester'],
-  worker: ReturnType<typeof getAccounts>['worker']
+  worker: ReturnType<typeof getAccounts>['worker'],
+  evaluator: ReturnType<typeof getEvaluatorAccount>
 ) {
   const taskId = await setupReviewTask({
     requester,
     worker,
+    evaluator,
     label: 'A',
     evaluationWindowHours: 0.00139, // ~5 seconds
     appealWindowHours: toHours(shortWindowSecs),
@@ -216,11 +245,13 @@ async function scenarioA(
 // --- Scenario B: REJECT verdict, no appeal, finalize → cancelled ---
 async function scenarioB(
   requester: ReturnType<typeof getAccounts>['requester'],
-  worker: ReturnType<typeof getAccounts>['worker']
+  worker: ReturnType<typeof getAccounts>['worker'],
+  evaluator: ReturnType<typeof getEvaluatorAccount>
 ) {
   const taskId = await setupReviewTask({
     requester,
     worker,
+    evaluator,
     label: 'B',
     evaluationWindowHours: 0.00139, // ~5 seconds
     appealWindowHours: toHours(shortWindowSecs),
@@ -261,11 +292,13 @@ async function scenarioB(
 // --- Scenario C: APPROVE verdict, worker appeals, dispute resolver settles → completed ---
 async function scenarioC(
   requester: ReturnType<typeof getAccounts>['requester'],
-  worker: ReturnType<typeof getAccounts>['worker']
+  worker: ReturnType<typeof getAccounts>['worker'],
+  evaluator: ReturnType<typeof getEvaluatorAccount>
 ) {
   const taskId = await setupReviewTask({
     requester,
     worker,
+    evaluator,
     label: 'C',
     evaluationWindowHours: 0.00139, // ~5 seconds
     appealWindowHours: toHours(disputeWindowSecs),
@@ -318,8 +351,167 @@ async function scenarioC(
   ok('final status', finalStatus);
 }
 
+/**
+ * Scenario D — an evaluator supplied at creation is configured by the create transaction.
+ *
+ * The contract's createTask takes evaluator terms directly (rev016). Before that it did not, so
+ * a task with an evaluator needed a second contract call, and that call raced the first worker
+ * to claim: the task is Open, and so claimable, the instant the escrow mines, and
+ * assignEvaluator reverts TaskNotOpen once it is claimed. ADR-0047 recorded a sandbox run in
+ * which 4 of 4 assignments became permanently unreachable that way.
+ *
+ * What this asserts is the absence of that window rather than its narrowness. The task is read
+ * back before anything else touches it, and the full configuration must already be there — not
+ * just the evaluator address, but the fee, both windows and the dispute resolver, none of which
+ * appear in the EvaluatorAssigned event and so cannot have been backfilled by the indexer.
+ * Only the create transaction could have written them.
+ *
+ * smoke-nonce asserts the database-side half of the same fact: zero tasks.assignEvaluator
+ * intents exist for a task created with an evaluator.
+ */
+async function scenarioD(
+  requester: ReturnType<typeof getAccounts>['requester'],
+  worker: ReturnType<typeof getAccounts>['worker'],
+  evaluator: ReturnType<typeof getEvaluatorAccount>
+): Promise<void> {
+  const evaluationWindowHours = 0.5;
+  const appealWindowHours = 0.25;
+
+  log('1/5', 'Creating a claim task with a full evaluator configuration...');
+  const { taskId } = (await x402Post(
+    '/api/tasks',
+    {
+      description: 'Evaluator smoke test — D (atomic creation)',
+      reward: '1000',
+      duration: 300,
+      mode: 'claim',
+      tags: ['smoke-evaluator'],
+      evaluator: evaluator.address,
+      disputeResolver: evaluator.address,
+      evaluatorFeeBps: 250,
+      evaluationWindowHours,
+      appealWindowHours,
+    },
+    requester
+  )) as { taskId: string };
+  ok('taskId', taskId);
+
+  log('2/5', 'Reading the task back before anything else touches it...');
+  const created = await pollUntil(
+    () =>
+      get(`/api/tasks/${taskId}`) as Promise<{
+        appealWindow: number | null;
+        disputeResolver: string | null;
+        evaluationWindow: number | null;
+        evaluator: string | null;
+        evaluatorFeeBps: number | null;
+        status: string;
+      }>,
+    (task) => Boolean(task.evaluator),
+    { label: `the evaluator on task ${taskId}`, timeoutMs: 120_000 }
+  );
+
+  if (created.evaluator?.toLowerCase() !== evaluator.address.toLowerCase()) {
+    throw new Error(`evaluator is ${created.evaluator}, expected ${evaluator.address}`);
+  }
+  if (created.disputeResolver?.toLowerCase() !== evaluator.address.toLowerCase()) {
+    throw new Error(`disputeResolver is ${created.disputeResolver}, expected ${evaluator.address}`);
+  }
+  if (created.evaluatorFeeBps !== 250) {
+    throw new Error(`evaluatorFeeBps is ${created.evaluatorFeeBps}, expected 250`);
+  }
+  if (created.evaluationWindow !== Math.round(evaluationWindowHours * 3600)) {
+    throw new Error(`evaluationWindow is ${created.evaluationWindow}, expected 1800`);
+  }
+  if (created.appealWindow !== Math.round(appealWindowHours * 3600)) {
+    throw new Error(`appealWindow is ${created.appealWindow}, expected 900`);
+  }
+  if (created.status !== 'open') {
+    throw new Error(`status is ${created.status}, expected open`);
+  }
+  ok('full evaluator configuration live on an open task', 'fee=250 eval=1800s appeal=900s');
+
+  log('3/5', 'Worker claiming and submitting...');
+  const claimSig = await worker.signMessage({ message: `taskmarket:claim:${taskId}` });
+  await post(`/api/tasks/${taskId}/claim`, {
+    taskId,
+    workerAddress: worker.address,
+    signature: claimSig,
+  });
+  const submitPayload = 'smoke-evaluator-atomic-payload';
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayload)]),
+  });
+  await post(`/api/tasks/${taskId}/submissions`, {
+    taskId,
+    workerAddress: worker.address,
+    signature: submitSig,
+    artifacts: [
+      {
+        fileName: 'submission.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: Buffer.from(submitPayload).toString('base64'),
+      },
+    ],
+  });
+  ok('submitted', true);
+
+  // Review, not PendingApproval. submitWork routes a CLAIM task to Review only when the contract
+  // already holds an evaluator for it, so reaching Review is the on-chain proof that the create
+  // transaction -- the only relayed transaction that has ever existed for this task -- wrote the
+  // evaluator config.
+  log('4/5', 'Waiting for the evaluator-gated state...');
+  const status = await pollStatus(taskId, ['review']);
+  ok('status', status);
+
+  const afterClaim = (await get(`/api/tasks/${taskId}`)) as { evaluator: string | null };
+  if (afterClaim.evaluator?.toLowerCase() !== evaluator.address.toLowerCase()) {
+    throw new Error(`evaluator lost after claim: ${afterClaim.evaluator}`);
+  }
+  ok('evaluator survived the claim it used to race', afterClaim.evaluator);
+
+  // Error path: the creation route must not become the cheap way past a guard the assignment
+  // route enforces. A fee above 100% is rejected before any escrow is taken.
+  log('5/5', 'Checking an out-of-range evaluator fee is rejected...');
+  let rejection: string | null = null;
+  try {
+    await x402Post(
+      '/api/tasks',
+      {
+        description: 'Evaluator smoke test — D (invalid fee)',
+        reward: '1000',
+        duration: 300,
+        mode: 'claim',
+        tags: ['smoke-evaluator'],
+        // Must be the distinct evaluator account, not the requester: under rev018 a
+        // requester-as-evaluator task reverts EvaluatorCannotBeRequester, which would satisfy
+        // "something threw" while never reaching the fee guard this step exists to check --
+        // and the /evaluatorFeeBps/ assertion below would then fail for the wrong reason.
+        evaluator: evaluator.address,
+        evaluatorFeeBps: 10001,
+      },
+      requester
+    );
+  } catch (error) {
+    rejection = error instanceof Error ? error.message : String(error);
+  }
+  if (rejection === null) {
+    throw new Error('createTask accepted an evaluatorFeeBps above 10000');
+  }
+  // Any thrown error used to count as a pass here, which made this step unable to fail for the
+  // reason it exists: a backend that was down, an unfunded payer, or a typo in the request body
+  // all throw, and all reported the fee guard as verified. Naming the field the rejection has
+  // to mention is what separates "the guard refused this" from "something else went wrong".
+  if (!/evaluatorFeeBps/i.test(rejection)) {
+    throw new Error(`createTask rejected the out-of-range fee, but not for the fee: ${rejection}`);
+  }
+  ok('evaluatorFeeBps above 10000 rejected', rejection);
+}
+
 async function main() {
   const { requester, worker } = getAccounts();
+  const evaluator = getEvaluatorAccount(requester.address);
 
   console.log('=== Taskmarket Smoke Test — Evaluator Flow ===');
   console.log('requester:', requester.address);
@@ -336,20 +528,26 @@ async function main() {
   try {
     results.push(
       await runScenario('A — APPROVE verdict, no appeal, finalize → completed', () =>
-        scenarioA(requester, worker)
+        scenarioA(requester, worker, evaluator)
       )
     );
 
     results.push(
       await runScenario('B — REJECT verdict, no appeal, finalize → cancelled', () =>
-        scenarioB(requester, worker)
+        scenarioB(requester, worker, evaluator)
       )
     );
 
     results.push(
       await runScenario(
         'C — APPROVE verdict, worker appeals, dispute resolver settles → completed',
-        () => scenarioC(requester, worker)
+        () => scenarioC(requester, worker, evaluator)
+      )
+    );
+
+    results.push(
+      await runScenario('D — creation with an evaluator is a single transaction', () =>
+        scenarioD(requester, worker, evaluator)
       )
     );
   } finally {
@@ -361,7 +559,7 @@ async function main() {
   console.log('\n' + '='.repeat(60));
   console.log('RESULTS');
   console.log('='.repeat(60));
-  const labels = ['A', 'B', 'C'];
+  const labels = ['A', 'B', 'C', 'D'];
   results.forEach((passed, i) => {
     console.log(`  Scenario ${labels[i]}: ${passed ? 'PASS' : 'FAIL'}`);
   });

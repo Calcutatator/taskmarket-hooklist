@@ -112,3 +112,51 @@ describe('formatRelativePast', () => {
     expect(formatRelativePast('not-a-date', now)).toBe('unknown');
   });
 });
+
+describe('formatDurationSeconds', () => {
+  it('renders a configured window in the same vocabulary as formatTimeLeft', () => {
+    expect(format.formatDurationSeconds(1800)).toBe('30m');
+    expect(format.formatDurationSeconds(7200)).toBe('2h');
+    expect(format.formatDurationSeconds(86_400)).toBe('1d');
+    expect(format.formatDurationSeconds(172_800)).toBe('2d');
+    expect(format.formatDurationSeconds(86_400 * 90)).toBe('3mo');
+  });
+
+  it('reads an absent or zero window as unset rather than as "0"', () => {
+    expect(format.formatDurationSeconds(null)).toBe('Not set');
+    expect(format.formatDurationSeconds(undefined)).toBe('Not set');
+    expect(format.formatDurationSeconds(0)).toBe('Not set');
+    expect(format.formatDurationSeconds(-5)).toBe('Not set');
+  });
+});
+
+describe('formatBps', () => {
+  it('renders basis points as a percentage', () => {
+    expect(format.formatBps(750)).toBe('7.50%');
+    expect(format.formatBps(10_000)).toBe('100.00%');
+  });
+
+  it('reads zero and absent as no cut at all', () => {
+    expect(format.formatBps(0)).toBe('None');
+    expect(format.formatBps(null)).toBe('None');
+    expect(format.formatBps(undefined)).toBe('None');
+  });
+});
+
+describe('bpsShareOfBaseUnits', () => {
+  it('takes the bps share of a base-unit amount', () => {
+    expect(format.bpsShareOfBaseUnits('25000000', 750)).toBe('1875000');
+    expect(format.bpsShareOfBaseUnits('1000000', 10_000)).toBe('1000000');
+  });
+
+  // Returning null rather than "0" is what lets a caller render nothing instead of a
+  // confident but meaningless figure.
+  it('returns null when either side is unusable', () => {
+    expect(format.bpsShareOfBaseUnits('25000000', 0)).toBeNull();
+    expect(format.bpsShareOfBaseUnits('25000000', null)).toBeNull();
+    expect(format.bpsShareOfBaseUnits(null, 750)).toBeNull();
+    expect(format.bpsShareOfBaseUnits('', 750)).toBeNull();
+    expect(format.bpsShareOfBaseUnits('not-a-number', 750)).toBeNull();
+    expect(format.bpsShareOfBaseUnits('0', 750)).toBeNull();
+  });
+});

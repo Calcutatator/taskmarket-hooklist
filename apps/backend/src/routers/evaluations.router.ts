@@ -12,20 +12,29 @@ import { eq } from 'drizzle-orm';
 import {
   contractEvaluate,
   contractAppeal,
-  contractFinalizeVerdict,
+  contractFinalizeVerdictTx,
   contractResolveDispute,
   contractEvaluatorTimeout,
 } from '../services/contract';
-import { recordTaskSettlement } from '../services/settlement-recorder';
-import { getServerConfig } from '../config/env';
-import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
-
-const VERDICT_MAP: Record<string, number> = { approve: 0, reject: 1, partial: 2 };
+import { settledPaymentReference } from '../middleware/x402';
+import { runRelayedIntent } from '../services/relayed-intent-request';
+// Shared with the rebroadcast path rather than duplicated here, so the first send and every
+// retry of it map a verdict to the same on-chain enum (ADR-0050).
+import { verdictCode } from '../services/intents/evaluations-intents';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
+import type {
+  EvaluationsAppealIntentPayload,
+  EvaluationsEvaluateIntentPayload,
+  EvaluationsEvaluatorTimeoutIntentPayload,
+  EvaluationsFinalizeVerdictIntentPayload,
+  EvaluationsResolveDisputeIntentPayload,
+} from '../services/intents/evaluations-intents';
 
 export const evaluationsRouter = router({
   evaluate: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/evaluate',
         tags: ['Evaluations'],
@@ -64,52 +73,38 @@ export const evaluationsRouter = router({
         rank: a.rank,
       }));
 
-      let txHash: `0x${string}`;
-      let evaluatedAt: number;
-      try {
-        ({ txHash, evaluatedAt } = await contractEvaluate(
-          input.taskId as `0x${string}`,
-          payer as `0x${string}`,
-          VERDICT_MAP[input.verdict] ?? 0,
-          input.score,
-          input.confidence,
-          input.evidenceHash as `0x${string}`,
-          awards
-        ));
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'task_evaluate',
-          error,
-        });
-      }
-
-      const appealDeadline =
-        task.appealWindow != null ? new Date((evaluatedAt + task.appealWindow) * 1000) : null;
-      const expiryTime =
-        appealDeadline && appealDeadline > task.expiryTime ? appealDeadline : task.expiryTime;
-      await ctx.db
-        .update(tasks)
-        .set({
-          status: 'appealing',
-          verdictType: input.verdict.toUpperCase(),
-          verdictScore: input.score,
-          verdictConfidence: input.confidence,
-          verdictEvidenceHash: input.evidenceHash,
-          evaluatorStake: '0',
-          appealDeadline,
-          expiryTime,
-          // The contract only reassigns the worker for contest modes
-          // (EvaluatorFacet.evaluate); mirror that so locked-worker modes keep
-          // the on-chain worker and the appeal window stays usable.
-          claimedBy:
-            task.mode === 'bounty' || task.mode === 'benchmark'
-              ? (input.awards[0]?.worker ?? task.claimedBy)
-              : task.claimedBy,
-        })
-        .where(eq(tasks.id, input.taskId));
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'evaluations.evaluate',
+        payer,
+        payment: settledPaymentReference(ctx.res),
+        payload: {
+          awards: input.awards.map((a) => ({
+            amount: a.amount,
+            rank: a.rank,
+            worker: a.worker,
+          })),
+          confidence: input.confidence,
+          evidenceHash: input.evidenceHash,
+          mode: task.mode,
+          score: input.score,
+          taskId: input.taskId,
+          verdict: input.verdict,
+        } satisfies EvaluationsEvaluateIntentPayload,
+        send: async () =>
+          (
+            await contractEvaluate(
+              input.taskId as `0x${string}`,
+              payer as `0x${string}`,
+              verdictCode(input.verdict),
+              input.score,
+              input.confidence,
+              input.evidenceHash as `0x${string}`,
+              awards
+            )
+          ).txHash,
+      });
 
       return { txHash };
     }),
@@ -117,6 +112,7 @@ export const evaluationsRouter = router({
   appeal: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/appeal',
         tags: ['Evaluations'],
@@ -142,25 +138,23 @@ export const evaluationsRouter = router({
       }
       if (task.status !== 'appealing') throw new Error('Task is not in Appealing state');
 
-      let txHash: `0x${string}`;
-      try {
-        txHash = await contractAppeal(input.taskId as `0x${string}`, payer as `0x${string}`);
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'task_appeal',
-          error,
-        });
-      }
-      await ctx.db.update(tasks).set({ status: 'disputed' }).where(eq(tasks.id, input.taskId));
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'evaluations.appeal',
+        payer,
+        payment: settledPaymentReference(ctx.res),
+        payload: { taskId: input.taskId } satisfies EvaluationsAppealIntentPayload,
+        send: () => contractAppeal(input.taskId as `0x${string}`, payer as `0x${string}`),
+      });
+
       return { txHash };
     }),
 
   finalizeVerdict: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/finalize-verdict',
         tags: ['Evaluations'],
@@ -183,48 +177,48 @@ export const evaluationsRouter = router({
         throw new Error('Appeal window not yet expired');
       }
 
-      const { txHash, settlement, settledAt } = await contractFinalizeVerdict(
-        input.taskId as `0x${string}`
-      );
-
-      const rejected = task.verdictType === 'REJECT';
-      if (rejected) {
-        // REJECT refunds the (post-evaluator-fee) remainder to the requester and
-        // terminates the task -- it does not reopen it. A worker who claimed a
-        // reopened task would find acceptSubmission reverting on the empty
-        // escrow left behind by the refund (EvaluatorFacet.finalizeVerdict).
-        // The contract emits no TaskCompleted event on this path, so there is
-        // no settlement to record.
-        await ctx.db
-          .update(tasks)
-          .set({
-            status: 'cancelled',
-            claimedBy: null,
-            evaluator: null,
-            evaluatorStake: '0',
-            evaluationWindow: null,
-            appealWindow: null,
-            evaluatorDeadline: null,
-            appealDeadline: null,
-          })
-          .where(eq(tasks.id, input.taskId));
-      } else if (settlement && settledAt != null) {
-        // Record task_awards synchronously from the same receipt this mutation
-        // already waited for, instead of relying solely on the async indexer to
-        // pick up the TaskCompleted event(s) on its next poll -- idempotent via
-        // recordTaskSettlement's onConflictDoNothing, safe if the indexer later
-        // processes the same event too.
-        await recordTaskSettlement(ctx.db, {
-          chainId: getServerConfig().CHAIN_ID,
-          settledAt: new Date(settledAt * 1000),
-          settlement,
-        });
-      } else {
-        // All-zero-award verdict: the contract still transitions the task to
-        // Accepted/completed, but emits no TaskCompleted log, so there is no
-        // settlement to record.
-        await ctx.db.update(tasks).set({ status: 'completed' }).where(eq(tasks.id, input.taskId));
-      }
+      // Permissionless, and an intent all the same. An intent records what the server
+      // relayed: the transaction is sent by the server wallet either way, and the settlement it
+      // produces has to reach the database whether or not this request is still around to write
+      // it (ADR-0045). Free, so nothing here is refundable.
+      //
+      // The initiator is recorded only when the caller identified themselves with the ADR-0023
+      // read-auth headers, and is null otherwise. This does not gate the call -- the endpoint
+      // stays permissionless, and an anonymous caller is served exactly as before. What
+      // identifying yourself buys is the ability to ask about the write afterwards: ADR-0059
+      // scopes `intents.get` to the recorded initiator, so a row with none is readable by
+      // nobody, which is the honest answer rather than a rule invented to fill the space.
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'evaluations.finalizeVerdict',
+        payer: ctx.caller?.address,
+        payload: {
+          // `rejected` is read from the task row rather than supplied by the caller, which is
+          // the exact shape ADR-0060 names as its residual risk: a payload field the router
+          // derives from state, then replays verbatim hours later. It is safe here, and the
+          // reason is worth writing down because it is not the one it looks like.
+          //
+          // It is NOT that the `appealing` guard above freezes the column.
+          // `completeEvaluationsEvaluate` writes `verdictType` guarded to a status set that
+          // includes 'appealing', so a write can land inside this window.
+          //
+          // What actually freezes the value is that a task has at most one verdict.
+          // `EvaluatorFacet.evaluate` is callable only from Review/Open/PendingApproval and
+          // leaves the task Appealing, so a second evaluation reverts and exactly one
+          // TaskEvaluated is ever emitted. Both writers of `tasks.verdictType` -- the indexer's
+          // `processTaskEvaluatedEvent` and `completeEvaluationsEvaluate` -- derive from that
+          // one evaluation, so a write landing inside this window rewrites the column with the
+          // value it already held. A rebroadcast cannot carry a different verdict than the
+          // request did.
+          //
+          // `apps/backend/test/unit/config/task-verdict-type-writers.test.ts` pins that writer
+          // set, so a third writer fails a test here rather than silently invalidating this.
+          rejected: task.verdictType === 'REJECT',
+          taskId: input.taskId,
+        } satisfies EvaluationsFinalizeVerdictIntentPayload,
+        send: () => contractFinalizeVerdictTx(input.taskId as `0x${string}`),
+      });
 
       return { txHash };
     }),
@@ -232,6 +226,7 @@ export const evaluationsRouter = router({
   resolveDispute: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/resolve-dispute',
         tags: ['Evaluations'],
@@ -263,52 +258,43 @@ export const evaluationsRouter = router({
         rank: a.rank,
       }));
 
-      let txHash: `0x${string}`;
-      let settlement: Awaited<ReturnType<typeof contractResolveDispute>>['settlement'];
-      let settledAt: number | null;
-      try {
-        ({ txHash, settlement, settledAt } = await contractResolveDispute(
-          input.taskId as `0x${string}`,
-          payer as `0x${string}`,
-          VERDICT_MAP[input.verdict] ?? 0,
-          awards
-        ));
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'task_resolve_dispute',
-          error,
-        });
-      }
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'evaluations.resolveDispute',
+        payer,
+        payment: settledPaymentReference(ctx.res),
+        // The whole decision, not just the part the completion happens to read. A payload that
+        // records only a projection of the call cannot be turned back into the call, which is
+        // what a rebroadcast needs (ADR-0050).
+        payload: {
+          awards: input.awards.map((a) => ({
+            amount: a.amount,
+            rank: a.rank,
+            worker: a.worker,
+          })),
+          firstAwardWorker: input.awards[0].worker,
+          taskId: input.taskId,
+          verdict: input.verdict,
+        } satisfies EvaluationsResolveDisputeIntentPayload,
+        send: async () =>
+          (
+            await contractResolveDispute(
+              input.taskId as `0x${string}`,
+              payer as `0x${string}`,
+              verdictCode(input.verdict),
+              awards
+            )
+          ).txHash,
+      });
 
-      if (settlement && settledAt != null) {
-        // Record task_awards synchronously from the same receipt this mutation
-        // already waited for, instead of relying solely on the async indexer to
-        // pick up the TaskCompleted event(s) on its next poll -- idempotent via
-        // recordTaskSettlement's onConflictDoNothing, safe if the indexer later
-        // processes the same event too.
-        await recordTaskSettlement(ctx.db, {
-          chainId: getServerConfig().CHAIN_ID,
-          settledAt: new Date(settledAt * 1000),
-          settlement,
-        });
-      } else {
-        // All-zero-award verdict: the contract still transitions the task to
-        // Accepted/completed, but emits no TaskCompleted log, so there is no
-        // settlement to record.
-        await ctx.db
-          .update(tasks)
-          .set({ status: 'completed', claimedBy: input.awards[0].worker })
-          .where(eq(tasks.id, input.taskId));
-      }
       return { txHash };
     }),
 
   evaluatorTimeout: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/evaluator-timeout',
         tags: ['Evaluations'],
@@ -337,31 +323,15 @@ export const evaluationsRouter = router({
         throw new Error('Evaluator deadline has not yet passed');
       }
 
-      let txHash: `0x${string}`;
-      try {
-        txHash = await contractEvaluatorTimeout(
-          input.taskId as `0x${string}`,
-          payer as `0x${string}`
-        );
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'task_evaluator_timeout',
-          error,
-        });
-      }
-
-      await ctx.db
-        .update(tasks)
-        .set({
-          status: 'pending_approval',
-          evaluator: null,
-          evaluatorStake: '0',
-          evaluatorDeadline: null,
-        })
-        .where(eq(tasks.id, input.taskId));
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'evaluations.evaluatorTimeout',
+        payer,
+        payment: settledPaymentReference(ctx.res),
+        payload: { taskId: input.taskId } satisfies EvaluationsEvaluatorTimeoutIntentPayload,
+        send: () => contractEvaluatorTimeout(input.taskId as `0x${string}`, payer as `0x${string}`),
+      });
 
       return { txHash };
     }),

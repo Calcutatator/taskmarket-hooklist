@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { apiGet } from '../../lib/api.js';
 import { signReadAuth } from '../../lib/read-auth.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, renderFailure } from '../../lib/output.js';
 
 export const submissionsCmd = new Command('submissions')
   .description('List submissions for a task')
@@ -18,8 +18,8 @@ export const submissionsCmd = new Command('submissions')
     try {
       subs = await apiGet(`/api/tasks/${taskId}/submissions`, { headers: auth?.headers ?? {} });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to fetch submissions.';
-      printError(msg);
+      renderFailure(err, { fallback: 'Failed to fetch submissions.' });
+      return;
     }
     printResult(subs!);
   });

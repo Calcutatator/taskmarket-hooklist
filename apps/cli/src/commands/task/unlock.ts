@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { apiPost } from '../../lib/api.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, renderFailure } from '../../lib/output.js';
 import { saveTaskAccessGrant } from '../../lib/task-access-grants.js';
 
 /**
@@ -14,16 +14,17 @@ export const unlockCmd = new Command('unlock')
   .requiredOption('--password <password>', "The private task's password")
   .action(async (taskId: string, opts: { password: string }) => {
     let result: { grant: string; expiresAt: string };
+    let idempotencyKey: string;
     try {
-      result = (await apiPost(`/api/tasks/${taskId}/private-access/verify`, {
-        taskId,
-        password: opts.password,
-      })) as typeof result;
+      ({ data: result, idempotencyKey } = await apiPost<typeof result>(
+        `/api/tasks/${taskId}/private-access/verify`,
+        { taskId, password: opts.password }
+      ));
     } catch (err: unknown) {
-      printError(err instanceof Error ? err.message : 'Failed to unlock task.');
+      renderFailure(err, { fallback: 'Failed to unlock task.' });
       return;
     }
 
     await saveTaskAccessGrant(taskId, result.grant, result.expiresAt);
-    printResult({ taskId, expiresAt: result.expiresAt });
+    printResult({ taskId, expiresAt: result.expiresAt }, { idempotencyKey });
   });

@@ -14,7 +14,7 @@ help:
 	@echo "  make install              - Same as init"
 	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet|preview)"
 	@echo "  make release              - Tag and push a production release (deploys backend + frontend)"
-	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|discord-app|shared|contracts|storybook|all); 'contracts' also regenerates abi/TaskMarket.json"
+	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|discord-app|shared|contracts|storybook|all); 'contracts' also regenerates packages/contracts/abi/ (JSON + typed bindings)"
 	@echo "  make dev [storybook]      - Start all dev servers, optionally with Storybook"
 	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|discord-app|discord-stack|mock-api|mock-web|docs|anvil|storybook)"
 	@echo "  make discord <register|disable|smoke|signed-smoke> - Manage commands and verify Discord app seams"
@@ -39,7 +39,7 @@ help:
 	@echo "  make adr-audit            - Regenerate ADR/RFC indexes and embodiment audit reports"
 	@echo "  make lint-check specs     - Check docs/specs/ follow the Spec-lite structural template"
 	@echo "  make test adr             - Run the adr package's own unit test suite (also covers spec-lint)"
-	@echo "  make contract <cmd>       - Contract tools (audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci)"
+	@echo "  make contract <cmd>       - Contract tools (audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci)"
 	@echo "  make contract <owner-cmd> <testnet|mainnet> - Owner actions (pause|unpause|accept-ownership)"
 	@echo "  make ci-quality-js        - Run the non-contract CI quality shard"
 	@echo "  make ui-ci                - Run the full Storybook and production web UI gate"
@@ -282,7 +282,7 @@ swap-reward-hook:
 
 release:
 	@SQL_COUNT=$$(ls apps/backend/drizzle/migrations/*.sql 2>/dev/null | wc -l | tr -d ' '); \
-	JOURNAL_COUNT=$$(python3 -c "import json; d=json.load(open('apps/backend/drizzle/migrations/meta/_journal.json')); print(len(d['entries']))" 2>/dev/null); \
+	JOURNAL_COUNT=$$(node -e 'console.log(JSON.parse(require("fs").readFileSync("apps/backend/drizzle/migrations/meta/_journal.json","utf8")).entries.length)' 2>/dev/null); \
 	if [ "$$SQL_COUNT" != "$$JOURNAL_COUNT" ]; then \
 		echo "ERROR: migration journal out of sync ($$SQL_COUNT .sql files, $$JOURNAL_COUNT journal entries). Add the missing entry to apps/backend/drizzle/migrations/meta/_journal.json before releasing."; \
 		exit 1; \
@@ -309,7 +309,8 @@ build:
 		echo "Usage: make build <backend|frontend|web|docs|discord-app|shared|contracts|storybook|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
-		pnpm turbo build; \
+		pnpm turbo build && \
+		$(MAKE) build contracts; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
 		pnpm --filter @taskmarket/backend build; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
@@ -326,15 +327,9 @@ build:
 		pnpm --filter @taskmarket/shared build; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		forge build --root packages/contracts && \
-		cd packages/contracts && python3 -c "\
-import json, os; \
-facets = ['DiamondCutFacet.sol/DiamondCutFacet.json','DiamondLoupeFacet.sol/DiamondLoupeFacet.json','AdminFacet.sol/AdminFacet.json','CoreFacet.sol/CoreFacet.json','AuctionFacet.sol/AuctionFacet.json','AcceptanceFacet.sol/AcceptanceFacet.json','EvaluatorFacet.sol/EvaluatorFacet.json','RatingFacet.sol/RatingFacet.json','RegistryFacet.sol/RegistryFacet.json']; \
-merged=[]; seen=set(); \
-[merged.append(e) or seen.add(json.dumps(e,sort_keys=True)) for f in facets for e in json.load(open(os.path.join('out',f)))['abi'] if json.dumps(e,sort_keys=True) not in seen]; \
-open('abi/TaskMarket.json','w').write(json.dumps(merged,indent=2)+'\n'); \
-print(f'ABI: {len(merged)} entries -> abi/TaskMarket.json')"; \
+		cd packages/contracts && pnpm generate-abi; \
 	else \
-		echo "Unknown app: $(word 1,$(ARGS))"; \
+		echo "Unknown app or package: $(word 1,$(ARGS))"; \
 		echo "Usage: make build <backend|frontend|web|docs|discord-app|shared|contracts|storybook|all>"; \
 		exit 1; \
 	fi
@@ -399,7 +394,7 @@ lint-check:
 	elif [ -d "packages/$(word 1,$(ARGS))" ]; then \
 		cd packages/$(word 1,$(ARGS)) && pnpm lint:check; \
 	else \
-		echo "Unknown app: $(word 1,$(ARGS))"; \
+		echo "Unknown app or package: $(word 1,$(ARGS))"; \
 		echo "Usage: make lint-check <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|adr|specs|all>"; \
 		exit 1; \
 	fi
@@ -428,7 +423,7 @@ lint-fix:
 	elif [ "$(word 1,$(ARGS))" = "discord-app" ]; then \
 		cd apps/discord-app && pnpm lint:write; \
 	else \
-		echo "Unknown app: $(word 1,$(ARGS))"; \
+		echo "Unknown app or package: $(word 1,$(ARGS))"; \
 		echo "Usage: make lint-fix <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|all>"; \
 		exit 1; \
 	fi
@@ -436,58 +431,34 @@ lint-fix:
 format-check:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make format-check <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|all>"; \
+		echo "Usage: make format-check <app-or-package-name|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo format:check; \
-	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
-		cd apps/backend && pnpm format:check; \
-	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
-		cd apps/frontend && pnpm format:check; \
-	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
-		cd apps/web && pnpm format:check; \
-	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
-		cd apps/docs && pnpm format:check; \
-	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
-		cd packages/shared && pnpm format:check; \
-	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		cd packages/contracts && pnpm run format:check; \
-	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
-		cd apps/email-worker && pnpm format:check; \
-	elif [ "$(word 1,$(ARGS))" = "discord-app" ]; then \
-		cd apps/discord-app && pnpm format:check; \
+	elif [ -d "apps/$(word 1,$(ARGS))" ]; then \
+		cd apps/$(word 1,$(ARGS)) && pnpm run format:check; \
+	elif [ -d "packages/$(word 1,$(ARGS))" ]; then \
+		cd packages/$(word 1,$(ARGS)) && pnpm run format:check; \
 	else \
-		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make format-check <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|all>"; \
+		echo "Unknown app or package: $(word 1,$(ARGS))"; \
+		echo "Usage: make format-check <app-or-package-name|all>"; \
 		exit 1; \
 	fi
 
 format-fix:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make format-fix <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|all>"; \
+		echo "Usage: make format-fix <app-or-package-name|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo format:write; \
-	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
-		cd apps/backend && pnpm format:write; \
-	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
-		cd apps/frontend && pnpm format:write; \
-	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
-		cd apps/web && pnpm format:write; \
-	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
-		cd apps/docs && pnpm format:write; \
-	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
-		cd packages/shared && pnpm format:write; \
-	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		cd packages/contracts && pnpm run format:write; \
-	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
-		cd apps/email-worker && pnpm format:write; \
-	elif [ "$(word 1,$(ARGS))" = "discord-app" ]; then \
-		cd apps/discord-app && pnpm format:write; \
+	elif [ -d "apps/$(word 1,$(ARGS))" ]; then \
+		cd apps/$(word 1,$(ARGS)) && pnpm run format:write; \
+	elif [ -d "packages/$(word 1,$(ARGS))" ]; then \
+		cd packages/$(word 1,$(ARGS)) && pnpm run format:write; \
 	else \
-		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make format-fix <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|all>"; \
+		echo "Unknown app or package: $(word 1,$(ARGS))"; \
+		echo "Usage: make format-fix <app-or-package-name|all>"; \
 		exit 1; \
 	fi
 
@@ -513,8 +484,8 @@ type-check:
 	elif [ "$(word 1,$(ARGS))" = "discord-app" ]; then \
 		cd apps/discord-app && pnpm type-check; \
 	else \
-		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make type-check <backend|frontend|web|shared|email-worker|cli|discord-app|all>"; \
+		echo "Unknown app or package: $(word 1,$(ARGS))"; \
+		echo "Usage: make type-check <backend|frontend|web|shared|email-worker|discord-app|cli|all>"; \
 		exit 1; \
 	fi
 
@@ -575,7 +546,7 @@ test:
 	elif [ "$(word 1,$(ARGS))" = "storybook" ]; then \
 		pnpm --filter @taskmarket/web storybook:test; \
 	else \
-		echo "Unknown app: $(word 1,$(ARGS))"; \
+		echo "Unknown app or package: $(word 1,$(ARGS))"; \
 		echo "Usage: make test [backend|frontend|web|docs|shared|contracts|email-worker|adr|storybook]"; \
 		exit 1; \
 	fi
@@ -633,7 +604,7 @@ docs-og-check:
 contract:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make contract <audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci>"; \
+		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci"; \
 		echo "       make contract <pause|unpause|accept-ownership> <testnet|mainnet>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "audit" ]; then \
@@ -650,9 +621,18 @@ contract:
 		echo "lcov report written to reports/coverage/lcov.info" && \
 		bash scripts/check-coverage.sh /tmp/forge-coverage.txt; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot" ]; then \
-		cd packages/contracts && forge snapshot; \
+		cd packages/contracts && forge snapshot -j 1; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot-check" ]; then \
-		cd packages/contracts && forge snapshot --check --tolerance 1; \
+		cd packages/contracts && forge snapshot --check --tolerance 1 -j 1; \
+	elif [ "$(word 1,$(ARGS))" = "abi-check" ]; then \
+		forge build --root packages/contracts && \
+		cd packages/contracts && pnpm generate-abi && \
+		if [ -n "$$(git status --porcelain -- abi/)" ]; then \
+			git --no-pager diff -- abi/; \
+			echo "Error: packages/contracts/abi/ is out of date with the contract sources."; \
+			echo "Run 'make build contracts' and commit packages/contracts/abi/."; \
+			exit 1; \
+		fi; \
 	elif [ "$(word 1,$(ARGS))" = "doc" ]; then \
 		cd packages/contracts && forge doc --out docs/natspec && \
 		echo "Docs written to packages/contracts/docs/natspec"; \
@@ -694,7 +674,8 @@ contract:
 			--rpc-url $$OWNER_RPC; \
 	else \
 		echo "Unknown command: $(word 1,$(ARGS))"; \
-		echo "Usage: make contract <audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci> | make contract <pause|unpause|accept-ownership> <testnet|mainnet>"; \
+		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci"; \
+		echo "       make contract <pause|unpause|accept-ownership> <testnet|mainnet>"; \
 		exit 1; \
 	fi
 
@@ -935,9 +916,9 @@ dither-kit:
 # unaffected.
 cli:
 	@$(ENV_LOADER) && \
-	if [ "$(word 1,$(MAKECMDGOALS))" = "smoke" ] || [ "$(word 1,$(MAKECMDGOALS))" = "type-check" ] || [ "$(word 1,$(MAKECMDGOALS))" = "test" ]; then \
-		exit 0; \
-	fi; \
+	case "$(word 1,$(MAKECMDGOALS))" in \
+		smoke|type-check|test|lint-check|lint-fix|format-check|format-fix) exit 0 ;; \
+	esac; \
 	pnpm --filter @lucid-agents/taskmarket... build && \
 	if [ -n "$(ARGS)" ]; then \
 		node apps/cli/dist/index.js $(ARGS); \

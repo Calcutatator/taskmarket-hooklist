@@ -1,11 +1,15 @@
 /**
  * Shared helpers for smoke test scripts.
  */
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createPublicClient, createWalletClient, http, parseAbi, toHex, type Chain } from 'viem';
 import { anvil, baseSepolia } from 'viem/chains';
-import { buildDeviceRegisterMessage, buildReadAuthMessage } from '@taskmarket/shared';
+import {
+  buildDeviceRegisterMessage,
+  buildReadAuthMessage,
+  IDEMPOTENCY_KEY_HEADER,
+} from '@taskmarket/shared';
 
 export type Account = ReturnType<typeof privateKeyToAccount>;
 
@@ -128,11 +132,33 @@ export async function pollTaskStatus<T extends { status: string }>(
   );
 }
 
+/**
+ * A fresh idempotency key for one logical operation (ADR-0052).
+ *
+ * Every relayed write requires one, so the smoke helpers mint one per call. A smoke script
+ * genuinely retrying the same operation must hold onto its key and pass it explicitly --
+ * a new key means a new operation, which is exactly what these one-shot calls want.
+ */
+export function newIdempotencyKey(): string {
+  return randomUUID();
+}
+
+function writeHeaders(idempotencyKey?: string): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    [IDEMPOTENCY_KEY_HEADER]: idempotencyKey ?? newIdempotencyKey(),
+  };
+}
+
 /** POST without X402. */
-export async function post(path: string, body: Record<string, unknown>): Promise<unknown> {
+export async function post(
+  path: string,
+  body: Record<string, unknown>,
+  options?: { idempotencyKey?: string }
+): Promise<unknown> {
   const r = await fetch(`${API_URL}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: writeHeaders(options?.idempotencyKey),
     body: JSON.stringify(body),
   });
   const result = await r.json();
@@ -144,14 +170,19 @@ export async function post(path: string, body: Record<string, unknown>): Promise
 export async function x402Post(
   path: string,
   body: Record<string, unknown>,
-  account: Account
+  account: Account,
+  options?: { idempotencyKey?: string }
 ): Promise<unknown> {
   const url = `${API_URL}${path}`;
+
+  // One key for both rounds: the 402 challenge and the paid retry are one logical
+  // operation, and only the second one records an intent.
+  const idempotencyKey = options?.idempotencyKey ?? newIdempotencyKey();
 
   // Round 1: get payment requirements
   const r1 = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: writeHeaders(idempotencyKey),
     body: JSON.stringify(body),
   });
 
@@ -216,7 +247,7 @@ export async function x402Post(
   const r2 = await fetch(url, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      ...writeHeaders(idempotencyKey),
       'PAYMENT-SIGNATURE': Buffer.from(JSON.stringify(paymentPayload)).toString('base64'),
     },
     body: JSON.stringify(body),
@@ -241,6 +272,34 @@ export async function registerDevice(
 }
 
 const MOCK_USDC_ABI = parseAbi(['function mint(address to, uint256 amount) external']);
+
+const USDC_BALANCE_ABI = parseAbi(['function balanceOf(address) view returns (uint256)']);
+
+/**
+ * USDC balance of `address`, read straight from the token.
+ *
+ * Escrow in this system is one pooled balance held by the Diamond across every task, so the
+ * only way to state "this task's money did not move" is to read the pool itself. A smoke test
+ * asserting a refund happened once cannot do it from task status alone -- status is set by the
+ * indexer, and the defect ADR-0054 fixes was a second payout leaving status exactly where it
+ * already was while the pool went down twice.
+ */
+export async function usdcBalanceOf(address: string): Promise<bigint> {
+  const rpcUrl = process.env.BASE_RPC_URL ?? 'http://127.0.0.1:8545';
+  const chainId = parseInt(process.env.CHAIN_ID ?? '84532', 10);
+  const chain: Chain = chainId === 31337 ? anvil : baseSepolia;
+  const usdc = process.env.USDC_TOKEN_ADDRESS;
+  if (!usdc) {
+    throw new Error('USDC_TOKEN_ADDRESS is required to read a USDC balance');
+  }
+  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+  return publicClient.readContract({
+    address: usdc as `0x${string}`,
+    abi: USDC_BALANCE_ABI,
+    functionName: 'balanceOf',
+    args: [address as `0x${string}`],
+  });
+}
 
 /**
  * Mints mock USDC directly to `recipient` -- MockUSDC.mint is permissionless (see

@@ -204,12 +204,17 @@ export const daemonCommand = new Command('daemon')
             await sleepOrAbort(heartbeatIntervalMs, abortController.signal);
             if (stopped) break;
             try {
-              await apiPost('/trpc/xmtp.heartbeat', {
+              // Each beat reports the key its own write returned, which is what makes a loop
+              // safe to report from at all: nothing here depends on how many beats came before.
+              const { idempotencyKey } = await apiPost('/trpc/xmtp.heartbeat', {
                 deviceId: keystore.deviceId,
                 apiToken: keystore.apiToken,
                 installationId: client.installationId,
               });
-              printResult({ event: 'xmtp.heartbeat', installationId: client.installationId });
+              printResult(
+                { event: 'xmtp.heartbeat', installationId: client.installationId },
+                { idempotencyKey }
+              );
             } catch (err) {
               process.stderr.write(
                 `Heartbeat failed: ${err instanceof Error ? err.message : String(err)}\n`
@@ -423,6 +428,9 @@ export const daemonCommand = new Command('daemon')
                   )) as EmailListResult;
 
                   for (const email of result.emails) {
+                    // An announcement, not a write: this line reports a message that arrived, and
+                    // the mark-read below is a separate operation the caller is not being told
+                    // about. It carries no key for that reason, rather than for want of one.
                     printResult({
                       event: 'email.new',
                       id: email.id,
@@ -464,6 +472,10 @@ export const daemonCommand = new Command('daemon')
           ]);
         };
 
+        // These loops write concurrently for the life of the process, so "the write this daemon
+        // just made" has never had an answer here. It does not need one: each loop reports the
+        // key its own call returned, so concurrency between them is not something the reporting
+        // has to be told about.
         await Promise.allSettled([xmtpLoop(), heartbeatLoop(), taskPollLoop()]);
       } finally {
         process.off('SIGINT', stop);

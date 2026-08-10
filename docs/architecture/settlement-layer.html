@@ -1,0 +1,235 @@
+<meta charset="utf-8">
+<title>Settlement layer: how a relayed write actually settles</title>
+<style>
+  :root {
+    --green: #1e7a3b;
+    --pink: #e74078;
+    --cream: #fff6e8;
+    --ink: #12140f;
+    --muted: #5d6357;
+    --rule: #d8d2c4;
+    --panel: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --cream: #14160f; --ink: #fff6e8; --muted: #9aa08f; --rule: #333828; --panel: #1c1f16; }
+  }
+  :root[data-theme="dark"] { --cream: #14160f; --ink: #fff6e8; --muted: #9aa08f; --rule: #333828; --panel: #1c1f16; }
+  :root[data-theme="light"] { --cream: #fff6e8; --ink: #12140f; --muted: #5d6357; --rule: #d8d2c4; --panel: #ffffff; }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 1.5rem 6rem;
+    background: var(--cream); color: var(--ink);
+    font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  header { padding: 4rem 0 2.5rem; border-bottom: 6px solid var(--ink); margin-bottom: 3rem; }
+  h1 { font-size: clamp(2rem, 5vw, 3.4rem); line-height: 1.05; margin: 0 0 1rem; letter-spacing: -0.02em; }
+  .lede { font-size: 1.15rem; max-width: 62ch; color: var(--muted); margin: 0; }
+  h2 {
+    font-size: clamp(1.3rem, 3vw, 1.9rem); margin: 4rem 0 0.4rem;
+    letter-spacing: -0.01em; border-left: 10px solid var(--green); padding-left: 0.75rem;
+  }
+  h2.alt { border-left-color: var(--pink); }
+  h2 + p.sub { margin: 0 0 1.75rem 1.4rem; color: var(--muted); max-width: 70ch; }
+  h3 { font-size: 1.05rem; margin: 2rem 0 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; }
+  .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  svg { display: block; min-width: 720px; max-width: 100%; height: auto; }
+  .legend { display: flex; flex-wrap: wrap; gap: 1.25rem; margin: 1.25rem 0 0; padding: 0; list-style: none; font-size: 0.9rem; }
+  .legend li { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); }
+  .sw { width: 1.1rem; height: 1.1rem; border: 2px solid var(--ink); flex: none; }
+  table { border-collapse: collapse; width: 100%; margin: 1.25rem 0; font-size: 0.94rem; }
+  th, td { text-align: left; padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { background: var(--ink); color: var(--cream); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.07em; }
+  .panel { background: var(--panel); border: 3px solid var(--ink); padding: 1.25rem 1.5rem; margin: 1.5rem 0; }
+  .panel.warn { border-color: var(--pink); }
+  .panel h3 { margin-top: 0; color: var(--pink); }
+  .panel.ok h3 { color: var(--green); }
+  .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin: 1.5rem 0; }
+  .card { border: 3px solid var(--ink); padding: 1rem 1.1rem; background: var(--panel); }
+  .card b { display: block; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-bottom: 0.35rem; }
+  .card p { margin: 0; font-size: 0.93rem; }
+  .num { font-size: 2.4rem; font-weight: 800; line-height: 1; color: var(--green); }
+  footer { margin-top: 5rem; padding-top: 1.5rem; border-top: 3px solid var(--ink); color: var(--muted); font-size: 0.88rem; }
+</style>
+
+<div class="wrap">
+<header>
+  <h1>How a relayed write settles</h1>
+  <p class="lede">A relayed write is two on-chain transactions that cannot be made atomic: a payment we
+  <b>observe</b>, and a contract call we <b>dispatch</b>. Everything below exists to decide what happened
+  between them — from evidence, never from a timeout.</p>
+</header>
+
+<h2>The happy path</h2>
+<p class="sub">Two rounds. The key is claimed on the round that carries payment, immediately before settlement.</p>
+
+<div class="scroll">
+<svg viewBox="0 0 1120 330" role="img" aria-label="Request flow from client through payment, intent record, nonce allocation, broadcast and completion">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <g font-family="ui-sans-serif, system-ui" font-size="13" color="currentColor">
+
+    <g fill="none" stroke="currentColor" stroke-width="3" marker-end="url(#a)">
+      <path d="M150 55 H255"/><path d="M400 55 H505"/><path d="M650 55 H755"/>
+      <path d="M830 80 V125"/>
+      <path d="M755 150 H650"/><path d="M505 150 H400"/>
+      <path d="M275 175 V220"/>
+      <path d="M400 245 H505"/><path d="M650 245 H755"/>
+    </g>
+
+    <g stroke="currentColor" stroke-width="3">
+      <rect x="20" y="25" width="130" height="60" fill="none"/>
+      <rect x="255" y="25" width="145" height="60" fill="#e74078" fill-opacity="0.16"/>
+      <rect x="505" y="25" width="145" height="60" fill="#e74078" fill-opacity="0.16"/>
+      <rect x="755" y="25" width="150" height="60" fill="#e74078" fill-opacity="0.16"/>
+      <rect x="755" y="120" width="150" height="60" fill="#1e7a3b" fill-opacity="0.16"/>
+      <rect x="505" y="120" width="145" height="60" fill="#1e7a3b" fill-opacity="0.16"/>
+      <rect x="200" y="120" width="200" height="60" fill="#1e7a3b" fill-opacity="0.16"/>
+      <rect x="200" y="215" width="200" height="60" fill="none"/>
+      <rect x="505" y="215" width="145" height="60" fill="none"/>
+      <rect x="755" y="215" width="150" height="60" fill="none"/>
+    </g>
+
+    <g fill="currentColor">
+      <text x="85"  y="50" text-anchor="middle" font-weight="700">Client</text>
+      <text x="85"  y="70" text-anchor="middle" font-size="11">mints the key</text>
+      <text x="327" y="50" text-anchor="middle" font-weight="700">Round 1</text>
+      <text x="327" y="70" text-anchor="middle" font-size="11">402 + price. No write.</text>
+      <text x="577" y="50" text-anchor="middle" font-weight="700">Round 2</text>
+      <text x="577" y="70" text-anchor="middle" font-size="11">signed authorization</text>
+      <text x="830" y="50" text-anchor="middle" font-weight="700">Claim key</text>
+      <text x="830" y="70" text-anchor="middle" font-size="11">atomic, pre-settle</text>
+
+      <text x="830" y="145" text-anchor="middle" font-weight="700">Settle payment</text>
+      <text x="830" y="165" text-anchor="middle" font-size="11">money moves here</text>
+      <text x="577" y="145" text-anchor="middle" font-weight="700">Record intent</text>
+      <text x="577" y="165" text-anchor="middle" font-size="11">payload + payment ref</text>
+      <text x="300" y="145" text-anchor="middle" font-weight="700">Allocate nonce</text>
+      <text x="300" y="165" text-anchor="middle" font-size="11">+ write receipt hash</text>
+
+      <text x="300" y="240" text-anchor="middle" font-weight="700">Send</text>
+      <text x="300" y="260" text-anchor="middle" font-size="11">returns a tx hash</text>
+      <text x="577" y="240" text-anchor="middle" font-weight="700">broadcast</text>
+      <text x="577" y="260" text-anchor="middle" font-size="11">await receipt</text>
+      <text x="830" y="240" text-anchor="middle" font-weight="700">completed</text>
+      <text x="830" y="260" text-anchor="middle" font-size="11">handler runs</text>
+
+      <text x="20" y="310" font-size="12" fill="#5d6357">Everything from "Record intent" onward survives the request ending. The same handler runs whether the receipt takes 2 seconds or 2 hours.</text>
+    </g>
+  </g>
+</svg>
+</div>
+
+<ul class="legend">
+  <li><span class="sw" style="background:#e74078;opacity:.5"></span> before money moves — nothing durable is written</li>
+  <li><span class="sw" style="background:#1e7a3b;opacity:.5"></span> irreversible — written before it can be lost</li>
+  <li><span class="sw"></span> ordinary progress</li>
+</ul>
+
+<div class="panel ok">
+  <h3>Why the claim sits there</h3>
+  <p>Claimed before the challenge, the exchange's own second round finds a live reservation under its own key,
+  cannot tell itself from a competitor, and is refused — every paid write broken for the length of the TTL.
+  Claimed after settlement, two concurrent requests both settle. It goes on the round that carries payment,
+  immediately before settling: that is the only round money can move on.</p>
+</div>
+
+<h2 class="alt">Where it goes wrong, and what resolves it</h2>
+<p class="sub">Each failure has exactly one sweep that owns it, and each sweep waits for a different kind of evidence.</p>
+
+<table>
+  <thead><tr><th>What broke</th><th>State it leaves</th><th>Who resolves it</th><th>Evidence required</th></tr></thead>
+  <tbody>
+    <tr><td>Request died before sending</td><td><code>recorded</code>, no outbox row</td><td>Intent worker — rebroadcast</td><td>No outbox row and no hash <b>proves</b> nothing was sent</td></tr>
+    <tr><td>Receipt slower than the request</td><td><code>broadcast</code></td><td>Reconciler</td><td>The receipt, whenever it arrives</td></tr>
+    <tr><td>Transaction reverted</td><td><code>broadcast</code></td><td>Reconciler — refunds</td><td>A reverted receipt</td></tr>
+    <tr><td>Transaction stuck in mempool</td><td><code>broadcast</code></td><td>Reconciler — replaces at same nonce</td><td>Replacement mined, or the original mined late</td></tr>
+    <tr><td>Retries exhausted / no broadcaster</td><td><code>recorded</code></td><td>Abandoned sweep — refunds</td><td>Retry budget spent, past the signed deadline</td></tr>
+    <tr><td><b>Send never returned a hash</b></td><td><code>recorded</code>, outbox row, no hash</td><td>Stranded sweep</td><td>Was this intent's own receipt key consumed?</td></tr>
+    <tr><td>Key claimed, payment never landed</td><td><code>reserved</code></td><td>Reservation sweep</td><td>Token contract says the authorization is unused</td></tr>
+    <tr><td>Refund transfer's receipt was slow</td><td>ledger <code>refunding</code></td><td>Orphaned-refund sweep</td><td>The refund transfer's own receipt</td></tr>
+  </tbody>
+</table>
+
+<h2>The one that was hardest</h2>
+<p class="sub">A send that never answered. The chain can only be asked about a transaction by hash — and there isn't one.</p>
+
+<div class="scroll">
+<svg viewBox="0 0 1120 260" role="img" aria-label="The stranded intent decision path">
+  <defs>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <g font-family="ui-sans-serif, system-ui" font-size="13" color="currentColor">
+    <g fill="none" stroke="currentColor" stroke-width="3" marker-end="url(#b)">
+      <path d="M215 60 H300"/>
+      <path d="M480 60 H565"/>
+      <path d="M672 90 V135 H830"/>
+      <path d="M672 90 V190 H830"/>
+      <path d="M672 30 V15 H830 V45"/>
+    </g>
+    <g stroke="currentColor" stroke-width="3">
+      <rect x="20" y="30" width="195" height="60" fill="none"/>
+      <rect x="300" y="30" width="180" height="60" fill="none"/>
+      <rect x="565" y="30" width="215" height="60" fill="#e74078" fill-opacity="0.16"/>
+      <rect x="830" y="45" width="270" height="45" fill="#1e7a3b" fill-opacity="0.2"/>
+      <rect x="830" y="112" width="270" height="45" fill="#e74078" fill-opacity="0.2"/>
+      <rect x="830" y="168" width="270" height="45" fill="none"/>
+    </g>
+    <g fill="currentColor">
+      <text x="117" y="55" text-anchor="middle" font-weight="700">Send drops</text>
+      <text x="117" y="75" text-anchor="middle" font-size="11">no hash returned</text>
+      <text x="390" y="55" text-anchor="middle" font-weight="700">Nonce spent</text>
+      <text x="390" y="75" text-anchor="middle" font-size="11">by something unnamed</text>
+      <text x="672" y="55" text-anchor="middle" font-weight="700">Ask the chain</text>
+      <text x="672" y="75" text-anchor="middle" font-size="11">was OUR receipt key consumed?</text>
+      <text x="845" y="73" font-weight="700">yes → completed, no refund</text>
+      <text x="845" y="140" font-weight="700">no, past deadline → refund</text>
+      <text x="845" y="196" font-weight="700">unknown → leave it alone</text>
+      <text x="20" y="245" font-size="12" fill="#5d6357">The receipt key includes a 32-byte nonce minted once per intent, so nothing but this intent's own call can set it. An RPC failure is "unknown", never "no".</text>
+    </g>
+  </g>
+</svg>
+</div>
+
+<div class="grid">
+  <div class="card"><b>Coverage</b><p class="num">24/26</p><p>operations answerable exactly</p></div>
+  <div class="card"><b>Not covered</b><p><code>wallet.withdrawDreams</code> and <code>identity.register</code> bypass the forwarder, so they have no per-call one-shot marker. They stay non-terminal, named in code and in a structured log.</p></div>
+  <div class="card"><b>Most dangerous line</b><p>The receipt key must stay byte-identical to the Solidity. A Foundry test and a TypeScript test now pin the same vector from opposite sides.</p></div>
+</div>
+
+<h2 class="alt">The rules that never bend</h2>
+
+<div class="panel warn">
+  <h3>Absence is not evidence</h3>
+  <p>A missing receipt, an unanswered RPC, a nonce that looks free — none of these may settle anything.
+  Every branch that cannot prove an outcome leaves the row exactly where it was. Reading "no answer" as
+  "never happened" is what once refunded people whose work had landed, paying them back <i>and</i> giving
+  them the result out of the server wallet.</p>
+</div>
+
+<div class="panel warn">
+  <h3>Only four things may trigger a refund</h3>
+  <p>A reverted receipt. A replacement mined at the same nonce, proving the original never can.
+  An exhausted retry budget past the deadline the payer signed. A receipt key the chain says was never
+  consumed, past that same deadline. Nothing else — and never a timer alone.</p>
+</div>
+
+<div class="panel warn">
+  <h3>The deadline is the payer's, not ours</h3>
+  <p>Refund timing is bounded by the <code>validBefore</code> in the authorization the user actually signed,
+  which the forwarder enforces on chain. It is not a constant anyone tuned, so it cannot drift away from
+  what was agreed.</p>
+</div>
+
+<footer>
+  Generated from the code on <code>adr/durable-relayed-intents</code>. The decisions behind each rule are
+  recorded in ADR-0045 through ADR-0071 under <code>docs/adr/</code>.
+</footer>
+</div>

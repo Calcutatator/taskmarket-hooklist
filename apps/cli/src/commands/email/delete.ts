@@ -8,10 +8,13 @@ export const deleteCommand = new Command('delete')
   .argument('<id>', 'Email ID')
   .action(async (id: string) => {
     const keystore = await loadKeystore();
-    const result = (await apiPost('/api/emails/delete', {
-      deviceId: keystore.deviceId,
-      apiToken: keystore.apiToken,
-      id,
-    })) as { deleted: boolean };
-    printResult({ deleted: result.deleted });
+    const { data: result, idempotencyKey } = await apiPost<{ deleted: boolean }>(
+      '/api/emails/delete',
+      {
+        deviceId: keystore.deviceId,
+        apiToken: keystore.apiToken,
+        id,
+      }
+    );
+    printResult({ deleted: result.deleted }, { idempotencyKey });
   });

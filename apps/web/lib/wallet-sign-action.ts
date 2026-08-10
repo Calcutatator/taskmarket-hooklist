@@ -7,8 +7,11 @@
 // (worker actions) or requesterAddress (requester actions) — pass
 // addressField to control that.
 
+import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 import type { useSignMessage } from 'wagmi';
 import { getLegalRequestHeaders } from '@/lib/legal-receipt';
+import { newIdempotencyKey } from '@/lib/api/idempotency';
+import { isPendingWriteResponse, type PendingWriteResult } from '@/lib/relayed-write-outcome';
 
 export type WalletSignDeps = {
   address: `0x${string}`;
@@ -17,8 +20,12 @@ export type WalletSignDeps = {
 };
 
 export type WalletSignResult<T> =
-  | { ok: true; data: T; txHash?: string }
-  | { ok: false; error: string; rejected?: boolean };
+  | { ok: true; data: T; txHash?: string; idempotencyKey: string }
+  // These writes are relayed but unpaid, so an in-flight outcome costs no money. It is still
+  // not a failure, and resubmitting still creates a second write rather than a retry, so the
+  // caller has to be able to tell the states apart here too (ADR-0045).
+  | PendingWriteResult
+  | { ok: false; pending?: false; error: string; rejected?: boolean; idempotencyKey?: string };
 
 type AddressField = 'workerAddress' | 'requesterAddress';
 
@@ -37,18 +44,27 @@ export async function signAndPost<T = unknown>(args: {
   extraBody?: Record<string, unknown>;
   addressField?: AddressField;
   deps: WalletSignDeps;
+  // Supplied by a caller that wants one logical write to keep the same key across an
+  // ambiguous outcome, so pressing the button again presents the write the backend already
+  // has rather than starting a second one. Minted per call when absent.
+  idempotencyKey?: string;
 }): Promise<WalletSignResult<T>> {
   const addressField = args.addressField ?? 'workerAddress';
   const message = `taskmarket:${args.verbForMessage}:${args.taskId}`;
+  const idempotencyKey = args.idempotencyKey ?? newIdempotencyKey();
 
   let signature: string;
   try {
     signature = await args.deps.signMessageAsync({ message });
   } catch (err) {
     if (isUserRejected(err)) {
-      return { ok: false, error: 'Cancelled in wallet', rejected: true };
+      return { ok: false, error: 'Cancelled in wallet', idempotencyKey, rejected: true };
     }
-    return { ok: false, error: err instanceof Error ? err.message : 'Signing failed' };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Signing failed',
+      idempotencyKey,
+    };
   }
 
   const body: Record<string, unknown> = {
@@ -58,10 +74,26 @@ export async function signAndPost<T = unknown>(args: {
     ...(args.extraBody ?? {}),
   };
 
+  // Flipped the instant the request leaves the browser, and never cleared. Same boundary, and
+  // the same reason, as `payX402Post`: everything before it is preparation the backend never
+  // saw, and everything after it is ambiguous by construction -- a thrown fetch, a socket dying
+  // mid-body, or a `res.json()` that never parses says nothing about whether the write took
+  // effect. `useInFlightWrite` retires the idempotency key on a plain failure, so an ambiguous
+  // outcome reported as terminal here would hand the next attempt a fresh key and relay the
+  // write a second time.
+  let dispatched = false;
   try {
+    // Built before the flag is set: assembling the headers is still preparation, and a throw
+    // from it must stay a plain failure rather than claim a write is landing.
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(await getLegalRequestHeaders()),
+      [IDEMPOTENCY_KEY_HEADER]: idempotencyKey,
+    };
+    dispatched = true;
     const res = await fetch(`${args.deps.apiUrl}${args.path}`, {
       body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
+      headers,
       method: 'POST',
     });
     if (!res.ok) {
@@ -69,17 +101,19 @@ export async function signAndPost<T = unknown>(args: {
         message?: string;
         error?: string;
       };
-      return {
-        ok: false,
-        error: errBody.message ?? errBody.error ?? `Server error: ${res.status}`,
-      };
+      const error = errBody.message ?? errBody.error ?? `Server error: ${res.status}`;
+      if (isPendingWriteResponse(errBody, error)) {
+        return { ok: false, pending: true, idempotencyKey, error };
+      }
+      return { ok: false, error, idempotencyKey };
     }
     const data = (await res.json()) as T & { txHash?: string };
-    return { ok: true, data, txHash: data.txHash };
+    return { ok: true, data, idempotencyKey, txHash: data.txHash };
   } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'Request failed',
-    };
+    const error = err instanceof Error ? err.message : 'Request failed';
+    if (dispatched) {
+      return { ok: false, pending: true, idempotencyKey, error };
+    }
+    return { ok: false, error, idempotencyKey };
   }
 }

@@ -1,20 +1,31 @@
+// Verifies: ADR-0045
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createMockCtx, makeChain } from '../helpers';
+import { createIntentCtx, createMockCtx, makeChain } from '../helpers';
 
 vi.mock('../../../src/services/contract', () => ({
-  contractRegisterIdentity: vi.fn().mockResolvedValue(42n),
+  contractRegisterIdentityTx: vi.fn().mockResolvedValue('0xregistertx'),
+  resolveRegisteredAgentId: vi.fn().mockResolvedValue(42n),
+}));
+
+vi.mock('../../../src/config/env', () => ({
+  getServerConfig: vi.fn(() => ({
+    ERC8004_IDENTITY_REGISTRY: '0xRegistryCurrent000000000000000000000000',
+    CHAIN_ID: 84532,
+  })),
 }));
 
 const REGISTRY = '0xRegistryCurrent000000000000000000000000';
 const CHAIN_ID = 84532;
-vi.mock('../../../src/config/env', () => ({
-  getServerConfig: vi.fn(() => ({ ERC8004_IDENTITY_REGISTRY: REGISTRY, CHAIN_ID })),
-}));
 
 import { identityRouter } from '../../../src/routers/identity.router';
-import { contractRegisterIdentity } from '../../../src/services/contract';
+import { contractRegisterIdentityTx } from '../../../src/services/contract';
+import { agents } from '../../../src/db/schema';
 
-const PAYER = '0x1111111111111111111111111111111111111111';
+// Carries hex letters on purpose. An all-digit address is unchanged by a case transform, so
+// the casing tests below would have asserted nothing at all against one.
+const PAYER = '0xab5cde1111111111111111111111111111119fed';
+// Only the letters change case; the `0x` prefix stays lowercase, as every caller sends it.
+const PAYER_UPPERCASED = `0x${PAYER.slice(2).toUpperCase()}`;
 
 describe('identity router', () => {
   beforeEach(() => {
@@ -22,26 +33,41 @@ describe('identity router', () => {
   });
 
   describe('register', () => {
+    // The mint is a relayed intent now (ADR-0045): the agentId is decoded from the
+    // transaction's own Registered event by the completion handler and read back from the
+    // row, so every mint path ends with a lookup of the freshly written agent id.
+    function mintCtx(payer: string, existing: unknown[]) {
+      const ctx = createIntentCtx(payer);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain(existing))
+        // linkIntentToBroadcast's outbox lookup after the chain call.
+        .mockReturnValueOnce(makeChain([]))
+        // Carries the registry and chain the completion handler stamps onto the row from the
+        // intent payload, because the read-back now applies the same freshness test the cache
+        // lookup does. A row without them is the stale row that test rejected on the way in,
+        // not the one this mint just wrote.
+        .mockReturnValueOnce(
+          makeChain([{ agentId: '42', identityRegistryAddress: REGISTRY, chainId: CHAIN_ID }])
+        );
+      return ctx;
+    }
+
     it('mints and inserts a new lowercased row when the address has never been seen', async () => {
-      const ctx = createMockCtx(PAYER);
-      ctx.db.select.mockReturnValueOnce(makeChain([]));
-      const insertChain = makeChain();
-      ctx.db.insert.mockReturnValueOnce(insertChain);
+      const ctx = mintCtx(PAYER, []);
       const caller = identityRouter.createCaller(ctx);
 
       const result = await caller.register({});
 
       expect(result).toEqual({ agentId: '42', alreadyRegistered: false });
-      expect(contractRegisterIdentity).toHaveBeenCalledOnce();
-      expect(ctx.db.insert).toHaveBeenCalledOnce();
-      expect(insertChain.values).toHaveBeenCalledWith(
+      expect(contractRegisterIdentityTx).toHaveBeenCalledOnce();
+      expect(ctx.insertChain(agents).values).toHaveBeenCalledWith(
         expect.objectContaining({ address: PAYER.toLowerCase(), agentId: '42' })
       );
-      expect(ctx.db.update).not.toHaveBeenCalled();
+      expect(ctx.updateChain(agents).set).not.toHaveBeenCalled();
     });
 
     it('returns the existing agentId without minting when already registered under any casing', async () => {
-      const ctx = createMockCtx(PAYER.toUpperCase());
+      const ctx = createIntentCtx(PAYER_UPPERCASED);
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           { address: PAYER, agentId: '7', identityRegistryAddress: REGISTRY, chainId: CHAIN_ID },
@@ -52,35 +78,29 @@ describe('identity router', () => {
       const result = await caller.register({});
 
       expect(result).toEqual({ agentId: '7', alreadyRegistered: true });
-      expect(contractRegisterIdentity).not.toHaveBeenCalled();
-      expect(ctx.db.insert).not.toHaveBeenCalled();
+      expect(contractRegisterIdentityTx).not.toHaveBeenCalled();
+      expect(ctx.insertChain(agents).values).not.toHaveBeenCalled();
     });
 
     it('re-registers instead of trusting a cached agentId minted against a different (e.g. redeployed) registry', async () => {
-      // The cached agentId is for a registry contract that is no longer the
-      // one configured -- it may not even resolve to this address on the
-      // live registry, so it must not be served as if it were still valid.
-      const ctx = createMockCtx(PAYER);
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([
-          {
-            address: PAYER,
-            agentId: '7',
-            identityRegistryAddress: '0xRegistryOld00000000000000000000000000',
-            chainId: CHAIN_ID,
-          },
-        ])
-      );
-      const updateChain = makeChain();
-      ctx.db.update.mockReturnValueOnce(updateChain);
+      // The cached agentId is for a registry contract that is no longer the one configured --
+      // it may not even resolve to this address on the live registry, so it must not be
+      // served as if it were still valid.
+      const ctx = mintCtx(PAYER, [
+        {
+          address: PAYER,
+          agentId: '7',
+          identityRegistryAddress: '0xRegistryOld00000000000000000000000000',
+          chainId: CHAIN_ID,
+        },
+      ]);
       const caller = identityRouter.createCaller(ctx);
 
       const result = await caller.register({});
 
       expect(result).toEqual({ agentId: '42', alreadyRegistered: false });
-      expect(contractRegisterIdentity).toHaveBeenCalledOnce();
-      expect(ctx.db.update).toHaveBeenCalledOnce();
-      expect(updateChain.set).toHaveBeenCalledWith(
+      expect(contractRegisterIdentityTx).toHaveBeenCalledOnce();
+      expect(ctx.updateChain(agents).set).toHaveBeenCalledWith(
         expect.objectContaining({
           agentId: '42',
           identityRegistryAddress: REGISTRY.toLowerCase(),
@@ -90,64 +110,49 @@ describe('identity router', () => {
     });
 
     it('re-registers instead of trusting a cached agentId minted on a different chain, even with a matching registry address', async () => {
-      // ERC-8004 identity registries are commonly deployed at the SAME address
-      // on every chain (deterministic/CREATE2 deployment), so registry address
-      // alone cannot tell a genuinely fresh cache apart from one minted on a
-      // different chain the database was previously pointed at.
-      const ctx = createMockCtx(PAYER);
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([
-          { address: PAYER, agentId: '7', identityRegistryAddress: REGISTRY, chainId: 8453 },
-        ])
-      );
-      const updateChain = makeChain();
-      ctx.db.update.mockReturnValueOnce(updateChain);
+      // ERC-8004 identity registries are commonly deployed at the SAME address on every chain
+      // (deterministic/CREATE2 deployment), so registry address alone cannot tell a genuinely
+      // fresh cache apart from one minted on a different chain.
+      const ctx = mintCtx(PAYER, [
+        { address: PAYER, agentId: '7', identityRegistryAddress: REGISTRY, chainId: 8453 },
+      ]);
       const caller = identityRouter.createCaller(ctx);
 
       const result = await caller.register({});
 
       expect(result).toEqual({ agentId: '42', alreadyRegistered: false });
-      expect(contractRegisterIdentity).toHaveBeenCalledOnce();
-      expect(updateChain.set).toHaveBeenCalledWith(
+      expect(contractRegisterIdentityTx).toHaveBeenCalledOnce();
+      expect(ctx.updateChain(agents).set).toHaveBeenCalledWith(
         expect.objectContaining({ agentId: '42', chainId: CHAIN_ID })
       );
     });
 
     it('re-registers when the cached row has an agentId but no identityRegistryAddress or chainId at all (pre-migration row)', async () => {
-      const ctx = createMockCtx(PAYER);
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([{ address: PAYER, agentId: '7', identityRegistryAddress: null, chainId: null }])
-      );
-      const updateChain = makeChain();
-      ctx.db.update.mockReturnValueOnce(updateChain);
+      const ctx = mintCtx(PAYER, [
+        { address: PAYER, agentId: '7', identityRegistryAddress: null, chainId: null },
+      ]);
       const caller = identityRouter.createCaller(ctx);
 
       const result = await caller.register({});
 
       expect(result).toEqual({ agentId: '42', alreadyRegistered: false });
-      expect(contractRegisterIdentity).toHaveBeenCalledOnce();
+      expect(contractRegisterIdentityTx).toHaveBeenCalledOnce();
     });
 
     it('updates the existing row in place by its stored address instead of inserting a duplicate when a legacy differently-cased row has no agentId yet', async () => {
       const legacyMixedCaseAddress = '0xAbCd111111111111111111111111111111111111';
-      const ctx = createMockCtx(PAYER);
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([{ address: legacyMixedCaseAddress, agentId: null }])
-      );
-      const updateChain = makeChain();
-      ctx.db.update.mockReturnValueOnce(updateChain);
+      const ctx = mintCtx(PAYER, [{ address: legacyMixedCaseAddress, agentId: null }]);
       const caller = identityRouter.createCaller(ctx);
 
       const result = await caller.register({});
 
       expect(result).toEqual({ agentId: '42', alreadyRegistered: false });
-      expect(contractRegisterIdentity).toHaveBeenCalledOnce();
-      // Must update the row that was actually found, not insert a second row
-      // for the lowercased payer address -- that would split one real-world
-      // address across two agents rows.
-      expect(ctx.db.update).toHaveBeenCalledOnce();
-      expect(ctx.db.insert).not.toHaveBeenCalled();
-      expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ agentId: '42' }));
+      // Must update the row that was actually found, not insert a second row for the
+      // lowercased payer address -- that would split one real-world address across two rows.
+      expect(ctx.updateChain(agents).set).toHaveBeenCalledWith(
+        expect.objectContaining({ agentId: '42' })
+      );
+      expect(ctx.insertChain(agents).values).not.toHaveBeenCalled();
     });
   });
 
@@ -157,7 +162,7 @@ describe('identity router', () => {
       ctx.db.select.mockReturnValueOnce(makeChain([{ agentId: '5' }]));
       const caller = identityRouter.createCaller(ctx);
 
-      const result = await caller.status({ address: PAYER.toUpperCase() });
+      const result = await caller.status({ address: PAYER_UPPERCASED });
 
       expect(result).toEqual({ agentId: '5', registered: true, cacheFresh: false });
     });

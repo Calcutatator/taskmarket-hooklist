@@ -38,6 +38,7 @@ function tasksListApp() {
         req,
         res,
         caller: undefined,
+        idempotencyKey: undefined,
         taskAccessGrant: undefined,
       }),
     })

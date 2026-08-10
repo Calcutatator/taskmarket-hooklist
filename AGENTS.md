@@ -161,6 +161,23 @@ Smoke tests live in `apps/backend/src/scripts/smoke-*.ts` and run against a live
 
 **If you're a cloud agent (Claude Code cloud, Codex cloud), run `./scripts/cloud-env-setup.sh` yourself as your first action, before doing anything else -- do not assume a vendor's own setup mechanism already brought the stack up for you.** This is a deliberate, documented boundary in at least one vendor (Codex): its "Setup script" runs in a separate bash session from the one the agent actually works in, with no way for background processes (Postgres, Anvil, the backend, the facilitator) to survive across that boundary -- it is not a bug or something to work around, it exists because setup gets full network trust and the agent phase deliberately does not. The script is idempotent (safe to run again -- it detects what's genuinely still up versus what needs (re)starting), and it is exactly as fast the second time since the one-time work (toolchain, submodules) gets skipped; only the actually-ephemeral pieces (Anvil has no persisted chain state, so contracts always redeploy fresh) redo their work. If a `make` target still fails with `ECONNREFUSED 127.0.0.1:3000` (or similar) after that, re-run the script once more and retry before concluding anything is actually broken.
 
+### Targets with extra requirements
+
+Every smoke runs under plain `make smoke <name>` against the stack `scripts/cloud-env-setup.sh`
+provisions. Two have specifics worth knowing before reading their output:
+
+- **`make smoke rate-limit`** needs no special backend environment. It reads the effective
+  submission limits from `GET /api/health` and derives its work from them, rather than assuming
+  a `HARD_SUBMISSION_CEILING` override the backend was never started with. Zones the running
+  configuration puts out of reach are skipped by name, with the remedy, and listed again in the
+  summary -- a pass with a skip listed has checked less than a pass without one. The sandbox's
+  own `SUBMISSION_FREE_ALLOWANCE=1000` leaves the paid zone (Tier 1) unreachable; to check it,
+  start the backend with an allowance below its ceiling, e.g.
+  `SUBMISSION_FREE_ALLOWANCE=2 HARD_SUBMISSION_CEILING=5`.
+- **`make smoke refund-expired`** reads the Diamond's pooled USDC balance to prove a repeat
+  refund moved no money (ADR-0054), so `CONTRACT_ADDRESS` and `USDC_TOKEN_ADDRESS` must point at
+  the deployed stack. The generated `.env` sets both.
+
 ### When to write a smoke test
 
 Write or update a smoke test whenever you:
@@ -183,7 +200,7 @@ Cover every meaningful branch, not just the happy path:
 - `REQUESTER_PRIVATE_KEY` — task creator / requester
 - `WORKER_PRIVATE_KEY` — primary worker
 - `WORKER_B_PRIVATE_KEY` — second worker (required for ranked-payout, optional for competitive auction). Any freshly generated key works — the backend's `SERVER_PRIVATE_KEY` relays and pays gas for every on-chain call via the forwarder, so worker/requester keys only ever sign off-chain EIP-712 messages and never need ETH or USDC of their own.
-- `EVALUATOR_PRIVATE_KEY` — external evaluator, required for any smoke test that assigns an evaluator or dispute resolver. `EvaluatorFacet.assignEvaluator` rejects `evaluator == requester` and `disputeResolver == requester` (self-assignment guard), so the requester can no longer act as evaluator -- any freshly generated key works, same as `WORKER_B_PRIVATE_KEY`.
+- `EVALUATOR_PRIVATE_KEY` — external evaluator, and the dispute resolver on the same address. Required by `make smoke evaluator`: `EvaluatorFacet.assignEvaluator` rejects an evaluator or dispute resolver equal to the requester (`EvaluatorCannotBeRequester` / `DisputeResolverCannotBeRequester`), so the requester cannot stand in for it. Nothing requires the dispute resolver to differ from the evaluator, only from the requester. **A freshly generated key is not sufficient on a network where the smoke pays for real:** `evaluate` is x402-gated and the evaluator is the payer, so the account needs a USDC balance of its own. It still needs no ETH — the forwarder pays gas.
 - `DEV_PRIVATE_KEY` — fallback if specific keys not set
 - `UPGRADE_OWNER_KEY` / `FORGE_DEV_PRIVATE_KEY` — the diamond owner's key. Needed only by smoke tests that mutate protocol configuration (see below). Unlike every other key here, this one sends transactions directly and must hold ETH for gas, because owner-only functions check `msg.sender` and have no forwarder path.
 
@@ -213,10 +230,24 @@ Before writing assertions about contract behavior, read the relevant facet sourc
 After any change to contract source files (`packages/contracts/src/`), always regenerate the gas snapshot before committing:
 
 ```
-cd packages/contracts && forge snapshot
+make contract snapshot
 ```
 
-CI runs `forge snapshot --check` and fails if the snapshot is stale. This is a frequent source of CI failures — do not skip it.
+CI runs `make contract snapshot-check` and fails if the snapshot is stale. This is a frequent source of CI failures — do not skip it.
+
+**Use the make target, not a bare `forge snapshot`.** The contract suite cannot run in parallel: the
+`RevNNN` upgrade step scripts read their target diamond from `FORGE_DIAMOND_ADDRESS_*`, and
+`vm.setEnv` writes one process-wide environment shared by every concurrently-executing suite, so
+parallel suites retarget each other mid-sequence. The make targets pass `-j 1` for this reason.
+
+The consequence for snapshots specifically is worse than a flaky test run. A bare parallel
+`forge snapshot` has been observed to report spurious failures **and write a snapshot derived from
+that partly-failed run** — so the corrupted file gets committed and the real gas numbers are lost
+with no error anywhere. The same applies to `forge test`: use `make contract test`.
+
+Note that `foundry.toml`'s `threads` key and the `FOUNDRY_THREADS` environment variable are both
+ignored by the test runner; only the CLI flag takes effect. That is why the serialisation lives in
+the make targets rather than in configuration.
 
 ## Database Migrations
 

@@ -5,8 +5,10 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { useAccount, useSignMessage } from 'wagmi';
 
+import { InFlightWriteNotice } from '@/components/market/in-flight-write-notice';
 import { Button } from '@/components/ui/button';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
+import { useInFlightWrite } from '@/lib/use-in-flight-write';
 import { signAndPost } from '@/lib/wallet-sign-action';
 
 import { ConnectPrompt } from './connect-prompt';
@@ -18,6 +20,24 @@ export function ClaimButton({ disabled, onSuccess, task }: TaskActionComponentPr
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const inFlight = useInFlightWrite('Claim submitted, confirming');
+
+  // Checked before every other branch, including the disconnected one: the write is already
+  // out there, so this state must survive anything that would otherwise swap the surface.
+  // A claim is relayed but unpaid, so `paid` is false -- resubmitting costs nothing, but it
+  // is still a second write rather than a retry.
+  if (inFlight.state) {
+    return (
+      <InFlightWriteNotice
+        failure={inFlight.failure}
+        idempotencyKey={inFlight.state.idempotencyKey}
+        paid={false}
+        stalled={inFlight.stalled}
+        subject="claim"
+        title="Claim submitted, confirming"
+      />
+    );
+  }
 
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect a worker wallet to claim this task." />;
@@ -26,18 +46,27 @@ export function ClaimButton({ disabled, onSuccess, task }: TaskActionComponentPr
   async function handleClaim() {
     setPending(true);
     setError(null);
-    const result = await signAndPost<{ claimId: string }>({
-      deps: { address: address!, apiUrl: getBrowserApiBaseUrl(), signMessageAsync },
-      path: `/api/tasks/${task.id}/claim`,
-      taskId: task.id,
-      verbForMessage: 'claim',
-    });
+    const outcome = await inFlight.submit((idempotencyKey) =>
+      signAndPost<{ claimId: string }>({
+        deps: { address: address!, apiUrl: getBrowserApiBaseUrl(), signMessageAsync },
+        idempotencyKey,
+        path: `/api/tasks/${task.id}/claim`,
+        taskId: task.id,
+        verbForMessage: 'claim',
+      })
+    );
     setPending(false);
+    // Neither success nor failure, so it must not reach the error path below, which leaves
+    // the claim button live.
+    if (outcome.handled) return;
+    const result = outcome.result;
     if (result.ok) {
       setDone(true);
       onSuccess?.();
       toast.success('Claimed');
-    } else if (!result.rejected) {
+      return;
+    }
+    if (!result.rejected) {
       setError(result.error);
       toast.error(result.error);
     }

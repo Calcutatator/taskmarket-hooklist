@@ -26,6 +26,32 @@ describe('generated OpenAPI routes', () => {
     expect(document.paths?.[path]?.[method as 'get' | 'post']).toBeDefined();
   });
 
+  // Verifies: ADR-0052
+  it.each([
+    ['/tasks', 'post'],
+    ['/tasks/{taskId}/claim', 'post'],
+    ['/tasks/{taskId}/evaluate', 'post'],
+    ['/identity/register', 'post'],
+  ])('documents the mandatory idempotency header on %s %s', (path, method) => {
+    // The header is enforced ahead of the 402 challenge and a request without it is a 400
+    // (ADR-0052). While the spec omitted it, a raw-REST caller reading the machine-readable
+    // contract saw no such requirement, sent no such header, and got a rejection with nothing
+    // in the document explaining it. A breaking change absent from the contract is
+    // indistinguishable from a broken endpoint.
+    const document = generateOpenAPI();
+    const operation = document.paths?.[path]?.[method as 'get' | 'post'] as
+      | { parameters?: { in: string; name: string; required?: boolean }[] }
+      | undefined;
+
+    const header = operation?.parameters?.find(
+      (parameter) =>
+        parameter.in === 'header' && parameter.name === 'X-Taskmarket-Idempotency-Key'
+    );
+
+    expect(header, `${method.toUpperCase()} ${path} does not document the header`).toBeDefined();
+    expect(header?.required).toBe(true);
+  });
+
   it('exposes Task Drop paths without transform-only response schemas', () => {
     const document = generateOpenAPI();
 

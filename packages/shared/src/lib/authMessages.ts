@@ -33,6 +33,20 @@ export const READ_AUTH_SIGNATURE_HEADER = 'X-Taskmarket-Caller-Signature';
 export const TASK_ACCESS_GRANT_HEADER = 'X-Taskmarket-Task-Access-Grant';
 
 /**
+ * Header carrying the client-generated idempotency key every relayed write must send
+ * (ADR-0052). A UUID per logical operation: the same value on a retry of the same
+ * operation, a fresh one for a genuinely new operation.
+ *
+ * It is client-originated because a backend-minted identifier cannot be a recovery handle.
+ * The intent id reaches the caller only in the response, so a caller whose connection drops
+ * before the response arrives has paid and holds nothing to ask about. A key the caller
+ * chose before sending is the only kind that survives the case it exists for.
+ *
+ * The backend stores it verbatim, matches it by equality, and derives nothing from it.
+ */
+export const IDEMPOTENCY_KEY_HEADER = 'X-Taskmarket-Idempotency-Key';
+
+/**
  * `contentBindings` ties the signature to the exact artifacts being submitted (their
  * storage keys for `submitFromKeys`, or content hashes for `submit`'s raw-bytes path) so a
  * signature harvested from one submission cannot be replayed with different file bytes or

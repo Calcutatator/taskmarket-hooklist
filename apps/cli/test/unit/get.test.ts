@@ -7,6 +7,9 @@ vi.mock('../../src/lib/api.js', () => ({
 vi.mock('../../src/lib/output.js', () => ({
   printResult: vi.fn(),
   printError: vi.fn(),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 vi.mock('../../src/lib/read-auth.js', () => ({
@@ -45,9 +48,7 @@ describe('task get command', () => {
 
     await getCmd.parseAsync(['node', 'get', '0xtask'], { from: 'node' });
 
-    expect(printError).toHaveBeenCalledWith(
-      expect.stringMatching(/task unlock 0xtask --password/)
-    );
+    expect(printError).toHaveBeenCalledWith(expect.stringMatching(/task unlock 0xtask --password/));
     // The backend can't distinguish "doesn't exist" from "private, no access" for this
     // response, so the hint must be phrased as a possibility ("or this is a private task"),
     // never asserted as fact -- asserting it would leak that the task actually exists.

@@ -18,7 +18,7 @@ import { daemonCommand } from './commands/daemon.js';
 import { emailCommand } from './commands/email/index.js';
 import { requesterCmd } from './commands/requester/index.js';
 import { legalCommand } from './commands/legal/index.js';
-import { ApiError } from './lib/api.js';
+import { renderFailure } from './lib/output.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json') as { version: string };
@@ -45,11 +45,15 @@ program.addCommand(emailCommand);
 program.addCommand(requesterCmd);
 program.addCommand(legalCommand);
 
-program.parseAsync(process.argv).catch((err: Error) => {
-  const status = err instanceof ApiError ? err.status : undefined;
-  process.stderr.write(
-    JSON.stringify({ ok: false, error: err.message, ...(status !== undefined ? { status } : {}) }) +
-      '\n'
-  );
-  process.exit(1);
-});
+void (async () => {
+  try {
+    await program.parseAsync(process.argv);
+  } catch (err) {
+    // The backstop, not the only renderer. A command that catches its own failure calls
+    // `renderFailure` directly and produces the identical envelope, which is the point: the
+    // classification ADR-0058 publishes reaches a script whether or not the error happened to
+    // travel all the way up here. The idempotency key arrives here on the error itself, so this
+    // handler needs to know nothing about which command ran or what it wrote. See lib/output.ts.
+    renderFailure(err);
+  }
+})();

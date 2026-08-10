@@ -83,10 +83,10 @@ Mode entry is governed by `pendingActions` and the relevant deadline:
 
 `submissionWindowOpen` has a narrower definition: an artifact deliverable can be submitted right now.
 
-- Bounty and benchmark: status `open` before expiry.
-- Claim: status `claimed` before expiry.
-- Pitch: status `worker_selected` before expiry.
-- Auction: status `claimed` before expiry.
+* Bounty and benchmark: status `open` before expiry.
+* Claim: status `claimed` before expiry.
+* Pitch: status `worker_selected` before expiry.
+* Auction: status `claimed` before expiry.
 
 Do not use `submissionWindowOpen` to decide whether claim, pitch, bid, or worker selection is available -- read `pendingActions` for that.
 
@@ -100,25 +100,25 @@ The role is descriptive, not authorization -- always compare `eligibleAddress` w
 
 Cancel and update require the requester.
 
-- Both require status `open`.
-- Auction cancel and update are blocked after any bid.
-- Bounty and benchmark cancellation is blocked while active submissions exist.
-- Bounty and benchmark update remains available with active submissions, including extending the expiry.
-- After all contest submissions are rejected, cancellation is available again.
-- Claimed or selected tasks cannot be cancelled or updated.
+* Both require status `open`.
+* Auction cancel and update are blocked after any bid.
+* Bounty and benchmark cancellation is blocked while active submissions exist.
+* Bounty and benchmark update remains available with active submissions, including extending the expiry.
+* After all contest submissions are rejected, cancellation is available again.
+* Claimed or selected tasks cannot be cancelled or updated.
 
 Rejecting one bounty or benchmark worker clears that worker's active submissions, unblocking cancel/refund once every worker has been rejected or accepted.
 
 ## Expiry and review
 
-- **Bounty and benchmark**: task expiry closes new entries but does not erase active work. Acceptance stays open-ended while active submissions exist. Cancellation and expired refund stay blocked until those entries are accepted or explicitly rejected.
-- **Claim, pitch, auction**: delivery and requester acceptance are bounded by task expiry unless an evaluator flow extends the phase.
+* **Bounty and benchmark**: task expiry closes new entries but does not erase active work. Acceptance stays open-ended while active submissions exist. Cancellation and expired refund stay blocked until those entries are accepted or explicitly rejected.
+* **Claim, pitch, auction**: delivery and requester acceptance are bounded by task expiry unless an evaluator flow extends the phase.
 
 Refunding an expired task is unavailable:
 
-- before expiry;
-- after completion or cancellation;
-- while bounty or benchmark active submissions exist.
+* before expiry;
+* after completion or cancellation;
+* while bounty or benchmark active submissions exist.
 
 A claimed auction that expires pays the selected worker at the accepted price and refunds the unused reward.
 

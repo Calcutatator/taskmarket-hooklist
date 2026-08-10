@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
-import { createMockCtx, makeChain } from '../helpers';
+import { createIntentCtx, makeChain } from '../helpers';
 
 const dialect = new PgDialect();
 function renderSql(query: SQL): { sql: string; params: unknown[] } {
@@ -14,6 +14,16 @@ vi.mock('../../../src/services/contract', () => ({
   contractSelectLowestBidder: vi.fn().mockResolvedValue('0xselecttx'),
   contractAcceptAuction: vi.fn().mockResolvedValue('0xaccepttx'),
   contractRefundOrphanedPayment: vi.fn().mockResolvedValue('0xrefundorphanhash'),
+}));
+
+vi.mock('../../../src/config/env', () => ({
+  getServerConfig: vi.fn().mockReturnValue({
+    BACKEND_URL: 'http://localhost:3000',
+    CHAIN_ID: 84532,
+    CONTRACT_ADDRESS: '0xD17485087c2d31bf5562ACf0C5295111982A1CBF',
+    DEFAULT_PLATFORM_FEE_BPS: 500,
+    ERC8004_IDENTITY_REGISTRY: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
+  }),
 }));
 
 vi.mock('viem', async () => {
@@ -32,7 +42,7 @@ import {
   contractRefundOrphanedPayment,
 } from '../../../src/services/contract';
 import { recoverMessageAddress } from 'viem';
-import { bids as bidsTable, orphanedPayments } from '../../../src/db/schema';
+import { bids as bidsTable, orphanedPayments, tasks as tasksTable } from '../../../src/db/schema';
 
 const WORKER = '0xWorker0000000000000000000000000000000001';
 const WORKER_B = '0xWorkerB000000000000000000000000000000002';
@@ -81,7 +91,7 @@ describe('bids router', () => {
     const submitInput = { taskId: TASK_ID, price: '3000000' };
 
     it('throws when worker address (payer) is missing', async () => {
-      const ctx = createMockCtx(); // no payer
+      const ctx = createIntentCtx(); // no payer
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
 
       const caller = bidsRouter.createCaller(ctx);
@@ -89,7 +99,7 @@ describe('bids router', () => {
     });
 
     it('throws when task not found', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = bidsRouter.createCaller(ctx);
@@ -97,7 +107,7 @@ describe('bids router', () => {
     });
 
     it('throws when task mode is not auction', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty' })]));
 
       const caller = bidsRouter.createCaller(ctx);
@@ -105,7 +115,7 @@ describe('bids router', () => {
     });
 
     it('throws when task is not open', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'claimed' })]));
 
       const caller = bidsRouter.createCaller(ctx);
@@ -113,7 +123,7 @@ describe('bids router', () => {
     });
 
     it('throws when bid deadline has passed', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ bidDeadline: new Date(Date.now() - 1000) })])
       );
@@ -123,7 +133,7 @@ describe('bids router', () => {
     });
 
     it('throws when bid price exceeds max price', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ maxPrice: '5000000' })]));
 
       const caller = bidsRouter.createCaller(ctx);
@@ -133,7 +143,7 @@ describe('bids router', () => {
     });
 
     it('throws for dutch auction type — use auction-accept instead', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ auctionType: 'dutch' })]));
 
       const caller = bidsRouter.createCaller(ctx);
@@ -141,7 +151,7 @@ describe('bids router', () => {
     });
 
     it('throws for reverse_dutch auction type — use auction-accept instead', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ auctionType: 'reverse_dutch' })]));
 
       const caller = bidsRouter.createCaller(ctx);
@@ -149,7 +159,7 @@ describe('bids router', () => {
     });
 
     it('throws for english when bid does not undercut current lowest', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ auctionType: 'english' })]))
         // Lowest bid is at 3000000 — same price should be rejected
@@ -171,7 +181,7 @@ describe('bids router', () => {
     });
 
     it('submits english bid successfully when price undercuts current lowest', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ auctionType: 'english' })]))
         // Current lowest is 3000000 — new bid at 2000000 should succeed
@@ -186,18 +196,22 @@ describe('bids router', () => {
             },
           ])
         );
-      ctx.db.insert.mockReturnValueOnce(makeChain([{ id: BID_ID }]));
+      // linkIntentToBroadcast's outbox lookup, then the read-back that names the row that
+      // actually persisted -- a re-bid or the indexer may already hold this (task, worker).
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([{ id: BID_ID }]));
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.submit({ taskId: TASK_ID, price: '2000000' });
 
       expect(result.success).toBe(true);
       expect(contractSubmitBid).toHaveBeenCalledOnce();
-      expect(ctx.db.insert).toHaveBeenCalledOnce();
+      expect(ctx.insertChain(bidsTable).values).toHaveBeenCalledOnce();
     });
 
     it('rejects reverse_english re-bid when price is not lower than own previous', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ auctionType: 'reverse_english' })]))
         // existing bid at 2500000 — same price should be rejected
@@ -220,11 +234,15 @@ describe('bids router', () => {
     });
 
     it('submits reverse_english sealed bid successfully (no prior bid)', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ auctionType: 'reverse_english' })]))
         .mockReturnValueOnce(makeChain([])); // no existing bid — skip english lowest check
-      ctx.db.insert.mockReturnValueOnce(makeChain([{ id: BID_ID }]));
+      // linkIntentToBroadcast's outbox lookup, then the read-back that names the row that
+      // actually persisted -- a re-bid or the indexer may already hold this (task, worker).
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([{ id: BID_ID }]));
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.submit(submitInput);
@@ -234,9 +252,13 @@ describe('bids router', () => {
     });
 
     it('submits bid successfully on happy path (english, no prior bids)', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(makeChain([])); // no current lowest (empty bids)
-      ctx.db.insert.mockReturnValueOnce(makeChain([{ id: BID_ID }]));
+      // linkIntentToBroadcast's outbox lookup, then the read-back that names the row that
+      // actually persisted -- a re-bid or the indexer may already hold this (task, worker).
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([{ id: BID_ID }]));
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.submit(submitInput);
@@ -244,42 +266,41 @@ describe('bids router', () => {
       expect(result.success).toBe(true);
       expect(typeof result.bidId).toBe('string');
       expect(contractSubmitBid).toHaveBeenCalledOnce();
-      expect(ctx.db.insert).toHaveBeenCalledOnce();
+      expect(ctx.insertChain(bidsTable).values).toHaveBeenCalledOnce();
     });
 
-    it('refunds the action fee and never inserts a phantom bid row when the on-chain submit fails', async () => {
-      // Regression test: the catch block must `return` handleStandardFeePostPaymentFailure,
-      // not just call it and fall through -- otherwise a bid that was never placed
-      // on-chain would still be upserted into the DB and could win the auction.
+    // Verifies: ADR-0048
+    it('never inserts a phantom bid row, and never refunds, when the on-chain submit fails', async () => {
+      // A bid that was never placed on chain must not be upserted into the DB, or it could
+      // win the auction. Whether the payment is orphaned is settlement's call from the
+      // reconciler's confirmed verdict, not this handler's from any error at all.
       (contractSubmitBid as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new Error('Contract call rejected: BidExceedsMaxPrice')
       );
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.res.locals.paymentTxHash = '0xpaymenttxhash';
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(makeChain([])); // no current lowest
-      ctx.db.update
-        .mockReturnValueOnce(makeChain([{ id: 'orphan_x' }])) // orphaned-payments claim
-        .mockReturnValueOnce(makeChain()); // orphaned-payments final status
 
       const caller = bidsRouter.createCaller(ctx);
-      await expect(caller.submit(submitInput)).rejects.toThrow(/automatically refunded/);
+      await expect(caller.submit(submitInput)).rejects.toThrow(/BidExceedsMaxPrice/);
 
-      expect(contractRefundOrphanedPayment).toHaveBeenCalledWith(WORKER.toLowerCase(), 1000n);
-      // The one insert() call that did happen is orphaned-payments' own ledger row,
-      // not a phantom bid for a submission that was never placed on-chain.
+      expect(contractRefundOrphanedPayment).not.toHaveBeenCalled();
       const insertedTables = ctx.db.insert.mock.calls.map(([table]: [unknown]) => table);
-      expect(insertedTables).toEqual([orphanedPayments]);
       expect(insertedTables).not.toContain(bidsTable);
+      expect(insertedTables).not.toContain(orphanedPayments);
+      expect(ctx.intents[0]!.status).toBe('recorded');
     });
 
     it('upserts on conflict with the indexer instead of failing on a duplicate (taskId, worker)', async () => {
       // services/indexer.ts's processBidSubmittedEvent reconciles the same on-chain
       // BidSubmitted event with its own insert (onConflictDoNothing on its side) and can
       // win the race against this handler's write for a worker's first bid on a task.
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(makeChain([])); // no current lowest
-      const bidInsert = makeChain([{ id: BID_ID }]);
-      ctx.db.insert.mockReturnValueOnce(bidInsert);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([{ id: BID_ID }]));
+      const bidInsert = ctx.insertChain(bidsTable);
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.submit(submitInput);
@@ -300,7 +321,7 @@ describe('bids router', () => {
         // A taskAccessGrant is a bearer credential minted by taskAccess.verifyPassword
         // for VIEWING a private task -- it must never be sufficient to place a bid.
         // WORKER here has no allowlist/award/requester standing on this task.
-        const ctx = createMockCtx(WORKER, undefined, { taskId: TASK_ID });
+        const ctx = createIntentCtx(WORKER, undefined, { taskId: TASK_ID });
         ctx.db.select
           .mockReturnValueOnce(makeChain([privateTask])) // task lookup
           .mockReturnValueOnce(makeChain([])) // allowlist (task_allowed_viewers) — empty
@@ -314,13 +335,17 @@ describe('bids router', () => {
       });
 
       it('allows an allowlisted wallet address to bid on a private task', async () => {
-        const ctx = createMockCtx(WORKER);
+        const ctx = createIntentCtx(WORKER);
         ctx.db.select
           .mockReturnValueOnce(makeChain([privateTask])) // task lookup
           .mockReturnValueOnce(makeChain([{ viewerAddress: WORKER }])) // allowlist contains WORKER
           .mockReturnValueOnce(makeChain([])) // awards — empty
           .mockReturnValueOnce(makeChain([])); // no current lowest bid (english)
-        ctx.db.insert.mockReturnValueOnce(makeChain([{ id: BID_ID }]));
+        // linkIntentToBroadcast's outbox lookup, then the read-back that names the row that
+      // actually persisted -- a re-bid or the indexer may already hold this (task, worker).
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([{ id: BID_ID }]));
 
         const caller = bidsRouter.createCaller(ctx);
         const result = await caller.submit(submitInput);
@@ -331,13 +356,17 @@ describe('bids router', () => {
 
       it('allows the task requester to bid on their own private task', async () => {
         const requesterAsWorker = PRIVATE_REQUESTER;
-        const ctx = createMockCtx(requesterAsWorker);
+        const ctx = createIntentCtx(requesterAsWorker);
         ctx.db.select
           .mockReturnValueOnce(makeChain([privateTask])) // task lookup
           .mockReturnValueOnce(makeChain([])) // allowlist — empty
           .mockReturnValueOnce(makeChain([])) // awards — empty
           .mockReturnValueOnce(makeChain([])); // no current lowest bid (english)
-        ctx.db.insert.mockReturnValueOnce(makeChain([{ id: BID_ID }]));
+        // linkIntentToBroadcast's outbox lookup, then the read-back that names the row that
+      // actually persisted -- a re-bid or the indexer may already hold this (task, worker).
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([{ id: BID_ID }]));
 
         const caller = bidsRouter.createCaller(ctx);
         const result = await caller.submit({ taskId: TASK_ID, price: '3000000' });
@@ -350,7 +379,7 @@ describe('bids router', () => {
 
   describe('listByTask', () => {
     it('returns bids sorted by price ascending', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       // task query
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(
         makeChain([
@@ -380,7 +409,7 @@ describe('bids router', () => {
     });
 
     it('returns empty array when no bids exist', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(makeChain([]));
 
       const caller = bidsRouter.createCaller(ctx);
@@ -390,7 +419,7 @@ describe('bids router', () => {
     });
 
     it('seals bids for reverse_english before deadline', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ auctionType: 'reverse_english' })]))
         .mockReturnValueOnce(
@@ -414,7 +443,7 @@ describe('bids router', () => {
     });
 
     it('reveals bids for reverse_english after deadline', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(
           makeChain([
@@ -448,7 +477,7 @@ describe('bids router', () => {
     const selectInput = { taskId: TASK_ID };
 
     it('throws when task not found', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = bidsRouter.createCaller(ctx);
@@ -456,7 +485,7 @@ describe('bids router', () => {
     });
 
     it('throws when task is not auction mode', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty' })]));
 
       const caller = bidsRouter.createCaller(ctx);
@@ -464,7 +493,7 @@ describe('bids router', () => {
     });
 
     it('throws when bid deadline has not passed', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ bidDeadline: new Date(Date.now() + 3600000) })])
       );
@@ -476,7 +505,7 @@ describe('bids router', () => {
     });
 
     it('throws for dutch auctions — use auction-accept instead', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ auctionType: 'dutch', bidDeadline: new Date(Date.now() - 1000) })])
       );
@@ -486,7 +515,7 @@ describe('bids router', () => {
     });
 
     it('throws when no bids exist', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ bidDeadline: new Date(Date.now() - 1000) })]))
         .mockReturnValueOnce(makeChain([])); // no bids
@@ -496,7 +525,7 @@ describe('bids router', () => {
     });
 
     it('assigns lowest bidder and returns their address', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ bidDeadline: new Date(Date.now() - 1000) })]))
         .mockReturnValueOnce(
@@ -529,7 +558,7 @@ describe('bids router', () => {
 
       it('succeeds when signature recovers to the task requester', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(REQUESTER as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(makeChain([taskFromRequester])).mockReturnValueOnce(
           makeChain([
             {
@@ -557,7 +586,7 @@ describe('bids router', () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
           '0xOther000000000000000000000000000000000001' as `0x${string}`
         );
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(makeChain([taskFromRequester]));
 
         const caller = bidsRouter.createCaller(ctx);
@@ -573,7 +602,7 @@ describe('bids router', () => {
       it('rejects when requesterAddress is not the task requester', async () => {
         const SOMEONE_ELSE = '0xSomeoneElse0000000000000000000000000000007';
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(SOMEONE_ELSE as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(makeChain([taskFromRequester]));
 
         const caller = bidsRouter.createCaller(ctx);
@@ -587,7 +616,7 @@ describe('bids router', () => {
       });
 
       it('rejects when requesterAddress is provided without a signature', async () => {
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(makeChain([taskFromRequester]));
 
         const caller = bidsRouter.createCaller(ctx);
@@ -600,7 +629,7 @@ describe('bids router', () => {
 
   describe('auctionAccept', () => {
     it('throws when worker address missing', async () => {
-      const ctx = createMockCtx(); // no payer
+      const ctx = createIntentCtx(); // no payer
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ auctionType: 'dutch' })]));
 
       const caller = bidsRouter.createCaller(ctx);
@@ -608,7 +637,7 @@ describe('bids router', () => {
     });
 
     it('throws when task not found', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = bidsRouter.createCaller(ctx);
@@ -616,7 +645,7 @@ describe('bids router', () => {
     });
 
     it('throws when task mode is not auction', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ mode: 'bounty', auctionType: null })])
       );
@@ -626,7 +655,7 @@ describe('bids router', () => {
     });
 
     it('throws when auction type is english (not clock-based)', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ auctionType: 'english' })]));
 
       const caller = bidsRouter.createCaller(ctx);
@@ -636,7 +665,7 @@ describe('bids router', () => {
     });
 
     it('throws when deadline has passed', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ auctionType: 'dutch', bidDeadline: new Date(Date.now() - 1000) })])
       );
@@ -646,7 +675,7 @@ describe('bids router', () => {
     });
 
     it('throws when minPrice guard rejects clock price', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       // Dutch auction: clock descends from 5000000 over 2 hours, 1h elapsed = ~2500000 current
       ctx.db.select.mockReturnValueOnce(
         makeChain([
@@ -668,7 +697,7 @@ describe('bids router', () => {
     });
 
     it('accepts dutch clock auction — sets task to claimed atomically', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           makeTask({
@@ -681,7 +710,7 @@ describe('bids router', () => {
         ])
       );
       // update().set().where().returning() returns 1 row = claimed successfully
-      ctx.db.update.mockReturnValueOnce(makeChain([{ id: TASK_ID }]));
+      ctx.seedUpdate(tasksTable, [{ id: TASK_ID }]);
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.auctionAccept(ACCEPT_INPUT);
@@ -690,23 +719,29 @@ describe('bids router', () => {
       expect(typeof result.acceptedPrice).toBe('string');
       expect(result.workerAddress).toBe(WORKER);
       expect(contractAcceptAuction).toHaveBeenCalledOnce();
-      expect(ctx.db.insert).toHaveBeenCalledOnce(); // bid recorded
+      expect(ctx.insertChain(bidsTable).values).toHaveBeenCalledOnce(); // bid recorded
     });
 
-    it('throws when race condition loses — another worker already claimed', async () => {
-      const ctx = createMockCtx(WORKER);
+    // Verifies: ADR-0045
+    it('still records the accept when the task row was already moved on', async () => {
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ auctionType: 'dutch', maxPrice: '5000000' })])
       );
-      // update returns 0 rows = another worker claimed first
-      ctx.db.update.mockReturnValueOnce(makeChain([]));
+      // The conditional claim matches nothing: the indexer processed the same on-chain
+      // accept first. The chain has already named this worker, so the completion says so
+      // rather than failing and stranding the intent.
+      ctx.seedUpdate(tasksTable, []);
 
       const caller = bidsRouter.createCaller(ctx);
-      await expect(caller.auctionAccept(ACCEPT_INPUT)).rejects.toThrow('already claimed');
+      const result = await caller.auctionAccept(ACCEPT_INPUT);
+
+      expect(result.success).toBe(true);
+      expect(ctx.insertChain(bidsTable).values).toHaveBeenCalledOnce();
     });
 
     it('accepts reverse_dutch clock auction', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           makeTask({
@@ -719,7 +754,9 @@ describe('bids router', () => {
           }),
         ])
       );
-      ctx.db.update.mockReturnValueOnce(makeChain([{ id: TASK_ID }]));
+      // Seeded per table rather than "the first UPDATE": that is now the intent's broadcast
+      // claim (ADR-0052).
+      ctx.seedUpdate(tasksTable, [{ id: TASK_ID }]);
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.auctionAccept(ACCEPT_INPUT);
@@ -746,7 +783,7 @@ describe('bids router', () => {
         // A taskAccessGrant is a bearer credential minted by taskAccess.verifyPassword
         // for VIEWING a private task -- it must never be sufficient to claim a dutch/
         // reverse_dutch auction. WORKER here has no allowlist/award/requester standing.
-        const ctx = createMockCtx(WORKER, undefined, { taskId: TASK_ID });
+        const ctx = createIntentCtx(WORKER, undefined, { taskId: TASK_ID });
         ctx.db.select
           .mockReturnValueOnce(makeChain([privateDutchTask])) // task lookup
           .mockReturnValueOnce(makeChain([])) // allowlist (task_allowed_viewers) — empty
@@ -760,12 +797,14 @@ describe('bids router', () => {
       });
 
       it('allows an allowlisted wallet address to accept a private dutch auction task', async () => {
-        const ctx = createMockCtx(WORKER);
+        const ctx = createIntentCtx(WORKER);
         ctx.db.select
           .mockReturnValueOnce(makeChain([privateDutchTask])) // task lookup
           .mockReturnValueOnce(makeChain([{ viewerAddress: WORKER }])) // allowlist contains WORKER
           .mockReturnValueOnce(makeChain([])); // awards — empty
-        ctx.db.update.mockReturnValueOnce(makeChain([{ id: TASK_ID }]));
+        // Seeded per table rather than "the first UPDATE": that is now the intent's broadcast
+      // claim (ADR-0052).
+      ctx.seedUpdate(tasksTable, [{ id: TASK_ID }]);
 
         const caller = bidsRouter.createCaller(ctx);
         const result = await caller.auctionAccept(ACCEPT_INPUT);
@@ -785,12 +824,14 @@ describe('bids router', () => {
           createdAt: new Date(Date.now() - 3600000),
           bidDeadline: new Date(Date.now() + 3600000),
         });
-        const ctx = createMockCtx(PRIVATE_REQUESTER);
+        const ctx = createIntentCtx(PRIVATE_REQUESTER);
         ctx.db.select
           .mockReturnValueOnce(makeChain([privateReverseDutchTask])) // task lookup
           .mockReturnValueOnce(makeChain([])) // allowlist — empty
           .mockReturnValueOnce(makeChain([])); // awards — empty
-        ctx.db.update.mockReturnValueOnce(makeChain([{ id: TASK_ID }]));
+        // Seeded per table rather than "the first UPDATE": that is now the intent's broadcast
+      // claim (ADR-0052).
+      ctx.seedUpdate(tasksTable, [{ id: TASK_ID }]);
 
         const caller = bidsRouter.createCaller(ctx);
         const result = await caller.auctionAccept(ACCEPT_INPUT);
@@ -803,7 +844,7 @@ describe('bids router', () => {
 
   describe('computeClockPrice (via auctionAccept)', () => {
     it('dutch: at t=0 price equals maxPrice', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       const now = Date.now();
       ctx.db.select.mockReturnValueOnce(
         makeChain([
@@ -816,7 +857,9 @@ describe('bids router', () => {
           }),
         ])
       );
-      ctx.db.update.mockReturnValueOnce(makeChain([{ id: TASK_ID }]));
+      // Seeded per table rather than "the first UPDATE": that is now the intent's broadcast
+      // claim (ADR-0052).
+      ctx.seedUpdate(tasksTable, [{ id: TASK_ID }]);
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.auctionAccept(ACCEPT_INPUT);
@@ -826,7 +869,7 @@ describe('bids router', () => {
     });
 
     it('dutch: near t=100% price is clamped to floorPrice', async () => {
-      const ctx = createMockCtx(WORKER);
+      const ctx = createIntentCtx(WORKER);
       // createdAt 2h ago, bidDeadline 1s from now: elapsed / total ≈ 99.99%
       // bidDeadline must remain in the future for auctionAccept to not throw "expired"
       ctx.db.select.mockReturnValueOnce(
@@ -841,7 +884,9 @@ describe('bids router', () => {
           }),
         ])
       );
-      ctx.db.update.mockReturnValueOnce(makeChain([{ id: TASK_ID }]));
+      // Seeded per table rather than "the first UPDATE": that is now the intent's broadcast
+      // claim (ADR-0052).
+      ctx.seedUpdate(tasksTable, [{ id: TASK_ID }]);
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.auctionAccept(ACCEPT_INPUT);
@@ -854,7 +899,7 @@ describe('bids router', () => {
     const WORKER_HEX = `0x${'1'.repeat(40)}`;
 
     it('returns pending bids for ctx.caller (ADR-0016/ADR-0022 read-auth)', async () => {
-      const ctx = createMockCtx(undefined, { address: WORKER_HEX });
+      const ctx = createIntentCtx(undefined, { address: WORKER_HEX });
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           {
@@ -886,7 +931,7 @@ describe('bids router', () => {
     });
 
     it('matches bids.workerAddress case-insensitively against ctx.caller', async () => {
-      const ctx = createMockCtx(undefined, { address: WORKER_HEX });
+      const ctx = createIntentCtx(undefined, { address: WORKER_HEX });
 
       let whereSql: SQL | undefined;
       const chain = makeChain([]);
@@ -905,7 +950,7 @@ describe('bids router', () => {
     });
 
     it('rejects with UNAUTHORIZED when there is no caller (protectedProcedure, ADR-0017/ADR-0022)', async () => {
-      const ctx = createMockCtx(undefined, undefined);
+      const ctx = createIntentCtx(undefined, undefined);
 
       const caller = bidsRouter.createCaller(ctx);
       await expect(caller.myBids({})).rejects.toThrow('Caller authentication required');

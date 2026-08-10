@@ -4,8 +4,15 @@
 // so any X402-paid action button can call payX402Post() instead of
 // duplicating the full 90-line dance.
 
+import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 import type { useSignTypedData, useSwitchChain } from 'wagmi';
 import { getLegalRequestHeaders } from '@/lib/legal-receipt';
+import { newIdempotencyKey } from '@/lib/api/idempotency';
+import {
+  isPendingTransactionMessage,
+  isPendingWriteResponse,
+  type PendingWriteResult,
+} from '@/lib/relayed-write-outcome';
 
 export type X402Step = 'payment' | 'signing' | 'submitting';
 
@@ -19,16 +26,34 @@ export type X402Deps = {
 export type X402Success<T> = {
   ok: true;
   data: T;
+  idempotencyKey: string;
   txHash?: string;
 };
 
+/**
+ * The write was broadcast and no terminal outcome has been established (ADR-0049 point 3).
+ * It is neither a success nor a failure, and a caller must never resubmit on it: a resubmit
+ * is a second x402 payment, not a retry. The idempotency key is the handle to poll with,
+ * because it exists before the request is sent and therefore survives a response that never
+ * arrived (ADR-0052).
+ */
+export type X402Pending = PendingWriteResult;
+
 export type X402Failure = {
   ok: false;
+  pending?: false;
   error: string;
+  idempotencyKey?: string;
   rejected?: boolean;
 };
 
-export type X402Result<T> = X402Success<T> | X402Failure;
+export type X402Result<T> = X402Success<T> | X402Pending | X402Failure;
+
+// Re-exported so existing callers keep their import, but the body lives in
+// `relayed-write-outcome.ts`: x402 is only one of three transports that has to recognise this
+// outcome, and there must be exactly one place to change when the backend gains a structured
+// discriminator.
+export { isPendingTransactionMessage };
 
 type Eip712Domain = {
   chainId: number | string;
@@ -76,8 +101,21 @@ export async function payX402Post<T = unknown>(
   path: string,
   body: Record<string, unknown>,
   deps: X402Deps,
-  onStep?: (step: X402Step) => void
+  onStep?: (step: X402Step) => void,
+  // Supplied by a caller that wants one logical write to keep the same key across an
+  // ambiguous outcome, so pressing the button again presents the write the backend already
+  // has rather than a second one. Minted per call when absent.
+  idempotencyKey: string = newIdempotencyKey()
 ): Promise<X402Result<T>> {
+  // Flipped the instant the paid request leaves the browser, and never cleared. Everything
+  // before it is preparation the backend never saw -- a failed probe, a rejected signature, a
+  // malformed challenge -- and reporting those as in flight would tell a user to wait for a
+  // write that never started. Everything after it is ambiguous by construction: the payment
+  // has settled and the write may be landing, so a thrown fetch, a socket dying mid-body, or a
+  // `submitRes.json()` that never parses says nothing about whether the write took effect.
+  // The boundary is the dispatch itself rather than the response, because that is the moment
+  // the money and the write stop being ours to take back.
+  let dispatched = false;
   try {
     onStep?.('payment');
     const probeRes = await fetch(`${deps.apiUrl}${path}`, {
@@ -175,11 +213,13 @@ export async function payX402Post<T = unknown>(
     };
 
     onStep?.('submitting');
+    dispatched = true;
     const submitRes = await fetch(`${deps.apiUrl}${path}`, {
       body: JSON.stringify(body),
       headers: {
         'Content-Type': 'application/json',
         ...(await getLegalRequestHeaders()),
+        [IDEMPOTENCY_KEY_HEADER]: idempotencyKey,
         'payment-signature': btoa(JSON.stringify(paymentPayload)),
       },
       method: 'POST',
@@ -189,19 +229,26 @@ export async function payX402Post<T = unknown>(
         message?: string;
         error?: string;
       };
-      return {
-        ok: false,
-        error: errBody.message ?? errBody.error ?? `Server error: ${submitRes.status}`,
-      };
+      const error = errBody.message ?? errBody.error ?? `Server error: ${submitRes.status}`;
+      if (isPendingWriteResponse(errBody, error)) {
+        return { ok: false, pending: true, idempotencyKey, error };
+      }
+      return { ok: false, error, idempotencyKey };
     }
 
     const data = (await submitRes.json()) as T & { txHash?: string };
-    return { ok: true, data, txHash: data.txHash };
+    return { ok: true, data, idempotencyKey, txHash: data.txHash };
   } catch (err) {
+    // A cancellation is never in flight, whichever side of dispatch it surfaces on: the user
+    // declined in the wallet, so nothing was paid and nothing was sent.
     if (isUserRejected(err)) {
-      return { ok: false, error: 'Cancelled in wallet', rejected: true };
+      return { ok: false, error: 'Cancelled in wallet', idempotencyKey, rejected: true };
     }
-    return { ok: false, error: err instanceof Error ? err.message : 'X402 request failed' };
+    const error = err instanceof Error ? err.message : 'X402 request failed';
+    if (dispatched) {
+      return { ok: false, pending: true, idempotencyKey, error };
+    }
+    return { ok: false, error, idempotencyKey };
   }
 }
 

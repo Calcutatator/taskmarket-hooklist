@@ -10,9 +10,9 @@ Use this only when data is not exposed by the CLI or API, or when independently 
 
 Production Taskmarket uses Base Mainnet:
 
-- Chain ID: `8453`
-- Public RPC: `https://mainnet.base.org`
-- USDC: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
+* Chain ID: `8453`
+* Public RPC: `https://mainnet.base.org`
+* USDC: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
 
 ## USDC Balance
 
@@ -42,8 +42,8 @@ curl -s https://mainnet.base.org \
 
 Receipt `status` values:
 
-- `"0x1"`: success
-- `"0x0"`: reverted
-- `null`: not mined yet
+* `"0x1"`: success
+* `"0x0"`: reverted
+* `null`: not mined yet
 
 If CLI/API state and contract state disagree after one re-fetch, stop and report rather than retrying side effects.

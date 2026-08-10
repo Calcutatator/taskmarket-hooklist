@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { Request, Response } from 'express';
 import { validateBody } from '../../../src/middleware/validateBody';
 import {
+  apiErrorEnvelopeOf,
   TaskCreateSchema,
   ProofSubmitSchema,
   PitchCreateSchema,
@@ -335,5 +336,51 @@ describe('validateBody middleware', () => {
       );
       expect(next).toHaveBeenCalledOnce();
     });
+  });
+});
+
+/**
+ * Verifies: ADR-0058, ADR-0070
+ *
+ * A raw-REST caller refused here used to get `{"error":"Number must be less than or equal to
+ * 10000"}` -- no field, no reason, no envelope. `trpc.ts` applies the envelope in its error
+ * formatter and states why the gap matters: a discriminator "is only worth anything if it has no
+ * exceptions -- a caller that has to test whether the field is present before branching on it is
+ * back to reading the message when it is absent." This path never reached that formatter.
+ */
+describe('validateBody rejections carry the machine-readable envelope', () => {
+  const middleware = validateBody(TaskCreateSchema);
+
+  function reject(body: unknown) {
+    const res = mockRes();
+    const next = vi.fn();
+    middleware(makeReq(body), res, next);
+    return res;
+  }
+
+  it('answers 400 with the envelope beside the message', () => {
+    const res = reject({ description: 'Do the thing', reward: '5000000', duration: -1, tags: [] });
+
+    expect(res.statusCode).toBe(400);
+    // The same key and shape the x402 middleware and the tRPC formatter publish, so a client
+    // has one reader for all three.
+    expect(apiErrorEnvelopeOf(res.body)).toEqual({ reason: 'payment_preflight_rejected' });
+  });
+
+  it('classifies rather than shrugging', () => {
+    // `unclassified` would satisfy "every error carries a reason" while withholding the one
+    // thing worth knowing on a paid route: this was refused before the 402 challenge, so
+    // nothing was charged. That is what `payment_preflight_rejected` means.
+    const res = reject({ description: '', reward: '5000000', duration: 24, tags: [] });
+
+    expect(apiErrorEnvelopeOf(res.body)?.reason).toBe('payment_preflight_rejected');
+  });
+
+  it('names the offending field, which the message alone never did', () => {
+    // The envelope has no field for a field name and inventing one for this would be adding
+    // shape to a shared contract; the message is where it belongs and where it was missing.
+    const res = reject({ description: 'Do the thing', reward: '5000000', duration: 24, tags: 0 });
+
+    expect((res.body as { error: string }).error).toMatch(/^tags: /);
   });
 });

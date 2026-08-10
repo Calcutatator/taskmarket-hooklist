@@ -12,6 +12,7 @@ const HASH = `0x${'ab'.repeat(32)}` as const;
 function okRequest() {
   return {
     confirm: vi.fn().mockResolvedValue({ status: 'success' }),
+    succeeded: (receipt: unknown) => (receipt as { status?: string })?.status === 'success',
     send: vi.fn().mockResolvedValue(HASH),
     simulate: vi.fn().mockResolvedValue(undefined),
   };
@@ -44,6 +45,7 @@ describe('server transaction dispatcher', () => {
       dispatch({
         confirm,
         send,
+        succeeded: () => true,
         simulate: vi.fn().mockRejectedValue(new Error('ERC20: transfer amount exceeds balance')),
       })
     ).rejects.toThrow('ERC20: transfer amount exceeds balance');
@@ -56,6 +58,28 @@ describe('server transaction dispatcher', () => {
     expect(state.rows).toEqual([]);
   });
 
+  // Verifies: ADR-0073
+  it('marks a reverted receipt failed rather than confirmed', async () => {
+    const { state, store } = createMemoryServerTransactionStore(9);
+    const dispatch = createServerTransactionDispatcher({
+      getPendingNonce: vi.fn().mockResolvedValue(9),
+      store,
+    });
+
+    const result = await dispatch({
+      confirm: vi.fn().mockResolvedValue({ status: 'reverted' }),
+      send: vi.fn().mockResolvedValue(HASH),
+      simulate: vi.fn().mockResolvedValue(undefined),
+      succeeded: (receipt: unknown) => (receipt as { status?: string })?.status === 'success',
+    });
+
+    // The receipt still comes back: the caller decides what to raise, and several read the
+    // revert reason out of it. What changes is the record -- `confirmed` is a claim the work
+    // happened, and every reader of that status treats it as one (ADR-0073).
+    expect(result.hash).toBe(HASH);
+    expect(state.rows[0]).toMatchObject({ nonce: 9, status: 'failed', txHash: HASH });
+  });
+
   it('returns the nonce to the pool when a broadcast provably never happened', async () => {
     const { state, store } = createMemoryServerTransactionStore(41);
     const dispatch = createServerTransactionDispatcher({
@@ -65,6 +89,7 @@ describe('server transaction dispatcher', () => {
 
     await expect(
       dispatch({
+        succeeded: () => true,
         confirm: vi.fn(),
         send: vi.fn().mockRejectedValue(new Error('connection reset by peer')),
         simulate: vi.fn().mockResolvedValue(undefined),
@@ -73,6 +98,91 @@ describe('server transaction dispatcher', () => {
 
     expect(state.rows).toHaveLength(1);
     expect(state.rows[0]).toMatchObject({ nonce: 41, status: 'recycled' });
+  });
+
+  it('does not recycle a nonce whose send returned no answer at all', async () => {
+    const { state, store } = createMemoryServerTransactionStore(41);
+    // The chain says nonce 41 is taken: the node accepted the transaction and the socket died
+    // before we heard so. Recycling it here is what later reads as "nothing was ever sent".
+    const getPendingNonce = vi.fn().mockResolvedValue(42);
+    const dispatch = createServerTransactionDispatcher({ getPendingNonce, store });
+    const onNonceReleased = vi.fn();
+
+    await expect(
+      dispatch({
+        succeeded: () => true,
+        confirm: vi.fn(),
+        onNonceReleased,
+        send: vi.fn().mockRejectedValue(new Error('socket hang up')),
+        simulate: vi.fn().mockResolvedValue(undefined),
+      })
+    ).rejects.toThrow('socket hang up');
+
+    expect(state.rows[0]).toMatchObject({ nonce: 41, status: 'reserved' });
+    expect(onNonceReleased).not.toHaveBeenCalled();
+  });
+
+  it('leaves the nonce owned by the reconciler when the freeness read itself fails', async () => {
+    const { state, store } = createMemoryServerTransactionStore(41);
+    const getPendingNonce = vi.fn().mockRejectedValue(new Error('gateway 502'));
+    const dispatch = createServerTransactionDispatcher({ getPendingNonce, store });
+
+    await expect(
+      dispatch({
+        succeeded: () => true,
+        confirm: vi.fn(),
+        send: vi.fn().mockRejectedValue(new Error('socket hang up')),
+        simulate: vi.fn().mockResolvedValue(undefined),
+      })
+    ).rejects.toThrow('socket hang up');
+
+    expect(state.rows[0]).toMatchObject({ nonce: 41, status: 'reserved' });
+  });
+
+  it('links the outbox row at allocation, before anything is sent', async () => {
+    const { store } = createMemoryServerTransactionStore(41);
+    const dispatch = createServerTransactionDispatcher({
+      getPendingNonce: vi.fn().mockResolvedValue(41),
+      store,
+    });
+    const seen: string[] = [];
+    const onNonceAllocated = vi.fn(async (id: string) => {
+      seen.push(`allocated:${id}`);
+    });
+
+    await dispatch({
+      ...okRequest(),
+      onNonceAllocated,
+      send: vi.fn(async () => {
+        seen.push('send');
+        return HASH;
+      }),
+    });
+
+    expect(onNonceAllocated).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(['allocated:tx-1', 'send']);
+  });
+
+  it('releases the link when the nonce is provably free again', async () => {
+    const { state, store } = createMemoryServerTransactionStore(41);
+    const dispatch = createServerTransactionDispatcher({
+      getPendingNonce: vi.fn().mockResolvedValue(41),
+      store,
+    });
+    const onNonceReleased = vi.fn();
+
+    await expect(
+      dispatch({
+        succeeded: () => true,
+        confirm: vi.fn(),
+        onNonceReleased,
+        send: vi.fn().mockRejectedValue(new Error('connection reset by peer')),
+        simulate: vi.fn().mockResolvedValue(undefined),
+      })
+    ).rejects.toThrow();
+
+    expect(state.rows[0]).toMatchObject({ status: 'recycled' });
+    expect(onNonceReleased).toHaveBeenCalledTimes(1);
   });
 
   it('reuses a recycled nonce before allocating a new one', async () => {
@@ -84,6 +194,7 @@ describe('server transaction dispatcher', () => {
 
     await expect(
       dispatch({
+        succeeded: () => true,
         confirm: vi.fn(),
         send: vi.fn().mockRejectedValue(new Error('connection reset by peer')),
         simulate: vi.fn().mockResolvedValue(undefined),
@@ -106,6 +217,7 @@ describe('server transaction dispatcher', () => {
 
     await expect(
       dispatch({
+        succeeded: () => true,
         confirm: vi.fn(),
         send: vi.fn().mockRejectedValue(new Error('nonce too low')),
         simulate: vi.fn().mockResolvedValue(undefined),
@@ -126,6 +238,7 @@ describe('server transaction dispatcher', () => {
 
     await expect(
       dispatch({
+        succeeded: () => true,
         confirm: vi.fn().mockRejectedValue(new Error('timed out waiting for receipt')),
         send: vi.fn().mockResolvedValue(HASH),
         simulate: vi.fn().mockResolvedValue(undefined),
@@ -160,6 +273,7 @@ describe('server transaction dispatcher', () => {
     await Promise.all(
       [0, 1, 2].map(() =>
         dispatch({
+          succeeded: () => true,
           confirm: async () => {
             concurrentSends -= 1;
             return { status: 'success' };

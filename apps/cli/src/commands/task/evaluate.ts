@@ -1,7 +1,8 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, printError, renderFailure } from '../../lib/output.js';
 import { usdcToBaseUnits } from '../../lib/usdc.js';
+import { withErrorContext } from '../../lib/api.js';
 
 export const evaluateCmd = new Command('evaluate')
   .description('Submit an evaluation verdict for a task in Review state')
@@ -50,9 +51,8 @@ export const evaluateCmd = new Command('evaluate')
         try {
           microUnits = usdcToBaseUnits(amountUSDC);
         } catch (err) {
-          return void printError(
-            `Invalid amount in '${entry}': ${err instanceof Error ? err.message : String(err)}`
-          );
+          renderFailure(withErrorContext(err, `Invalid amount in '${entry}'`));
+          return;
         }
         const parsedRank = Number(rankStr);
         if (!Number.isInteger(parsedRank) || parsedRank < 1) {
@@ -78,8 +78,11 @@ export const evaluateCmd = new Command('evaluate')
         body.evidenceHash = opts.evidenceHash;
       }
 
-      const result = (await x402Post(`/api/tasks/${taskId}/evaluate`, body)) as { txHash: string };
-      printResult({ txHash: result.txHash });
+      const { data: result, idempotencyKey } = await x402Post<{ txHash: string }>(
+        `/api/tasks/${taskId}/evaluate`,
+        body
+      );
+      printResult({ txHash: result.txHash }, { idempotencyKey });
     }
   );
 
