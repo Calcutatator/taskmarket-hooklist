@@ -211,10 +211,14 @@ jobs:
       # step scripts directly, so they have to compile.
       - name: Add swap for the coverage compile
         run: |
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          # The runner ships with an active /swapfile, so allocating over it fails "Text file
+          # busy". Swap off first, then place a larger file on /mnt, which is the roomier disk.
+          sudo swapoff -a || true
+          sudo rm -f /mnt/swapfile-coverage
+          sudo fallocate -l 12G /mnt/swapfile-coverage
+          sudo chmod 600 /mnt/swapfile-coverage
+          sudo mkswap /mnt/swapfile-coverage
+          sudo swapon /mnt/swapfile-coverage
           free -h
 
       - name: Coverage check
