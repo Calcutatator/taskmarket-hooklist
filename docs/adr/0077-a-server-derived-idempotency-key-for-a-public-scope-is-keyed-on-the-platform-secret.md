@@ -9,18 +9,17 @@
 > optional half, accepting that this makes derived keys unguessable rather than making the
 > namespace owned, which remains the more complete fix.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-09
 - **Embodiment:** Verified
 - **Last audited:** `[unaudited]`
 - **Author:** Claude Code (drafted for review)
-- **Deciders:** (pending — Beau)
-- **Reviewers:** (pending — no independent reviewer recorded)
+- **Deciders:** Beau
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Pending amends
-  [ADR-0052](0052-every-relayed-write-carries-a-client-generated-idempotency-key.md)
+- **Amends / Amended-by:** Amends ADR-0052
+- **Pending Amends / Amended-by:** —
 
 ## Context
 

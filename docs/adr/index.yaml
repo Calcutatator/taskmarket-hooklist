@@ -356,5 +356,5 @@ adrs:
   - number: "0077"
     file: "0077-a-server-derived-idempotency-key-for-a-public-scope-is-keyed-on-the-platform-secret.md"
     title: "A server-derived idempotency key for a public scope is keyed on the platform secret"
-    status: Proposed
+    status: Accepted
     date: "2026-08-09"
