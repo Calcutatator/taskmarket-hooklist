@@ -6,7 +6,11 @@
 import type { Hex } from 'viem';
 import { logger } from './logger';
 import { nonceWasConsumed } from './server-transaction-dispatcher';
-import type { GasFees, ServerTransactionStore } from './server-transaction-store';
+import type {
+  GasFees,
+  ServerTransactionStatus,
+  ServerTransactionStore,
+} from './server-transaction-store';
 
 /**
  * What `replacedTxHash` records when the row it replaced had never broadcast anything.
@@ -147,15 +151,21 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
     }
   }
 
-  async function replaceStuckNonce(row: {
-    clearingTxHash?: string | null;
-    id: string;
-    lastFees: GasFees | null;
-    nonce: number;
-    replacedTxHash?: string | null;
-    txHash?: string | null;
-    originalFees: GasFees | null;
-  }): Promise<void> {
+  async function replaceStuckNonce(
+    row: {
+      clearingTxHash?: string | null;
+      id: string;
+      lastFees: GasFees | null;
+      nonce: number;
+      replacedTxHash?: string | null;
+      txHash?: string | null;
+      originalFees: GasFees | null;
+    },
+    // The status the row held in the list that produced it. Carried through to the write so it
+    // only lands on a row that has not moved on since -- these lists take no lock, and a
+    // recycled row can be re-issued by the allocator and broadcast by a dispatcher in between.
+    expectedStatus: ServerTransactionStatus
+  ): Promise<void> {
     const { id, nonce } = row;
     // One clearing transfer per stuck nonce, not one per pass (ADR-0066). Escalation has
     // already stopped at the cap and the nonce has already been freed by a transaction priced
@@ -189,6 +199,7 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
       // several replacements last held the nonce.
       await store.recordReplacement(id, hash, {
         clearing,
+        expectedStatus,
         fees,
         replacedTxHash: row.replacedTxHash ?? row.txHash ?? UNBROADCAST_SUPERSEDED,
       });
@@ -350,11 +361,11 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
     // missing produces a transaction that also cannot mine, so a pass that starts at the top of
     // the queue would burn gas on replacements forever without unblocking anything.
     for (const row of await store.listBlockingRecycled(stuckBefore, MAX_ROWS_PER_PASS)) {
-      await replaceStuckNonce(row);
+      await replaceStuckNonce(row, 'recycled');
     }
 
     for (const row of await store.listAbandonedReservations(stuckBefore, MAX_ROWS_PER_PASS)) {
-      await replaceStuckNonce(row);
+      await replaceStuckNonce(row, 'reserved');
     }
 
     for (const row of await store.listBroadcast(MAX_ROWS_PER_PASS)) {
@@ -387,10 +398,23 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
         try {
           supersededStatus = await getReceiptStatus(row.replacedTxHash as Hex);
         } catch (error) {
-          logger.warn('Superseded transaction receipt lookup failed', {
+          // A read that did not answer is not evidence, and here it was worse than useless:
+          // execution used to fall through to `settleNonceSpentElsewhere`, which re-reads *this*
+          // row's hash -- the replacement, still unmined -- sees the chain's nonce count past
+          // this row's nonce, and takes the foreign-spend branch, which refunds.
+          //
+          // On this row that reasoning does not hold. The branch argues our transaction was
+          // dropped and can never mine, which is true of an ordinary row; here the nonce was
+          // consumed by the original this row superseded, and whether that original mined is
+          // exactly the question this failed lookup did not answer. Refunding on it pays back a
+          // write that may have landed -- the outcome ADR-0045 exists to prevent.
+          //
+          // So: no verdict, no settlement. The row keeps its state and the next pass asks again.
+          logger.warn('Superseded transaction receipt lookup failed; deferring this row', {
             error: error instanceof Error ? error.message : String(error),
             transactionId: row.id,
           });
+          continue;
         }
 
         if (supersededStatus === 'success' || supersededStatus === 'reverted') {
@@ -461,7 +485,7 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
       // here instead (ADR-0063).
       if (await settleNonceSpentElsewhere(row)) continue;
 
-      await replaceStuckNonce(row);
+      await replaceStuckNonce(row, 'broadcast');
     }
 
     // Safety net for intents whose transaction confirmed without anyone completing them. Last,

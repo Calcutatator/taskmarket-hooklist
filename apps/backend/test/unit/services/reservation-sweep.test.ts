@@ -15,9 +15,15 @@ vi.mock('../../../src/lib/rpc-gateway', () => ({
   getPublicClient: () => ({ readContract }),
 }));
 
-vi.mock('../../../src/services/relayed-intents', () => ({
+vi.mock('../../../src/services/relayed-intents', async (importOriginal) => ({
   deleteReservation: vi.fn().mockResolvedValue(undefined),
   holdReservationForReview: vi.fn().mockResolvedValue(undefined),
+  // The real predicate, not a copy: it decides whether the sweep can ask the token contract
+  // about a row at all, and a stub that drifted from it would make these tests agree with
+  // themselves rather than with the code.
+  isEncodableAuthorizationPair: (
+    await importOriginal<typeof import('../../../src/services/relayed-intents')>()
+  ).isEncodableAuthorizationPair,
   listExpiredReservations: vi.fn().mockResolvedValue([]),
   retireUnpaidReservation: vi.fn().mockResolvedValue(undefined),
 }));
@@ -87,6 +93,32 @@ describe('expiring a reservation nobody filled', () => {
     expect(readContract).toHaveBeenCalledWith(
       expect.objectContaining({ args: [PAYER, NONCE], functionName: 'authorizationState' })
     );
+    expect(deleteReservation).not.toHaveBeenCalled();
+    expect(retireUnpaidReservation).toHaveBeenCalledWith(
+      expect.objectContaining({ intentId: 'intent-1' })
+    );
+  });
+
+  /**
+   * A row poisoned before the write-side validation existed (ADR-0077).
+   *
+   * `payment_auth_*` are written verbatim from an attacker-supplied header before the
+   * facilitator verifies anything, and both columns are `text`. A value outside `(address,
+   * bytes32)` cannot be encoded, so the read below used to throw on every pass and land in the
+   * branch that leaves the row for later -- forever. Ten such rows held the whole ten-row window
+   * and `holdReservationForReview`, the safety net two tests below, stopped running at all.
+   *
+   * The chain is never asked here: an unencodable pair is an answered question, not an
+   * unanswered one.
+   */
+  it('retires a reservation whose recorded authorization could never be valid', async () => {
+    vi.mocked(listExpiredReservations).mockResolvedValue([
+      reservation({ paymentAuthNonce: 'zz', paymentAuthPayer: 'attacker' }),
+    ]);
+
+    await expireStaleReservations(10);
+
+    expect(readContract).not.toHaveBeenCalled();
     expect(deleteReservation).not.toHaveBeenCalled();
     expect(retireUnpaidReservation).toHaveBeenCalledWith(
       expect.objectContaining({ intentId: 'intent-1' })

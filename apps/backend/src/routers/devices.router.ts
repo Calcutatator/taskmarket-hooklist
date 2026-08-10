@@ -1,5 +1,6 @@
 // Implements: ADR-0018 (devices.register requires signature proof of address ownership), ADR-0045
 import { router, publicProcedure } from '../trpc';
+import { logger } from '../lib/logger';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { devices, agents } from '../db/schema';
@@ -9,7 +10,7 @@ import { hkdfSync, randomBytes, randomUUID } from 'crypto';
 import { registerRelayedIntentHandlers } from '../services/intents/register';
 import type { IdentityRegisterIntentPayload } from '../services/intents/identity-intents';
 import { dispatchRelayedIntent } from '../services/relayed-intent-registry';
-import { derivedIdempotencyKey, recordRelayedIntent } from '../services/relayed-intents';
+import { recordRelayedIntent, sponsoredIdempotencyKey } from '../services/relayed-intents';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
 import {
   Secp256k1PublicKeySchema,
@@ -142,31 +143,53 @@ export const devicesRouter = router({
       // transaction's own Registered event, whether it runs from the dispatch below or from a
       // worker pass an hour after this process died.
       registerRelayedIntentHandlers();
-      const registerIntent = await recordRelayedIntent({
-        db: ctx.db,
-        // Not the caller's key, because the caller did not ask for a relayed write: they
-        // registered a device, and the platform sponsors an identity mint off the back of it.
-        // Derived from the wallet, so re-registering a device for a wallet whose mint is
-        // already in flight joins that mint instead of starting a second one -- which is what
-        // the bare fire-and-forget promise this replaced would have done (ADR-0052).
-        idempotencyKey: derivedIdempotencyKey(`${walletAddress}:identity.register`),
-        operation: 'identity.register',
-        payer: walletAddress,
-        payload: {
-          chainId: config.CHAIN_ID,
-          // The agents row was just upserted under this exact (normalized) address, so the
-          // completion must update that row rather than insert a second one.
-          existingAddress: walletAddress,
-          payer: walletAddress,
-          registeredVia: 'device',
-          registryAddress: config.ERC8004_IDENTITY_REGISTRY.toLowerCase(),
-        } satisfies IdentityRegisterIntentPayload,
-      });
-
-      // Never throws, and never awaited: every outcome is already durable on the intent row.
-      void dispatchRelayedIntent({ db: ctx.db, intent: registerIntent });
+      // The device is already written and its credentials are what the caller asked for. The
+      // identity mint is a sponsored extra the platform starts off the back of it, so a failure
+      // to record that intent must not destroy the registration that succeeded.
+      //
+      // It could, and did: `recordRelayedIntent` throws `idempotency_key_conflict` when the key
+      // is already taken, the throw escaped this mutation after the `devices` row was written,
+      // and the caller never received `deviceId`/`apiToken`. Every retry recomputed the same
+      // derived key and failed the same way, so onboarding for that wallet was permanently
+      // dead. The key is unguessable now (ADR-0077), which removes the way an attacker reached
+      // this -- but a conflict is still reachable by ordinary means, and the answer to one is to
+      // hand over the credentials rather than to lose them.
+      try {
+        await startSponsoredIdentityMint();
+      } catch (error) {
+        logger.error('Device registered but its sponsored identity mint could not be started', {
+          error: error instanceof Error ? error.message : String(error),
+          walletAddress,
+        });
+      }
 
       return { deviceId, apiToken, deviceEncryptionKey, agentId: null };
+
+      async function startSponsoredIdentityMint(): Promise<void> {
+        const registerIntent = await recordRelayedIntent({
+          db: ctx.db,
+          // Not the caller's key, because the caller did not ask for a relayed write: they
+          // registered a device, and the platform sponsors an identity mint off the back of it.
+          // Derived from the wallet, so re-registering a device for a wallet whose mint is
+          // already in flight joins that mint instead of starting a second one -- which is what
+          // the bare fire-and-forget promise this replaced would have done (ADR-0052).
+          idempotencyKey: sponsoredIdempotencyKey(`${walletAddress}:identity.register`),
+          operation: 'identity.register',
+          payer: walletAddress,
+          payload: {
+            chainId: config.CHAIN_ID,
+            // The agents row was just upserted under this exact (normalized) address, so the
+            // completion must update that row rather than insert a second one.
+            existingAddress: walletAddress,
+            payer: walletAddress,
+            registeredVia: 'device',
+            registryAddress: config.ERC8004_IDENTITY_REGISTRY.toLowerCase(),
+          } satisfies IdentityRegisterIntentPayload,
+        });
+
+        // Never throws, and never awaited: every outcome is already durable on the intent row.
+        void dispatchRelayedIntent({ db: ctx.db, intent: registerIntent });
+      }
     }),
 
   key: publicProcedure

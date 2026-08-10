@@ -4,6 +4,7 @@ import { and, asc, eq, exists, gt, lt, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { db } from '../db/client';
 import { serverWalletNonces, serverWalletTransactions } from '../db/schema';
+import { logger } from './logger';
 
 type Database = Pick<typeof db, 'transaction' | 'select' | 'update' | 'insert'>;
 
@@ -88,7 +89,25 @@ export type ServerTransactionStore = {
   recordReplacement(
     id: string,
     hash: string,
-    fields?: { clearing?: boolean; fees?: GasFees; replacedTxHash?: string | null }
+    fields?: {
+      clearing?: boolean;
+      /**
+       * The status the row was in when it was listed, asserted in the WHERE clause.
+       *
+       * The reconciler lists replaceable rows without locking them, so between the list and
+       * this write the allocator can legitimately re-issue a recycled row -- `allocate()` takes
+       * it under `FOR UPDATE SKIP LOCKED`, flips it to `reserved`, and a dispatcher broadcasts
+       * real work at that nonce. Writing unconditionally then overwrote a live transaction's
+       * `txHash` with the replacement's, so the intent beneath it tracked a hash that was not
+       * the transaction doing its work.
+       *
+       * Optional only so a caller that genuinely has no expectation can omit it; every caller
+       * in this repo has one.
+       */
+      expectedStatus?: ServerTransactionStatus;
+      fees?: GasFees;
+      replacedTxHash?: string | null;
+    }
   ): Promise<void>;
   /** Move the allocator forward when the chain has advanced past it. */
   resync(readPendingNonce: () => Promise<number>): Promise<void>;
@@ -324,7 +343,7 @@ export function createDrizzleServerTransactionStore(options: {
 
     async recordReplacement(id, hash, fields = {}) {
       const now = new Date();
-      await database
+      const result = await database
         .update(serverWalletTransactions)
         .set({
           ...feeUpdate(fields.fees),
@@ -341,7 +360,28 @@ export function createDrizzleServerTransactionStore(options: {
           txHash: hash,
           updatedAt: now,
         })
-        .where(eq(serverWalletTransactions.id, id));
+        .where(
+          fields.expectedStatus === undefined
+            ? eq(serverWalletTransactions.id, id)
+            : and(
+                eq(serverWalletTransactions.id, id),
+                eq(serverWalletTransactions.status, fields.expectedStatus)
+              )
+        )
+        .returning({ id: serverWalletTransactions.id });
+
+      // Matching nothing means the row moved on between being listed and being written, which
+      // is the race this predicate exists for -- and it leaves a broadcast replacement with no
+      // row naming it. That is the lesser of the two harms (the alternative was clobbering a
+      // live transaction's hash) but it is not nothing, so it is said out loud rather than
+      // swallowed: the nonce is occupied by a transaction this row does not mention.
+      if (fields.expectedStatus !== undefined && result.length === 0) {
+        logger.warn('Replacement broadcast but not recorded: the row changed status underneath', {
+          expectedStatus: fields.expectedStatus,
+          hash,
+          transactionId: id,
+        });
+      }
     },
 
     async resync(readPendingNonce) {

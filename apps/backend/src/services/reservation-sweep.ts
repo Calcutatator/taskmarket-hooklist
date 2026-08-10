@@ -7,6 +7,7 @@ import { getPublicClient } from '../lib/rpc-gateway';
 import {
   deleteReservation,
   holdReservationForReview,
+  isEncodableAuthorizationPair,
   listExpiredReservations,
   retireUnpaidReservation,
 } from './relayed-intents';
@@ -61,6 +62,33 @@ async function resolveExpiredReservation(intent: RelayedIntent): Promise<void> {
   // made (ADR-0067).
   if (!intent.paymentAuthNonce || !intent.paymentAuthPayer) {
     await deleteReservation({ db, intentId: intent.id });
+    return;
+  }
+
+  // A pair that could never name a real authorization is not an unanswered question -- it is an
+  // answered one. `authorizationState` takes an `(address, bytes32)`, so a value outside those
+  // shapes cannot be encoded, let alone consumed, and no settlement can ever attach to it.
+  //
+  // That distinction is load-bearing rather than tidy. These columns are written from an
+  // attacker-supplied header before the facilitator verifies anything, and until they were
+  // validated at the write a malformed value threw inside the read below and landed in the
+  // `catch`, which leaves the row untouched for "a later pass". Every later pass repeated it,
+  // so a handful of poisoned rows held the sweep's whole window and the safety net below --
+  // the one that surfaces a payment that settled but never attached -- never ran again.
+  //
+  // The write now rejects these, so this branch is for rows already stored before that. It
+  // retires rather than deletes, which is what the `!consumed` branch does with the same
+  // reasoning: terminal, out of the window, and still on record.
+  if (!isEncodableAuthorizationPair(intent.paymentAuthPayer, intent.paymentAuthNonce)) {
+    logger.error('Reservation carries an unencodable payment authorization; retiring it', {
+      intentId: intent.id,
+    });
+    await retireUnpaidReservation({
+      db,
+      intentId: intent.id,
+      reason:
+        'The recorded payment authorization is not a valid (payer, nonce) pair, so no settlement could ever have been made against it',
+    });
     return;
   }
 

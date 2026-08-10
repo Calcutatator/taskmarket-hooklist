@@ -1,6 +1,6 @@
 // Implements: ADR-0045, ADR-0050, ADR-0052
 // Implements: ADR-0049
-import { createHash, randomUUID } from 'crypto';
+import { createHash, createHmac, randomUUID } from 'crypto';
 import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import type { db as DbType } from '../db/client';
@@ -8,6 +8,7 @@ import { type ApiErrorEnvelope, IDEMPOTENCY_KEY_HEADER } from '@taskmarket/share
 
 import { relayedIntents, serverWalletTransactions, type RelayedIntent } from '../db/schema';
 import { apiError, intentStatusOf } from '../lib/api-error';
+import { getServerConfig } from '../config/env';
 import { logger } from '../lib/logger';
 import { newRelayEnvelope, type RelayEnvelope, type RelayOutboxLink } from './relay-envelope';
 import { recordUnattachedPayment } from './orphaned-payments';
@@ -367,6 +368,32 @@ export async function reserveRelayedWrite(input: {
  * facilitator may reject the authorization, and a client may sign one and abandon the request.
  * Nothing refunds, credits or broadcasts on the strength of them.
  */
+/**
+ * The two shapes an EIP-3009 authorization's identifying pair can legitimately have.
+ *
+ * These are validated because the values are attacker-supplied and are written down BEFORE the
+ * facilitator has verified anything -- that ordering is deliberate (the write-ahead record is
+ * what survives a crash mid-settle, ADR-0067) and it means the columns will hold whatever a
+ * `PAYMENT-SIGNATURE` header claimed. Both columns are `text`, so nothing else stopped a
+ * non-address or a non-hex nonce from being persisted.
+ *
+ * What that cost: the sweep casts the stored pair to `0x${string}` and hands it to viem as
+ * `(address, bytes32)`, where a malformed value throws while encoding -- on every pass, forever.
+ * That throw lands in the branch that treats an unanswered read as "not proven unpaid" and
+ * leaves the row alone, so ten poisoned rows permanently pin the sweep's ten-row window and
+ * `holdReservationForReview` -- the safety net for a payment that settled but never attached --
+ * stops running at all. Unauthenticated and free to trigger.
+ *
+ * Rejecting at the write is the fix for that; the sweep also no longer trusts what it reads.
+ */
+const EIP3009_PAYER_PATTERN = /^0x[0-9a-fA-F]{40}$/;
+const EIP3009_NONCE_PATTERN = /^0x[0-9a-fA-F]{64}$/;
+
+/** Whether a recorded `(payer, nonce)` pair could ever name a real EIP-3009 authorization. */
+export function isEncodableAuthorizationPair(payer: string, nonce: string): boolean {
+  return EIP3009_PAYER_PATTERN.test(payer) && EIP3009_NONCE_PATTERN.test(nonce);
+}
+
 export async function recordIntentPaymentAuthorization(input: {
   db: Db;
   amount: string;
@@ -374,6 +401,19 @@ export async function recordIntentPaymentAuthorization(input: {
   nonce: string;
   payer: string;
 }): Promise<void> {
+  // A pair that cannot name a real authorization is not recorded at all. Persisting it buys
+  // nothing -- the sweep could never ask the token contract about it -- and costs the sweep's
+  // ability to run. Absent is the honest state: it means exactly what it already means here,
+  // that no authorization this code can act on was recorded (ADR-0067).
+  if (!isEncodableAuthorizationPair(input.payer, input.nonce)) {
+    logger.warn('Refusing to record an unencodable EIP-3009 authorization pair', {
+      intentId: input.intentId,
+      noncePresent: input.nonce !== '',
+      payerPresent: input.payer !== '',
+    });
+    return;
+  }
+
   await input.db
     .update(relayedIntents)
     .set({
@@ -517,8 +557,42 @@ export async function holdReservationForReview(input: {
  * scope always yields the same key, and a fixed substitution at fixed positions preserves that
  * exactly.
  */
+/**
+ * A derived key for a scope that is PUBLIC -- an address, a task id, anything an outsider can
+ * name -- keyed on the platform secret so it cannot be computed off the platform.
+ *
+ * `derivedIdempotencyKey` below is a bare SHA-256, which is right for a scope already seeded by
+ * something unguessable (a caller's own random key) and wrong for one that is not.
+ * `${walletAddress}:identity.register` is not: anyone could compute that digest offline, present
+ * it as their own `X-Taskmarket-Idempotency-Key` on any free write, and claim the key before the
+ * victim ever arrived. Keys live in one global namespace with no ownership check, so the claim
+ * stuck -- and the victim's onboarding then failed on every attempt, permanently, for free, for
+ * any address chosen in advance.
+ *
+ * HMAC closes that by making the scope insufficient: computing the key now needs
+ * `PLATFORM_MASTER_KEY`. See ADR-0077, which also records the narrower namespace fix -- a
+ * `(idempotency_key, payer)` uniqueness rule -- as the follow-up this does not do.
+ */
+export function sponsoredIdempotencyKey(scope: string): string {
+  const digest = createHmac('sha256', getServerConfig().PLATFORM_MASTER_KEY)
+    .update(`taskmarket:intent:${scope}`)
+    .digest('hex');
+  return formatAsUuid(digest);
+}
+
+/**
+ * A derived key for a scope that is ALREADY unguessable -- one seeded by a caller's own random
+ * idempotency key, where the digest inherits that unguessability.
+ *
+ * Use `sponsoredIdempotencyKey` instead whenever the scope is something an outsider can name.
+ */
 export function derivedIdempotencyKey(scope: string): string {
   const digest = createHash('sha256').update(`taskmarket:intent:${scope}`).digest('hex');
+  return formatAsUuid(digest);
+}
+
+/** Shape a hex digest as a v4-looking UUID so it satisfies `IDEMPOTENCY_KEY_PATTERN`. */
+function formatAsUuid(digest: string): string {
   const version = `4${digest.slice(13, 16)}`;
   // The variant nibble is 8, 9, a or b -- two fixed bits and two taken from the digest.
   const variant = `${'89ab'[parseInt(digest[16], 16) & 0b11]}${digest.slice(17, 20)}`;
