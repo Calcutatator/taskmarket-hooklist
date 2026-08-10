@@ -255,6 +255,7 @@ export async function reserveRelayedWrite(input: {
   const [reserved] = await input.db
     .insert(relayedIntents)
     .values({
+      chainId: intentChainId(),
       id: randomUUID(),
       idempotencyKey: key,
       operation: RESERVED_OPERATION,
@@ -298,6 +299,7 @@ export async function reserveRelayedWrite(input: {
     })
     .where(
       and(
+        eq(relayedIntents.chainId, intentChainId()),
         eq(relayedIntents.idempotencyKey, key),
         eq(relayedIntents.status, 'reserved'),
         isNull(relayedIntents.paymentAuthNonce),
@@ -586,6 +588,18 @@ export function sponsoredIdempotencyKey(scope: string): string {
  *
  * Use `sponsoredIdempotencyKey` instead whenever the scope is something an outsider can name.
  */
+/**
+ * The chain every intent this backend writes belongs to (ADR-0078).
+ *
+ * Read from configuration rather than passed in, because it is a property of the deployment and
+ * not of any one call -- a caller that could pass the wrong one is a caller that can read another
+ * chain's operation as its own, which is exactly what the composite uniqueness rule exists to
+ * prevent.
+ */
+export function intentChainId(): number {
+  return getServerConfig().CHAIN_ID;
+}
+
 export function derivedIdempotencyKey(scope: string): string {
   const digest = createHash('sha256').update(`taskmarket:intent:${scope}`).digest('hex');
   return formatAsUuid(digest);
@@ -608,7 +622,7 @@ export async function findIntentByIdempotencyKey(
   const [row] = await db
     .select()
     .from(relayedIntents)
-    .where(eq(relayedIntents.idempotencyKey, key))
+    .where(and(eq(relayedIntents.chainId, intentChainId()), eq(relayedIntents.idempotencyKey, key)))
     .limit(1);
   return row ?? null;
 }
@@ -748,6 +762,7 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
   const [row] = await input.db
     .insert(relayedIntents)
     .values({
+      chainId: intentChainId(),
       id: randomUUID(),
       idempotencyKey,
       operation: input.operation,
@@ -836,6 +851,7 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
       })
       .where(
         and(
+          eq(relayedIntents.chainId, intentChainId()),
           eq(relayedIntents.idempotencyKey, idempotencyKey),
           eq(relayedIntents.status, 'reserved')
         )
@@ -860,7 +876,12 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
         const [settled] = await input.db
           .select()
           .from(relayedIntents)
-          .where(eq(relayedIntents.paymentTxHash, input.payment.txHash))
+          .where(
+            and(
+              eq(relayedIntents.chainId, intentChainId()),
+              eq(relayedIntents.paymentTxHash, input.payment.txHash)
+            )
+          )
           .limit(1);
         if (settled) {
           throw apiError({
@@ -931,7 +952,12 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
     const [settled] = await input.db
       .select()
       .from(relayedIntents)
-      .where(eq(relayedIntents.paymentTxHash, input.payment.txHash))
+      .where(
+        and(
+          eq(relayedIntents.chainId, intentChainId()),
+          eq(relayedIntents.paymentTxHash, input.payment.txHash)
+        )
+      )
       .limit(1);
     if (settled) {
       // Same payment, fresh key: a retry that failed to reuse its key, or a client replaying

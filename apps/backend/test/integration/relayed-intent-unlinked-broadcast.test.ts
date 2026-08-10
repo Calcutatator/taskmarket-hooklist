@@ -33,6 +33,7 @@ async function intentRow(fields: {
 }): Promise<string> {
   const id = randomUUID();
   await database.insert(relayedIntents).values({
+    chainId: 84532,
     id,
     idempotencyKey: randomUUID(),
     operation: 'tasks.assignEvaluator',

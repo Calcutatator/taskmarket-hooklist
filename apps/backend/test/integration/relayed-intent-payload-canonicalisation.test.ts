@@ -31,6 +31,7 @@ const { canonicalizeIntentPayload } = await import('../../src/services/relayed-i
 async function storeAndReadBack(payload: unknown): Promise<unknown> {
   const id = randomUUID();
   await database.insert(relayedIntents).values({
+    chainId: 84532,
     id,
     idempotencyKey: randomUUID(),
     operation: 'claims.claim',

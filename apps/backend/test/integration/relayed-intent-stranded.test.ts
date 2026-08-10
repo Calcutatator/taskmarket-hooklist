@@ -22,11 +22,7 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import {
-  relayedIntents,
-  serverWalletNonces,
-  serverWalletTransactions,
-} from '../../src/db/schema';
+import { relayedIntents, serverWalletNonces, serverWalletTransactions } from '../../src/db/schema';
 import { createIsolatedMigratedDatabase } from '../helpers/integration-database';
 import { stubServerEnvironment } from '../helpers/server-environment';
 
@@ -110,6 +106,7 @@ async function strandIntent(options: {
 }): Promise<string> {
   const intentId = randomUUID();
   await database.insert(relayedIntents).values({
+    chainId: 84532,
     id: intentId,
     idempotencyKey: randomUUID(),
     operation: options.operation ?? 'tasks.create',

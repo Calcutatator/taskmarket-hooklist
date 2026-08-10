@@ -933,6 +933,10 @@ export const relayedIntents = pgTable(
     // Operation kind, e.g. 'tasks.create'. Resolved against the completion-handler registry;
     // a kind with no registered handler is a startup error, not a runtime surprise.
     operation: text('operation').notNull(),
+    // The chain this intent's write belongs to (ADR-0078). The outbox row beneath it has always
+    // carried one; without it here, `idempotency_key` and `payment_tx_hash` were unique globally,
+    // so one backend serving two chains would read another chain's operation as yours.
+    chainId: integer('chain_id').notNull(),
     status: text('status').notNull().default('recorded'),
     // The address the relay acted for -- who *initiated* this write, not evidence that anything
     // was paid. Since payment became one indivisible reference (ADR-0057) it is the presence of
@@ -1027,10 +1031,14 @@ export const relayedIntents = pgTable(
     // One settled payment funds at most one intent. A backstop rather than the idempotency
     // mechanism (ADR-0052): the key below handles the well-behaved retry, and this catches a
     // client that generates a fresh key while reusing a payment it has already spent.
-    paymentUnique: uniqueIndex('idx_relayed_intents_payment_tx').on(table.paymentTxHash),
+    paymentUnique: uniqueIndex('idx_relayed_intents_chain_payment_tx').on(
+      table.chainId,
+      table.paymentTxHash
+    ),
     // Globally unique, not (payer, key): evaluations.finalizeVerdict is permissionless and
     // has no payer, and a NULL payer in a composite unique constraint silently stops guarding.
-    idempotencyKeyUnique: uniqueIndex('idx_relayed_intents_idempotency_key').on(
+    idempotencyKeyUnique: uniqueIndex('idx_relayed_intents_chain_idempotency_key').on(
+      table.chainId,
       table.idempotencyKey
     ),
     // Reservations are found by expiry, and only ever the expired ones, so the sweep must not

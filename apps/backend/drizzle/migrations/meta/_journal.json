@@ -330,6 +330,13 @@
       "when": 1786029192000,
       "tag": "0046_add_relay_receipt_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1786380547000,
+      "tag": "0047_relayed_intents_chain_scoped_keys",
+      "breakpoints": true
     }
   ]
 }

@@ -49,17 +49,14 @@ vi.mock('../../src/services/orphaned-payments', () => ({
   settlePendingOrphanedRefunds: vi.fn(),
 }));
 
-const { createServerTransactionDispatcher } = await import(
-  '../../src/lib/server-transaction-dispatcher'
-);
-const { createDrizzleServerTransactionStore } = await import(
-  '../../src/lib/server-transaction-store'
-);
+const { createServerTransactionDispatcher } =
+  await import('../../src/lib/server-transaction-dispatcher');
+const { createDrizzleServerTransactionStore } =
+  await import('../../src/lib/server-transaction-store');
 const { intentOutboxLink, listConfirmedUnsettledIntents, listFailedTransactionIntents } =
   await import('../../src/services/relayed-intents');
-const { settleFailedTransactionIntents } = await import(
-  '../../src/services/relayed-intent-settlement'
-);
+const { settleFailedTransactionIntents } =
+  await import('../../src/services/relayed-intent-settlement');
 
 const describeWithDatabase = isolatedDatabase.isAvailable ? describe : describe.skip;
 const { database } = isolatedDatabase;
@@ -84,6 +81,7 @@ function store() {
 async function recordPaidIntent(): Promise<string> {
   const intentId = randomUUID();
   await database.insert(relayedIntents).values({
+    chainId: 84532,
     id: intentId,
     idempotencyKey: randomUUID(),
     operation: 'bids.auctionAccept',
