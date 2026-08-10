@@ -143,12 +143,13 @@ jobs:
 
   quality-contracts:
     runs-on: ubuntu-latest
-    # Raised from 30, which this job outgrew. The bulk of it is the ABI freshness check -- a full
-    # `forge build` plus ABI generation, measured at 13.5 minutes on a cold cache -- after which
-    # everything else compiles from that cache in seconds. With rev020's extra facet the total
-    # crossed 30 and coverage, running last, was the step the cap cut off. Coverage itself is
-    # cheap: 153s and ~3.1GB peak measured locally on the same 16GB a runner has, so this is
-    # about the job's length and not about that step's cost.
+    # Raised from 30, which this job outgrew. Nearly all of it is compilation: the ABI freshness
+    # check is a full `forge build` at ~12-13 minutes, and coverage recompiles separately under
+    # `--ir-minimum` for another ~4. Everything else -- lint, format, the contract suite, the gas
+    # snapshot, Slither -- totals under two minutes because it reuses the first build's artifacts.
+    # rev020's extra facet pushed the total past 30, and coverage, running last, was the step the
+    # cap cut off. Measured on this runner, not a developer machine: it is a 2-core/7GB box,
+    # because the repo is private.
     timeout-minutes: 45
 
     steps:
@@ -202,25 +203,6 @@ jobs:
 
       - name: Slither static analysis
         run: make contract audit
-
-      # This repo is private, so `ubuntu-latest` is a 2-core/7GB runner. solc under `--ir-minimum`
-      # compiling 126 files does not fit: the step is killed mid-compile at a consistent ~3
-      # minutes, with `make` reporting no child left to wait on. It completes comfortably on a
-      # 16GB developer machine (153s, ~3.1GB peak), which is why this reads as a CI-only fault.
-      #
-      # Swap is added ALONGSIDE the runner's own /swapfile -- `swapon` takes several areas, and
-      # an earlier attempt that ran `swapoff -a` first left the machine with none at the worst
-      # moment. `|| true` because a coverage gate is not worth failing the build over if the
-      # allocation is refused; the step below then fails on its own terms, as it did before.
-      - name: Add swap for the coverage compile
-        run: |
-          sudo fallocate -l 8G /mnt/swap-coverage || sudo dd if=/dev/zero of=/mnt/swap-coverage bs=1M count=8192
-          sudo chmod 600 /mnt/swap-coverage
-          sudo mkswap /mnt/swap-coverage
-          sudo swapon /mnt/swap-coverage
-          swapon --show
-          free -h
-        continue-on-error: true
 
       - name: Coverage check
         run: make contract coverage-check
