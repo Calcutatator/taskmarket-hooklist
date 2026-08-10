@@ -1,5 +1,7 @@
 import { createServer } from 'node:http';
 import { afterAll, beforeAll, describe, it, expect, vi } from 'vitest';
+import { randomUUID } from 'crypto';
+import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 import request from 'supertest';
 
 // All heavy modules must be mocked before app is imported — vitest hoists vi.mock() calls.
@@ -8,9 +10,39 @@ const FAKE_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const FAKE_PRIVATE_KEY = `0x${'1'.repeat(64)}`;
 const OTHER_ADDRESS = '0x1111111111111111111111111111111111111111';
 const mockDb = vi.hoisted(() => ({
-  delete: vi.fn(),
-  insert: vi.fn(),
-  select: vi.fn(),
+  delete: vi.fn(() => {
+    const chain: Record<string, unknown> = {};
+    Object.assign(chain, { where: async () => [] });
+    return chain;
+  }),
+  // Every paid route now *claims* the idempotency key before it challenges, by inserting a
+  // reservation (ADR-0067). The insert succeeding is the "fresh key" case these tests are all
+  // in; a chain that resolved to nothing would look like a lost race and answer 409 instead of
+  // the 402 each of them is asserting.
+  insert: vi.fn(() => {
+    const chain: Record<string, unknown> = {};
+    Object.assign(chain, {
+      values: () => chain,
+      onConflictDoNothing: () => chain,
+      returning: async () => [{ id: 'reserved-intent', status: 'reserved' }],
+    });
+    return chain;
+  }),
+  update: vi.fn(() => {
+    const chain: Record<string, unknown> = {};
+    Object.assign(chain, { set: () => chain, where: async () => [] });
+    return chain;
+  }),
+  // Resolves empty by default. Tests that need a specific read override it.
+  select: vi.fn(() => {
+    const chain: Record<string, unknown> = {};
+    Object.assign(chain, {
+      from: () => chain,
+      where: () => chain,
+      limit: async () => [],
+    });
+    return chain;
+  }),
   transaction: vi.fn(),
 }));
 
@@ -149,25 +181,29 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 400 (not 402) when description exceeds 10000 chars', async () => {
       const res = await request(app)
         .post('/api/tasks')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({ ...validBody, description: 'x'.repeat(10001) });
       expect(res.status).toBe(400);
     });
 
     it('returns 400 (not 402) when description is missing', async () => {
       const { description: _omit, ...body } = validBody;
-      const res = await request(app).post('/api/tasks').send(body);
+      const res = await request(app).post('/api/tasks')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID()).send(body);
       expect(res.status).toBe(400);
     });
 
     it('returns 400 (not 402) when tags array has more than 10 items', async () => {
       const res = await request(app)
         .post('/api/tasks')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({ ...validBody, tags: Array.from({ length: 11 }, (_, i) => `tag${i}`) });
       expect(res.status).toBe(400);
     });
 
     it('returns 402 when body is valid but no payment is provided', async () => {
-      const res = await request(app).post('/api/tasks').send(validBody);
+      const res = await request(app).post('/api/tasks')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID()).send(validBody);
       expect(res.status).toBe(402);
     });
 
@@ -204,6 +240,7 @@ describe('validateBody integration — routes block invalid bodies before x402',
 
       const res = await request(app)
         .post('/api/tasks')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .set('PAYMENT-SIGNATURE', payment)
         .send({ ...validBody, taskDropId: 'drop_other_owner' });
 
@@ -248,6 +285,7 @@ describe('validateBody integration — routes block invalid bodies before x402',
 
       const res = await request(app)
         .post('/api/tasks')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .set('PAYMENT-SIGNATURE', payment)
         .send({ ...validBody, taskDropId: 'drop_announced' });
 
@@ -299,6 +337,7 @@ describe('validateBody integration — routes block invalid bodies before x402',
 
       const res = await request(app)
         .post('/api/tasks')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .set('PAYMENT-SIGNATURE', payment)
         .send({ ...validBody, taskDropId: lockedDrop.id });
 
@@ -313,6 +352,7 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('rejects a divergent auction max price before requesting payment', async () => {
       const res = await request(app)
         .post('/api/tasks')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({
           ...validBody,
           mode: 'auction',
@@ -328,7 +368,8 @@ describe('validateBody integration — routes block invalid bodies before x402',
     const validBody = { taskId: '0xtask', worker: FAKE_ADDRESS };
 
     it('returns 402 when body is valid but no payment is provided', async () => {
-      const res = await request(app).post('/api/tasks/0xtask/accept').send(validBody);
+      const res = await request(app).post('/api/tasks/0xtask/accept')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID()).send(validBody);
       expect(res.status).toBe(402);
     });
   });
@@ -342,6 +383,7 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 400 (not 402) when shares do not sum to 10000', async () => {
       const res = await request(app)
         .post('/api/tasks/0xtask/accept-submissions')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({
           taskId: '0xtask',
           winners: [
@@ -355,12 +397,14 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 400 (not 402) when winners array is empty', async () => {
       const res = await request(app)
         .post('/api/tasks/0xtask/accept-submissions')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({ taskId: '0xtask', winners: [] });
       expect(res.status).toBe(400);
     });
 
     it('returns 402 when body is valid but no payment is provided', async () => {
-      const res = await request(app).post('/api/tasks/0xtask/accept-submissions').send(validBody);
+      const res = await request(app).post('/api/tasks/0xtask/accept-submissions')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID()).send(validBody);
       expect(res.status).toBe(402);
     });
   });
@@ -371,6 +415,7 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 400 (not 402) when rating exceeds 100', async () => {
       const res = await request(app)
         .post('/api/tasks/0xtask/rate')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({ ...validBody, rating: 101 });
       expect(res.status).toBe(400);
     });
@@ -378,6 +423,7 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 400 (not 402) when rating is negative', async () => {
       const res = await request(app)
         .post('/api/tasks/0xtask/rate')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({ ...validBody, rating: -1 });
       expect(res.status).toBe(400);
     });
@@ -385,12 +431,14 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 400 (not 402) when feedbackText exceeds 500 chars', async () => {
       const res = await request(app)
         .post('/api/tasks/0xtask/rate')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({ ...validBody, feedbackText: 'x'.repeat(501) });
       expect(res.status).toBe(400);
     });
 
     it('returns 402 when body is valid but no payment is provided', async () => {
-      const res = await request(app).post('/api/tasks/0xtask/rate').send(validBody);
+      const res = await request(app).post('/api/tasks/0xtask/rate')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID()).send(validBody);
       expect(res.status).toBe(402);
     });
   });
@@ -399,6 +447,7 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 402 when description is exactly 10000 chars and no payment is provided', async () => {
       const res = await request(app)
         .post('/api/tasks/0xtask/update')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({ taskId: '0xtask', description: 'x'.repeat(10000) });
       expect(res.status).toBe(402);
     });
@@ -406,6 +455,7 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 400 (not 402) when description exceeds 10000 chars', async () => {
       const res = await request(app)
         .post('/api/tasks/0xtask/update')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({ taskId: '0xtask', description: 'x'.repeat(10001) });
       expect(res.status).toBe(400);
     });
@@ -413,6 +463,7 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 400 (not 402) when tags array exceeds 10 items', async () => {
       const res = await request(app)
         .post('/api/tasks/0xtask/update')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({
           taskId: '0xtask',
           tags: Array.from({ length: 11 }, (_, i) => `tag${i}`),
@@ -423,6 +474,7 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 402 when body is valid but no payment is provided', async () => {
       const res = await request(app)
         .post('/api/tasks/0xtask/update')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({ taskId: '0xtask', description: 'updated description' });
       expect(res.status).toBe(402);
     });
@@ -439,12 +491,14 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 400 (not 402) when pitchText is empty', async () => {
       const res = await request(app)
         .post('/api/tasks/0xtask/pitches')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({ ...validBody, pitchText: '' });
       expect(res.status).toBe(400);
     });
 
     it('returns 402 when body is valid but no payment is provided', async () => {
-      const res = await request(app).post('/api/tasks/0xtask/pitches').send(validBody);
+      const res = await request(app).post('/api/tasks/0xtask/pitches')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID()).send(validBody);
       expect(res.status).toBe(402);
     });
   });
@@ -461,12 +515,14 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 400 (not 402) when proofData exceeds 10000 chars', async () => {
       const res = await request(app)
         .post('/api/tasks/0xtask/proofs')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({ ...validBody, proofData: 'x'.repeat(10001) });
       expect(res.status).toBe(400);
     });
 
     it('returns 402 when body is valid but no payment is provided', async () => {
-      const res = await request(app).post('/api/tasks/0xtask/proofs').send(validBody);
+      const res = await request(app).post('/api/tasks/0xtask/proofs')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID()).send(validBody);
       expect(res.status).toBe(402);
     });
   });
@@ -485,13 +541,17 @@ describe('validateBody integration — routes block invalid bodies before x402',
       ],
       ['/api/tasks/0xtask/evaluator-timeout', { taskId: '0xtask' }],
     ])('returns 402 for an unpaid valid request to %s', async (path, body) => {
-      const res = await request(app).post(path).send(body);
+      const res = await request(app)
+        .post(path)
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
+        .send(body);
       expect(res.status).toBe(402);
     });
 
     it('does not require payment to finalize a verdict', async () => {
       const res = await request(app)
         .post('/api/tasks/0xtask/finalize-verdict')
+        .set(IDEMPOTENCY_KEY_HEADER, randomUUID())
         .send({ taskId: '0xtask' });
       expect(res.status).not.toBe(402);
     });

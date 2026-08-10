@@ -73,7 +73,10 @@ import {
   lintRfcDir,
   checkCoverage,
   checkProposedAdrImplementation,
+  findImplementsRefs,
+  findVerifiesRefs,
   coerceScope,
+  coerceAllowAuthorSelfReview,
   checkScopeMismatch,
   extractReferencesSection,
   extractCitedFilePaths,
@@ -1143,6 +1146,21 @@ describe('checkAuthorReviewersDeciders (direct)', () => {
     expect(issues).toEqual([]);
   });
 
+  test('self-ack smell is suppressed when author self-review is allowed', () => {
+    const issues = checkAuthorReviewersDeciders(adr('Carol', 'Carol', 'Carol'), 'x.md', 'Accepted', true);
+    expect(issues.some((i) => /self-ack smell/.test(i.message))).toBe(false);
+  });
+
+  test('a blank Deciders still blocks even when author self-review is allowed', () => {
+    const issues = checkAuthorReviewersDeciders(adr('Carol', 'Carol', '—'), 'x.md', 'Accepted', true);
+    expect(issues.some((i) => i.type === 'ERROR' && /Deciders is blank/.test(i.message))).toBe(true);
+  });
+
+  test('a blank Reviewers still warns even when author self-review is allowed', () => {
+    const issues = checkAuthorReviewersDeciders(adr('Carol', '—', 'Carol'), 'x.md', 'Accepted', true);
+    expect(issues.some((i) => i.type === 'WARN' && /Reviewers is blank/.test(i.message))).toBe(true);
+  });
+
   test('property: across every Status x placeholder-combination, Deciders-blocking fires iff Accepted and Deciders is a placeholder', () => {
     const names = ['—', 'Alice', 'Bob', 'Carol'];
     fc.assert(
@@ -1337,6 +1355,23 @@ describe('checkProposedAdrImplementation', () => {
 
   const SOURCE = `${COVERAGE_PATHS[1]}lib/thing.ts`;
 
+  test('blocks a non-Accepted ADR listed second on a comma back-pointer line', () => {
+    // ADR-0006 is Accepted and ADR-0040 is Proposed; the gate must report ADR-0040
+    // even though it is listed second on the marker line.
+    const { cleanup, root } = withSourceFile(SOURCE, '// Implements: ADR-0006, ADR-0040\nexport const a = 1;');
+    try {
+      const issues = checkProposedAdrImplementation(
+        [SOURCE],
+        root,
+        new Map([['0006', 'Accepted'], ['0040', 'Proposed']])
+      );
+      expect(issues).toHaveLength(1);
+      expect(issues[0].message).toContain('ADR-0040');
+    } finally {
+      cleanup();
+    }
+  });
+
   test('blocks source implementing a Proposed ADR', () => {
     const { cleanup, root } = withSourceFile(SOURCE, '// Implements: ADR-0040\nexport const a = 1;');
     try {
@@ -1469,6 +1504,30 @@ describe('coerceScope', () => {
     for (const bad of ['', 'DIFF', 'all', 'wholecorpus', undefined, null]) {
       expect(coerceScope(bad)).toBeNull();
     }
+  });
+});
+
+describe('coerceAllowAuthorSelfReview', () => {
+  test('defaults to false when neither env nor config supplies a value', () => {
+    expect(coerceAllowAuthorSelfReview(undefined, undefined)).toBe(false);
+    expect(coerceAllowAuthorSelfReview(null, null)).toBe(false);
+  });
+
+  test('honors the config-file boolean when no env is set', () => {
+    expect(coerceAllowAuthorSelfReview(true, undefined)).toBe(true);
+    expect(coerceAllowAuthorSelfReview(false, undefined)).toBe(false);
+  });
+
+  test('ignores a non-boolean config value and falls back to the default', () => {
+    expect(coerceAllowAuthorSelfReview('true', undefined)).toBe(false);
+    expect(coerceAllowAuthorSelfReview(1, undefined)).toBe(false);
+  });
+
+  test('lets the env var win over the config file (highest precedence)', () => {
+    expect(coerceAllowAuthorSelfReview(false, '1')).toBe(true);
+    expect(coerceAllowAuthorSelfReview(false, 'true')).toBe(true);
+    expect(coerceAllowAuthorSelfReview(true, 'false')).toBe(false);
+    expect(coerceAllowAuthorSelfReview(true, '0')).toBe(false);
   });
 });
 
@@ -2401,6 +2460,33 @@ describe('globToRegExp / matchesAnyGlob', () => {
     // should not falsely match a pattern meant only for a literal dot.
     expect(globToRegExp('a.b').test('aXb')).toBe(false);
     expect(globToRegExp('a.b').test('a.b')).toBe(true);
+  });
+});
+
+describe('findImplementsRefs / findVerifiesRefs (multi-ADR marker lines)', () => {
+  test('credits a single ADR', () => {
+    expect(findImplementsRefs('// Implements: ADR-0045')).toEqual(['0045']); // adr-scan:ignore-line
+  });
+  test('credits every ADR in a comma list, not just the first', () => {
+    expect(findImplementsRefs('// Implements: ADR-0045, ADR-0050')).toEqual(['0045', '0050']); // adr-scan:ignore-line
+  });
+  test('credits an annotated comma list', () => {
+    expect(findImplementsRefs('// Implements: ADR-0045 (Task Awards), ADR-0050')).toEqual(['0045', '0050']); // adr-scan:ignore-line
+  });
+  test('preserves reference order and keeps duplicates', () => {
+    expect(findImplementsRefs('// Implements: ADR-0050, ADR-0045, ADR-0050')).toEqual(['0050', '0045', '0050']); // adr-scan:ignore-line
+  });
+  test('matches only a complete four-digit reference, not a longer run of digits', () => {
+    expect(findImplementsRefs('// Implements: ADR-00450')).toEqual([]); // adr-scan:ignore-line
+  });
+  test('ignores a bare ADR ref with no marker on the line', () => {
+    expect(findImplementsRefs('// see ADR-0050 for context')).toEqual([]);
+  });
+  test('scopes a marker to its own line — the list never absorbs the next line', () => {
+    expect(findImplementsRefs('// Implements: ADR-0045\n// ADR-0050 note')).toEqual(['0045']); // adr-scan:ignore-line
+  });
+  test('Verifies: behaves the same', () => {
+    expect(findVerifiesRefs('// Verifies: ADR-0045, ADR-0050')).toEqual(['0045', '0050']); // adr-scan:ignore-line
   });
 });
 

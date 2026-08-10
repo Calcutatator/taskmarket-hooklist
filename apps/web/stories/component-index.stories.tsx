@@ -135,6 +135,17 @@ export const AllComponents: Story = {
     await expect(canvas.queryByText('components/market/actions/accept-button.tsx')).toBeNull();
 
     await userEvent.clear(search);
+    await expect(
+      canvas.getByText(`${components.length} of ${components.length} component modules`)
+    ).toBeVisible();
+  },
+};
+
+export const FilteredResults: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const search = canvas.getByRole('textbox', { name: 'Find a component' });
+
     await userEvent.type(search, 'components/market/protocol.tsx');
     await expect(
       canvas.getByRole('link', { name: /components\/market\/protocol\.tsx/ })

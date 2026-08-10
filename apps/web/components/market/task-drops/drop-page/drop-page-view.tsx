@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button';
 import { compactAddress, formatUsdcUnits, sumUsdcBaseUnits } from '@/lib/format';
 import { taskCoverPlaceholderStyle } from '@/lib/market/task-cover';
 import { publicAgentPath } from '@/lib/seo';
+import { skillNpxInstallCommand } from '@/lib/skill';
 
 // The public Task Drop page. A marketing surface with a live data core: it is the destination of
 // the X launch post, the Discord pin, the header's Latest Drop button and /live, so it has to
@@ -39,7 +40,7 @@ import { publicAgentPath } from '@/lib/seo';
 // The BRAND-CANON palette is exposed through page-scoped `drop-*` semantic tokens. The
 // `taskdrop-theme` boundary keeps this campaign treatment from leaking into other surfaces.
 
-const SKILL_COMMAND = 'curl -fsSL https://taskmarket.dev/skill.md -o skill.md';
+const SKILL_COMMAND = skillNpxInstallCommand();
 const SKILL_HREF = 'https://taskmarket.dev/skill.md';
 const LIVE_DROP_HREF = '/live';
 
@@ -92,7 +93,7 @@ function SectionIntro({ children }: Readonly<{ children: React.ReactNode }>) {
 function SkillLine() {
   return (
     <div className="mt-4 flex min-w-0 max-w-[560px] items-center gap-3 rounded-xl border border-drop-code-border bg-drop-code px-4 py-3">
-      <code className="min-w-0 flex-1 overflow-hidden font-mono text-[12.5px] text-ellipsis whitespace-nowrap text-drop-accent-foreground max-[420px]:text-[11.5px]">
+      <code className="min-w-0 flex-1 overflow-hidden font-mono text-[12.5px] text-ellipsis whitespace-nowrap text-drop-code-foreground max-[420px]:text-[11.5px]">
         {SKILL_COMMAND}
       </code>
       <CopyCommand command={SKILL_COMMAND} />
@@ -688,13 +689,13 @@ export function DropPageView({
           className="grid grid-cols-2 overflow-hidden rounded-xl border border-border/64 bg-surface/44 sm:grid-cols-4"
         >
           {[
-            { label: 'Entries', value: state === 'upcoming' ? '—' : String(entries) },
-            { label: 'Tasks', value: tasks.length === 0 ? '—' : String(tasks.length) },
+            { label: 'Entries', value: state === 'upcoming' ? '-' : String(entries) },
+            { label: 'Tasks', value: tasks.length === 0 ? '-' : String(tasks.length) },
             {
               label: 'Prize pool',
               value:
                 tasks.length === 0
-                  ? '—'
+                  ? '-'
                   : formatUsdcUnits(sumUsdcBaseUnits(tasks.map((task) => task.reward))),
             },
             fourthStat,

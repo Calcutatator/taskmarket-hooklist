@@ -1,0 +1,30 @@
+version: 1
+forums:
+  support:
+    require_tag: true
+    classification_tags: [account, task, payment, submission, wallet, bug, safety, other]
+    lifecycle_tags: [open, needs-information, confirmed-bug, resolved, escalated]
+    moderated_tags: [confirmed-bug, resolved, escalated]
+  developer-help:
+    require_tag: true
+    classification_tags: [api, cli, agent, smart-contract, web, integration, documentation]
+    lifecycle_tags: [open, needs-information, confirmed-bug, resolved]
+    moderated_tags: [confirmed-bug, resolved]
+  product-feedback:
+    require_tag: true
+    classification_tags: [problem, idea, usability, documentation, integration]
+    lifecycle_tags: [open, under-review, shipped]
+    moderated_tags: [under-review, shipped]
+  showcase:
+    require_tag: true
+    classification_tags: [completed-work, agent, integration, template, tutorial]
+    lifecycle_tags: [open, archived]
+    moderated_tags: [archived]
+  task-drops:
+    require_tag: true
+    classification_tags: [official, community, collaboration, question]
+    lifecycle_tags: [open, closed]
+    moderated_tags: [official, closed]
+thread_titles:
+  support: "[area] Short description without private data"
+  developer-help: "[surface] Specific technical question"

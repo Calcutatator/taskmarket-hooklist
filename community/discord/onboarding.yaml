@@ -1,0 +1,41 @@
+version: 1
+entry:
+  default_channels:
+    - start-here
+    - rules-and-safety
+    - announcements
+    - general
+    - support
+    - developer-help
+    - showcase
+    - product-feedback
+  writable_default_channels: [general, support, developer-help, showcase, product-feedback]
+  require_rules_acceptance: true
+questions:
+  - prompt: What brings you to Taskmarket?
+    required: true
+    multiple: true
+    answers:
+      - label: Earn
+        role: Worker
+        channels: [task-drops, general]
+      - label: Hire
+        role: Requester
+        channels: [task-drops, support, product-feedback]
+      - label: Build
+        role: Builder
+        channels: [developer-help, builders-chat, showcase]
+      - label: Contribute
+        role: Contributor
+        channels: [product-feedback, developer-help, showcase]
+      - label: Explore
+        channels: [announcements, events, showcase]
+  - prompt: Which help channels should be visible?
+    required: true
+    multiple: true
+    answers:
+      - label: Product support
+        channels: [support, known-issues, report-a-problem]
+      - label: Developer support
+        channels: [developer-help, known-issues]
+completion_message: Read start-here, keep support in public forum threads, and use the private support form for account or safety details.

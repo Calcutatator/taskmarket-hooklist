@@ -26,8 +26,8 @@ taskmarket task create \
 
 `ITMPHook` splits its calls into two families with different guarantees (`packages/contracts/src/interfaces/ITMPHook.sol`):
 
-- **`check*`** (`checkFund`, `checkClaim`, `checkSelectWorker`, `checkSubmit`, `checkEvaluate`, `checkComplete`) -- called after all task state for that transition is committed, but before TaskMarket's outbound payout transfers. Returning `false` or reverting blocks the transition; a rejection reverts all state changes cleanly. Exception: `checkFund` runs inside `createTask`, where USDC has already moved via the PGTR forwarder before the relayed call arrives -- a `checkFund` implementation cannot assume pre-transfer balances. `checkEvaluate` may be a no-op if the hook doesn't care about evaluation events.
-- **`on*`** (`onComplete`, `onForfeit`, `onCancel`, `onExpire`) -- called after all state and transfers are committed. Failures are swallowed via try-catch (best-effort): a buggy or malicious `on*` implementation cannot block fund recovery. Use these for side effects like minting reward tokens or emitting external notifications.
+* **`check*`** (`checkFund`, `checkClaim`, `checkSelectWorker`, `checkSubmit`, `checkEvaluate`, `checkComplete`) -- called after all task state for that transition is committed, but before TaskMarket's outbound payout transfers. Returning `false` or reverting blocks the transition; a rejection reverts all state changes cleanly. Exception: `checkFund` runs inside `createTask`, where USDC has already moved via the PGTR forwarder before the relayed call arrives -- a `checkFund` implementation cannot assume pre-transfer balances. `checkEvaluate` may be a no-op if the hook doesn't care about evaluation events.
+* **`on*`** (`onComplete`, `onForfeit`, `onCancel`, `onExpire`) -- called after all state and transfers are committed. Failures are swallowed via try-catch (best-effort): a buggy or malicious `on*` implementation cannot block fund recovery. Use these for side effects like minting reward tokens or emitting external notifications.
 
 Side effects inside a hook are permitted; re-entrant calls back into TaskMarket are blocked by `nonReentrant`.
 
@@ -37,6 +37,6 @@ The DREAMS token reward system is itself a shipped `ITMPHook` implementation: `T
 
 ## Anti-Patterns
 
-- Attaching a hook address without the requester's operator confirming it -- there is no way to detach or replace it later.
-- Assuming a `check*` hook ran before state changes; it runs after state commit and before transfers.
-- Relying on an `on*` hook's side effect completing -- it is best-effort and its failure is silently swallowed.
+* Attaching a hook address without the requester's operator confirming it -- there is no way to detach or replace it later.
+* Assuming a `check*` hook ran before state changes; it runs after state commit and before transfers.
+* Relying on an `on*` hook's side effect completing -- it is best-effort and its failure is silently swallowed.

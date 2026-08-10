@@ -1,0 +1,73 @@
+name: Deploy Discord app to Railway DEVNET
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: deploy-discord-DEVNET
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: DEVNET
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 1
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@5.26.1
+
+      - name: Stamp and deploy exact commit
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_TESTNET }}
+        run: |
+          railway variable set \
+            "COMMIT_SHA=${{ github.event.workflow_run.head_sha }}" \
+            --service "${{ secrets.RAILWAY_DISCORD_SERVICE_NAME }}" \
+            --environment DEVNET \
+            --skip-deploys
+          railway up \
+            --service "${{ secrets.RAILWAY_DISCORD_SERVICE_NAME }}" \
+            --environment DEVNET
+
+      - name: Verify exact deployment
+        env:
+          DISCORD_APP_URL: ${{ secrets.DISCORD_APP_DEVNET_URL }}
+          EXPECTED_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          EXPECTED_DEPLOY_ENVIRONMENT: DEVNET
+        run: make discord smoke
+
+      - name: Install command registration tooling
+        run: make install
+
+      - name: Exercise signed interaction seam
+        run: make discord signed-smoke
+
+      - name: Reconcile DEVNET guild commands
+        env:
+          DISCORD_APPLICATION_ID: ${{ secrets.DISCORD_APPLICATION_ID }}
+          DISCORD_APP_URL: ${{ secrets.DISCORD_APP_DEVNET_URL }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+        run: make discord register

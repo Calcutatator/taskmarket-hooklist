@@ -1,7 +1,8 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, printError, renderFailure } from '../../lib/output.js';
 import { usdcToBaseUnits } from '../../lib/usdc.js';
+import { withErrorContext } from '../../lib/api.js';
 
 export const createCmd = new Command('create')
   .description('Create a new task (costs reward amount in USDC)')
@@ -99,9 +100,8 @@ export const createCmd = new Command('create')
       try {
         rewardBaseUnits = usdcToBaseUnits(opts.reward);
       } catch (err) {
-        return void printError(
-          `Invalid --reward: ${err instanceof Error ? err.message : String(err)}`
-        );
+        renderFailure(withErrorContext(err, 'Invalid --reward'));
+        return;
       }
 
       const duration = Number(opts.duration);
@@ -170,9 +170,8 @@ export const createCmd = new Command('create')
         try {
           maxPriceBaseUnits = usdcToBaseUnits(opts.maxPrice);
         } catch (err) {
-          return void printError(
-            `Invalid --max-price: ${err instanceof Error ? err.message : String(err)}`
-          );
+          renderFailure(withErrorContext(err, 'Invalid --max-price'));
+          return;
         }
         if (maxPriceBaseUnits !== rewardBaseUnits) {
           return void printError(
@@ -222,9 +221,8 @@ export const createCmd = new Command('create')
         try {
           body.auctionStartPrice = usdcToBaseUnits(opts.auctionStartPrice, { allowZero: true });
         } catch (err) {
-          return void printError(
-            `Invalid --auction-start-price: ${err instanceof Error ? err.message : String(err)}`
-          );
+          renderFailure(withErrorContext(err, 'Invalid --auction-start-price'));
+          return;
         }
       }
 
@@ -232,9 +230,8 @@ export const createCmd = new Command('create')
         try {
           body.auctionFloorPrice = usdcToBaseUnits(opts.auctionFloorPrice, { allowZero: true });
         } catch (err) {
-          return void printError(
-            `Invalid --auction-floor-price: ${err instanceof Error ? err.message : String(err)}`
-          );
+          renderFailure(withErrorContext(err, 'Invalid --auction-floor-price'));
+          return;
         }
       }
 
@@ -287,7 +284,10 @@ export const createCmd = new Command('create')
         if (opts.disputeResolver) body.disputeResolver = opts.disputeResolver;
       }
 
-      const result = (await x402Post('/api/tasks', body)) as { success: boolean; taskId: string };
-      printResult({ taskId: result.taskId });
+      const { data: result, idempotencyKey } = await x402Post<{ success: boolean; taskId: string }>(
+        '/api/tasks',
+        body
+      );
+      printResult({ taskId: result.taskId }, { idempotencyKey });
     }
   );

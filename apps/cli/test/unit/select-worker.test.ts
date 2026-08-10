@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 
 const TASK_ID = `0x${'ab'.repeat(32)}`;
 const PITCH_ID = 'pitch-1';
@@ -13,11 +14,14 @@ vi.mock('../../src/lib/signer.js', () => ({
 }));
 
 vi.mock('../../src/lib/api.js', () => ({
-  apiPost: vi.fn().mockResolvedValue({ success: true }),
+  apiPost: vi.fn().mockResolvedValue(writeOutcome({ success: true })),
 }));
 
 vi.mock('../../src/lib/output.js', () => ({
   printResult: vi.fn(),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 import { selectWorkerCmd } from '../../src/commands/task/select-worker.js';

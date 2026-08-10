@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, renderFailure } from '../../lib/output.js';
 
 export const refundExpiredCmd = new Command('refund-expired')
   .description(
@@ -9,10 +9,12 @@ export const refundExpiredCmd = new Command('refund-expired')
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
   .action(async (taskId: string) => {
     try {
-      const result = await x402Post(`/api/tasks/${taskId}/refund-expired`, { taskId });
-      printResult(result as Record<string, unknown>);
+      const { data: result, idempotencyKey } = await x402Post<Record<string, unknown>>(
+        `/api/tasks/${taskId}/refund-expired`,
+        { taskId }
+      );
+      printResult(result, { idempotencyKey });
     } catch (err) {
-      printError(err instanceof Error ? err.message : String(err));
-      process.exit(1);
+      renderFailure(err);
     }
   });

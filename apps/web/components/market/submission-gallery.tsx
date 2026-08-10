@@ -1,11 +1,12 @@
 'use client';
 
 import type { ArtifactResponse, SubmissionResponse } from '@taskmarket/shared';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Maximize2, Minimize2, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -43,6 +44,13 @@ import {
 } from '@/components/ui/drawer';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { compactAddress } from '@/lib/format';
+import {
+  countSubmissionArtifactTypes,
+  defaultSubmissionArtifactFilter,
+  matchesSubmissionArtifactFilter,
+  type SubmissionArtifactFilter,
+  type SubmissionArtifactType,
+} from '@/lib/market/submission-artifact-filter';
 import { isPlayableArtifact } from '@/lib/market/task-cover';
 import { isInteractiveHtmlArtifact } from '@/lib/sandboxed-html';
 import { cn } from '@/lib/utils';
@@ -51,6 +59,13 @@ const easeOut = [0.16, 1, 0.3, 1] as const;
 
 // A swipe shorter than this reads as an accidental tap/jitter, not navigation intent.
 const SWIPE_THRESHOLD_PX = 48;
+
+const ARTIFACT_FILTER_LABELS: Record<SubmissionArtifactFilter, string> = {
+  all: 'All',
+  html: 'HTML',
+  image: 'Images',
+  video: 'Video',
+};
 
 const INTERACTIVE_GALLERY_TARGETS = [
   'a[href]',
@@ -152,6 +167,7 @@ type SubmissionGalleryDialogProps = {
   initialArtifactId: string | null;
   onOpenChange: (open: boolean) => void;
   open: boolean;
+  preferredArtifactType?: SubmissionArtifactType | null;
   profileBasePath: string;
   sessionKey?: string;
   taskId: string;
@@ -207,27 +223,88 @@ function SubmissionGalleryDialogInner({
   initialArtifactId,
   onOpenChange,
   open,
+  preferredArtifactType,
   profileBasePath,
   taskId,
 }: SubmissionGalleryDialogProps) {
   const [selectedArtifactId, setSelectedArtifactId] = useState(initialArtifactId);
+  const [fullViewport, setFullViewport] = useState(false);
   const motionDisabled = useMotionDisabled();
+  const artifactTypeCounts = useMemo(
+    () => countSubmissionArtifactTypes(entries.map((entry) => entry.artifact)),
+    [entries]
+  );
+  const requestedArtifact = initialArtifactId
+    ? entries.find((entry) => entry.artifact.id === initialArtifactId)?.artifact
+    : undefined;
+  const defaultArtifactFilter = defaultSubmissionArtifactFilter(
+    artifactTypeCounts,
+    preferredArtifactType
+  );
+  // Opening a specific thumbnail is an explicit viewer choice: keep the full
+  // carousel available and anchor to that artifact. Automatic or creator defaults
+  // apply only when the gallery itself is opened without a requested artifact.
+  const initialArtifactFilter = requestedArtifact ? 'all' : defaultArtifactFilter;
+  const [artifactFilter, setArtifactFilter] =
+    useState<SubmissionArtifactFilter>(initialArtifactFilter);
+  const wasOpenRef = useRef(false);
+  const filteredEntries = useMemo(
+    () =>
+      entries.filter((entry) => matchesSubmissionArtifactFilter(entry.artifact, artifactFilter)),
+    [artifactFilter, entries]
+  );
+  const visibleEntries = filteredEntries.length > 0 ? filteredEntries : entries;
 
   // Re-anchor to the requested entry each time the dialog opens (heroes and
   // thumbnails open the gallery at their own artifact).
   useEffect(() => {
-    if (open) {
-      setSelectedArtifactId(initialArtifactId);
+    const justOpened = open && !wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (!justOpened) {
+      return;
     }
-  }, [initialArtifactId, open]);
+
+    const openingEntries = entries.filter((entry) =>
+      matchesSubmissionArtifactFilter(entry.artifact, initialArtifactFilter)
+    );
+    setArtifactFilter(initialArtifactFilter);
+    setSelectedArtifactId(
+      openingEntries.some((entry) => entry.artifact.id === initialArtifactId)
+        ? initialArtifactId
+        : (openingEntries[0]?.artifact.id ?? entries[0]?.artifact.id ?? null)
+    );
+  }, [entries, initialArtifactFilter, initialArtifactId, open]);
+
+  // A controlled dialog can also be closed by its parent (for example when the
+  // active task or authorization scope changes), so reset independently of the
+  // dialog's own close callback as well as handling user-initiated closes below.
+  useEffect(() => {
+    if (!open) {
+      setFullViewport(false);
+    }
+  }, [open]);
+
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen) {
+        setFullViewport(false);
+      }
+      onOpenChange(nextOpen);
+    },
+    [onOpenChange]
+  );
+  // The sandboxed document can relay Escape across its browsing-context boundary,
+  // but its own untrusted scripts can send the same fixed signal. Limit the effect
+  // to this reversible layout change; iframe messages can never close the dialog.
+  const handlePreviewEscape = useCallback(() => setFullViewport(false), []);
 
   // Track the artifact rather than its position: the entries list refreshes with
   // every poll, and a newly submitted entry shifts every index below it. Fall back
   // to the first entry if the selected artifact is no longer in the feed.
-  const count = entries.length;
-  const selectedIndex = entries.findIndex((item) => item.artifact.id === selectedArtifactId);
+  const count = visibleEntries.length;
+  const selectedIndex = visibleEntries.findIndex((item) => item.artifact.id === selectedArtifactId);
   const safeIndex = selectedIndex >= 0 ? selectedIndex : 0;
-  const entry = entries[safeIndex] as SubmissionMediaEntry;
+  const entry = visibleEntries[safeIndex] as SubmissionMediaEntry;
   const { artifact, submission } = entry;
   const workerLabel = compactAddress(submission.workerAgentId ?? submission.workerAddress);
 
@@ -267,22 +344,23 @@ function SubmissionGalleryDialogInner({
       return;
     }
 
-    [entries[(safeIndex + 1) % count], entries[(safeIndex - 1 + count) % count]].forEach(
-      (neighbor) => {
-        if (!neighbor || neighbor.artifact.mediaKind !== 'image') {
-          return;
-        }
-
-        const url = usableArtifactPreviewUrl(neighbor.artifact);
-        if (url) {
-          new window.Image().src = url;
-        }
+    [
+      visibleEntries[(safeIndex + 1) % count],
+      visibleEntries[(safeIndex - 1 + count) % count],
+    ].forEach((neighbor) => {
+      if (!neighbor || neighbor.artifact.mediaKind !== 'image') {
+        return;
       }
-    );
-  }, [count, entries, open, safeIndex]);
+
+      const url = usableArtifactPreviewUrl(neighbor.artifact);
+      if (url) {
+        new window.Image().src = url;
+      }
+    });
+  }, [count, open, safeIndex, visibleEntries]);
 
   const goTo = (nextIndex: number) =>
-    setSelectedArtifactId(entries[nextIndex]?.artifact.id ?? null);
+    setSelectedArtifactId(visibleEntries[nextIndex]?.artifact.id ?? null);
   const goPrev = () => goTo((safeIndex - 1 + count) % count);
   const goNext = () => goTo((safeIndex + 1) % count);
 
@@ -361,10 +439,63 @@ function SubmissionGalleryDialogInner({
     </span>
   );
 
+  const availableArtifactTypes = (['html', 'image', 'video'] as const).filter(
+    (type) => artifactTypeCounts[type] > 0
+  );
+  const changeArtifactFilter = (nextFilter: SubmissionArtifactFilter) => {
+    const nextEntries = entries.filter((item) =>
+      matchesSubmissionArtifactFilter(item.artifact, nextFilter)
+    );
+    setArtifactFilter(nextFilter);
+    if (!nextEntries.some((item) => item.artifact.id === selectedArtifactId)) {
+      setSelectedArtifactId(nextEntries[0]?.artifact.id ?? null);
+    }
+  };
+  const artifactFilterControls =
+    availableArtifactTypes.length > 1 ? (
+      <div
+        aria-label="Filter gallery by file type"
+        className="flex min-w-0 items-center gap-2 overflow-x-auto px-4 py-2 md:px-0"
+        role="group"
+      >
+        <span className="shrink-0 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-muted-foreground">
+          Show
+        </span>
+        {(['all', ...availableArtifactTypes] as SubmissionArtifactFilter[]).map((filter) => {
+          const filterCount =
+            filter === 'all'
+              ? entries.length
+              : artifactTypeCounts[filter as SubmissionArtifactType];
+
+          return (
+            <Button
+              aria-label={`Filter gallery to ${ARTIFACT_FILTER_LABELS[filter]}`}
+              aria-pressed={artifactFilter === filter}
+              className="shrink-0"
+              data-active={artifactFilter === filter}
+              key={filter}
+              onClick={() => changeArtifactFilter(filter)}
+              size="chip"
+              type="button"
+              variant="chip"
+            >
+              {ARTIFACT_FILTER_LABELS[filter]} {filterCount}
+            </Button>
+          );
+        })}
+        {artifactFilter === defaultArtifactFilter && defaultArtifactFilter !== 'all' ? (
+          <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
+            {preferredArtifactType === defaultArtifactFilter ? 'Task default' : 'Smart default'}
+          </span>
+        ) : null}
+      </div>
+    ) : null;
+
   const playfield = (
     <div
       className={cn(
         'relative',
+        fullViewport && !isMobile && 'h-full min-h-0',
         isMobile && !compactMobileVideo && 'h-full',
         compactMobileVideo && 'w-full self-center'
       )}
@@ -372,7 +503,13 @@ function SubmissionGalleryDialogInner({
       <div
         className={cn(
           'relative overflow-hidden rounded-xl border border-border/60 bg-background/52',
-          isMobile ? (compactMobileVideo ? 'aspect-video w-full' : 'h-full') : 'h-[62vh]'
+          isMobile
+            ? compactMobileVideo
+              ? 'aspect-video w-full'
+              : 'h-full'
+            : fullViewport
+              ? 'h-full'
+              : 'h-[62vh]'
         )}
         data-testid="gallery-frame"
         style={
@@ -380,7 +517,7 @@ function SubmissionGalleryDialogInner({
         }
       >
         {slots.map((slot) => {
-          const slotEntry = entries[slot.index];
+          const slotEntry = visibleEntries[slot.index];
           if (!slotEntry) {
             return null;
           }
@@ -393,6 +530,7 @@ function SubmissionGalleryDialogInner({
               offset={slot.offset}
               onCurrentPreviewChange={handleCurrentPreviewChange}
               onCurrentVideoAspectChange={handleCurrentVideoAspectChange}
+              onPreviewEscape={fullViewport ? handlePreviewEscape : undefined}
               open={open}
               showWarning={showInlineWarning}
               taskId={taskId}
@@ -498,12 +636,9 @@ function SubmissionGalleryDialogInner({
   );
 
   if (isMobile) {
-    const descriptionId = 'submission-gallery-mobile-description';
-
     return (
-      <Drawer open={open} onOpenChange={onOpenChange}>
+      <Drawer open={open} onOpenChange={handleOpenChange}>
         <DrawerContent
-          aria-describedby={descriptionId}
           // components/ui/drawer.tsx scopes its own height cap to
           // `data-[vaul-drawer-direction=bottom]:max-h-[80dvh]`. That combines a class
           // and an attribute selector, so a plain `max-h-[*]` here would lose the
@@ -520,13 +655,25 @@ function SubmissionGalleryDialogInner({
           {liveRegion}
           <DrawerHeader className="sr-only">
             <DrawerTitle>{`Submission gallery: ${artifact.fileName}`}</DrawerTitle>
-            <DrawerDescription id={descriptionId}>
+            <DrawerDescription>
               Submitted by {workerLabel} <RelativeTime value={submission.submittedAt} />
             </DrawerDescription>
           </DrawerHeader>
-          {contextLabel ? (
-            <p className="shrink-0 px-4 pt-2 text-sm font-medium text-foreground">{contextLabel}</p>
-          ) : null}
+          <div className="flex shrink-0 items-center justify-between gap-3 px-4 pt-2">
+            <p className="min-w-0 truncate text-sm font-medium text-foreground">
+              {contextLabel ?? 'Submission gallery'}
+            </p>
+            <Button
+              aria-label="Close submission gallery"
+              onClick={() => handleOpenChange(false)}
+              size="icon-sm"
+              type="button"
+              variant="ghost"
+            >
+              <X aria-hidden="true" />
+            </Button>
+          </div>
+          {artifactFilterControls}
           <div className="grid min-h-0 flex-1 overflow-hidden p-2">{playfield}</div>
           <div
             className="flex shrink-0 items-start justify-between gap-2 border-t border-border/58 px-4 py-2"
@@ -541,31 +688,62 @@ function SubmissionGalleryDialogInner({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         aria-label="Submission gallery"
-        className="max-h-[92vh] max-w-6xl gap-3 overflow-auto"
+        className={cn(
+          'max-h-[92vh] max-w-6xl gap-3 overflow-auto',
+          fullViewport &&
+            '!left-0 !top-0 h-app-viewport !w-screen !max-h-none !max-w-none !translate-x-0 !translate-y-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-none border-0'
+        )}
+        data-full-viewport={fullViewport ? 'true' : 'false'}
         onKeyDown={handleKeyDown}
+        onEscapeKeyDown={(event) => {
+          if (fullViewport) {
+            event.preventDefault();
+            setFullViewport(false);
+          }
+        }}
       >
         {liveRegion}
-        <DialogHeader>
-          {contextLabel ? (
-            <p className="text-sm font-medium text-foreground">{contextLabel}</p>
-          ) : null}
-          <DialogTitle className="break-all pr-8 font-mono">{artifact.fileName}</DialogTitle>
-          <DialogDescription>
-            Submitted by{' '}
-            <ActorLink
-              address={submission.workerAddress}
-              agentId={submission.workerAgentId}
-              className="font-mono text-foreground hover:text-primary"
-              label={workerLabel}
-              profileBasePath={profileBasePath}
-              title={submission.workerAddress}
-            />{' '}
-            <RelativeTime value={submission.submittedAt} />
-          </DialogDescription>
-        </DialogHeader>
+        <div className="grid gap-2">
+          <DialogHeader className="grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 pr-9">
+            <div className="grid min-w-0 gap-1.5">
+              {contextLabel ? (
+                <p className="text-sm font-medium text-foreground">{contextLabel}</p>
+              ) : null}
+              <DialogTitle className="break-all font-mono">{artifact.fileName}</DialogTitle>
+              <DialogDescription>
+                Submitted by{' '}
+                <ActorLink
+                  address={submission.workerAddress}
+                  agentId={submission.workerAgentId}
+                  className="font-mono text-foreground underline underline-offset-4 hover:text-primary"
+                  label={workerLabel}
+                  profileBasePath={profileBasePath}
+                  title={submission.workerAddress}
+                />{' '}
+                <RelativeTime value={submission.submittedAt} />
+              </DialogDescription>
+            </div>
+            <Button
+              aria-label={fullViewport ? 'Exit full screen' : 'Enter full screen'}
+              className="shrink-0"
+              onClick={() => setFullViewport((value) => !value)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {fullViewport ? (
+                <Minimize2 aria-hidden="true" className="size-4" />
+              ) : (
+                <Maximize2 aria-hidden="true" className="size-4" />
+              )}
+              <span>{fullViewport ? 'Exit full screen' : 'Enter full screen'}</span>
+            </Button>
+          </DialogHeader>
+          {artifactFilterControls}
+        </div>
         {playfield}
         {detailsSection}
       </DialogContent>
@@ -579,6 +757,7 @@ type GallerySlideProps = {
   offset: SlideOffset;
   onCurrentPreviewChange: (artifactId: string, previewUrl: string | null) => void;
   onCurrentVideoAspectChange: (artifactId: string, ratio: number) => void;
+  onPreviewEscape?: () => void;
   open: boolean;
   showWarning: boolean;
   taskId: string;
@@ -594,6 +773,7 @@ function GallerySlide({
   offset,
   onCurrentPreviewChange,
   onCurrentVideoAspectChange,
+  onPreviewEscape,
   open,
   showWarning,
   taskId,
@@ -653,6 +833,7 @@ function GallerySlide({
         artifact={artifact}
         isCurrent={isCurrent}
         onCurrentPreviewChange={onCurrentPreviewChange}
+        onPreviewEscape={isCurrent ? onPreviewEscape : undefined}
         open={open}
         showWarning={showWarning}
         taskId={taskId}
@@ -703,6 +884,7 @@ type GalleryNonVideoPreviewProps = {
   artifact: ArtifactResponse;
   isCurrent: boolean;
   onCurrentPreviewChange: (artifactId: string, previewUrl: string | null) => void;
+  onPreviewEscape?: () => void;
   open: boolean;
   showWarning: boolean;
   taskId: string;
@@ -712,6 +894,7 @@ function GalleryNonVideoPreview({
   artifact,
   isCurrent,
   onCurrentPreviewChange,
+  onPreviewEscape,
   open,
   showWarning,
   taskId,
@@ -752,6 +935,8 @@ function GalleryNonVideoPreview({
     <InteractiveHtmlPreview
       artifact={artifact}
       classNames={showWarning ? GALLERY_HTML_CLASS_NAMES : GALLERY_HTML_CLASS_NAMES_COMPACT}
+      onEscape={onPreviewEscape}
+      onRetry={() => ensurePreviewUrl(true)}
       previewUrl={previewUrl}
       showWarning={showWarning}
     />

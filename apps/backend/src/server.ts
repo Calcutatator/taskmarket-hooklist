@@ -11,6 +11,11 @@ import { migrationClient, db } from './db/client';
 import { runConfiguredTaskAwardsBackfill } from './services/configured-task-awards-backfill';
 import { prepareBackendState } from './services/startup-preparation';
 import { startServerWalletReconciler } from './lib/wallet';
+import { registerRelayedIntentHandlers } from './services/intents/register';
+import {
+  createRelayedIntentWorker,
+  startRelayedIntentWorker,
+} from './services/relayed-intent-worker';
 import { setRuntimeRpcTelemetrySink } from './lib/rpc-gateway';
 import { startRpcTelemetrySummary } from './lib/rpc-telemetry-aggregator';
 
@@ -55,6 +60,12 @@ async function startServer(): Promise<void> {
 
     startIndexerPolling();
     startServerWalletReconciler();
+    // Handlers must exist in this process whether or not it served the request that recorded
+    // an intent: the reconciler settles from confirmed on-chain evidence wherever it lands.
+    registerRelayedIntentHandlers();
+    // Crash fallback only: an intent whose process died between recording and broadcasting has
+    // nobody else to send it.
+    startRelayedIntentWorker(createRelayedIntentWorker());
     startSmtpServer(db);
   });
 }

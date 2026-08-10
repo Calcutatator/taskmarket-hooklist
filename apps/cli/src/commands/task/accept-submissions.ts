@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, renderFailure } from '../../lib/output.js';
 
 /**
  * Parse a --winner spec of the form <address>:<share> or <address>:<share>:<submissionId>
@@ -59,12 +59,18 @@ export const acceptSubmissionsCmd = new Command('accept-submissions')
       if (sum !== 10000) {
         throw new Error(`Winner shares must sum to 10000 basis points (got ${sum})`);
       }
-      const result = (await x402Post(`/api/tasks/${taskId}/accept-submissions`, {
-        taskId,
-        winners,
-      })) as { success: boolean };
-      printResult({ accepted: result.success, winners: winners.length });
+      const { data: result, idempotencyKey } = await x402Post<{ success: boolean }>(
+        `/api/tasks/${taskId}/accept-submissions`,
+        {
+          taskId,
+          winners,
+        }
+      );
+      printResult({ accepted: result.success, winners: winners.length }, { idempotencyKey });
     } catch (err) {
-      printError(err instanceof Error ? err.message : String(err));
+      // Covers both the locally thrown spec errors above and the paid write. A local `Error`
+      // renders with no envelope, exactly as it always did; the write's `ApiError` renders with
+      // the `reason` and `pending` a script needs before deciding whether to run this again.
+      renderFailure(err);
     }
   });

@@ -15,14 +15,17 @@ export const proofCmd = new Command('proof')
     // Signature preserved for shape compat; X402 payer == workerAddress is the auth.
     const signature = await signMessage(`taskmarket:proof:${taskId}`, keystore);
 
-    const result = (await x402Post(`/api/tasks/${taskId}/proofs`, {
+    const { data: result, idempotencyKey } = await x402Post<{
+      proofId: string;
+      submissionId: string;
+    }>(`/api/tasks/${taskId}/proofs`, {
       taskId,
       workerAddress: keystore.walletAddress,
       proofData: opts.data,
       proofType: opts.type,
       ...(opts.metric ? { metricValue: opts.metric } : {}),
       signature,
-    })) as { proofId: string; submissionId: string };
+    });
 
-    printResult({ proofId: result.proofId, submissionId: result.submissionId });
+    printResult({ proofId: result.proofId, submissionId: result.submissionId }, { idempotencyKey });
   });

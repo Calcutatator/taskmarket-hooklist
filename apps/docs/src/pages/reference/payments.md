@@ -24,6 +24,7 @@ Task creation costs the escrowed reward. Every other route in this table costs 0
 | `POST /api/tasks/{taskId}/bids` | Submit an English or reverse-English bid. |
 | `POST /api/tasks/{taskId}/bids/accept` | Accept a Dutch or reverse-Dutch clock price. |
 | `POST /api/tasks/{taskId}/cancel` | Cancel an eligible open task. |
+| `POST /api/tasks/{taskId}/evaluator` | Assign an evaluator to an open, unclaimed task that has no evaluator yet. |
 | `POST /api/tasks/{taskId}/reject-submission` | Reject one bounty or benchmark worker. |
 | `POST /api/tasks/{taskId}/update` | Update an eligible open task; charge is `0.001 USDC + positive reward delta`. |
 | `POST /api/tasks/{taskId}/pitches` | Submit a pitch. |
@@ -40,12 +41,12 @@ Task creation costs the escrowed reward. Every other route in this table costs 0
 
 These operations do not require X402:
 
-- claim a claim-mode task;
-- upload and submit artifacts;
-- select the deterministic lowest auction bidder after the deadline;
-- forfeit an expired claim with the requester's EIP-191 signature;
-- finalize a verdict after the appeal deadline;
-- publish a key with device credentials.
+* claim a claim-mode task;
+* upload and submit artifacts;
+* select the deterministic lowest auction bidder after the deadline;
+* forfeit an expired claim with the requester's EIP-191 signature;
+* finalize a verdict after the appeal deadline;
+* publish a key with device credentials.
 
 Free does not mean permissionless. The router and contract still enforce the wallet, signature, role, state, and deadline.
 
@@ -53,13 +54,13 @@ Free does not mean permissionless. The router and contract still enforce the wal
 
 Before a paid request, state:
 
-- task ID and mode;
-- Base network;
-- acting wallet;
-- requested operation;
-- X402 charge;
-- escrow, bid, award, refund, or payout amount affected;
-- selected worker or submission when relevant.
+* task ID and mode;
+* Base network;
+* acting wallet;
+* requested operation;
+* X402 charge;
+* escrow, bid, award, refund, or payout amount affected;
+* selected worker or submission when relevant.
 
 Obtain explicit user approval for that exact action.
 

@@ -9,6 +9,7 @@ import {
   ImageIcon,
   Play,
   VideoIcon,
+  X,
 } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
@@ -54,9 +55,11 @@ type PreviewTriggerState = {
 };
 
 type ArtifactPreviewTriggerProps = Props & {
+  autoOpen?: boolean;
   children: (state: PreviewTriggerState) => ReactNode;
   initialPreviewExpiresAt?: string | null;
   initialPreviewUrl?: string | null;
+  onPreviewOpenChange?: (open: boolean) => void;
 };
 
 function formatBytes(value: number) {
@@ -226,12 +229,14 @@ function TextPreview({
 function ArtifactPreviewContent({
   artifact,
   fill = false,
+  onRetry,
   previewExpiresAt,
   previewUrl,
   showHtmlWarning = true,
 }: {
   artifact: ArtifactResponse;
   fill?: boolean;
+  onRetry?: () => Promise<unknown> | unknown;
   previewExpiresAt: string | null;
   previewUrl: string | null;
   showHtmlWarning?: boolean;
@@ -272,6 +277,7 @@ function ArtifactPreviewContent({
             : undefined
         }
         previewUrl={previewUrl}
+        onRetry={onRetry}
         showWarning={showHtmlWarning}
       />
     );
@@ -373,6 +379,7 @@ function DesktopArtifactDialog({
         ) : (
           <ArtifactPreviewContent
             artifact={artifact}
+            onRetry={() => ensurePreviewUrl(true)}
             previewExpiresAt={previewExpiresAt}
             previewUrl={previewUrl}
           />
@@ -404,7 +411,6 @@ function MobileArtifactSheet({
   previewUrl,
 }: ArtifactPreviewSurfaceProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const descriptionId = 'mobile-artifact-preview-description';
 
   return (
     <Drawer onOpenChange={onOpenChange} open={open}>
@@ -413,13 +419,10 @@ function MobileArtifactSheet({
           class+attribute selector that outranks a plain `max-h-[*]` on specificity.
           Matching the prefix keeps specificity equal so tailwind-merge can drop the
           default and let this height win. */}
-      <DrawerContent
-        aria-describedby={descriptionId}
-        className="data-[vaul-drawer-direction=bottom]:h-[92dvh] data-[vaul-drawer-direction=bottom]:max-h-[92dvh]"
-      >
+      <DrawerContent className="data-[vaul-drawer-direction=bottom]:h-[92dvh] data-[vaul-drawer-direction=bottom]:max-h-[92dvh]">
         <DrawerHeader className="sr-only">
           <DrawerTitle>{artifact.fileName}</DrawerTitle>
-          <DrawerDescription id={descriptionId}>
+          <DrawerDescription>
             {artifact.mimeType} / {formatBytes(artifact.sizeBytes)}
           </DrawerDescription>
         </DrawerHeader>
@@ -429,7 +432,18 @@ function MobileArtifactSheet({
           data-testid="mobile-artifact-preview-topbar"
         >
           <span className="text-sm font-medium text-foreground">Preview</span>
-          {interactiveHtml ? <UntrustedHtmlWarningChip /> : null}
+          <div className="flex items-center gap-2">
+            {interactiveHtml ? <UntrustedHtmlWarningChip /> : null}
+            <Button
+              aria-label="Close artifact preview"
+              onClick={() => onOpenChange(false)}
+              size="icon-sm"
+              type="button"
+              variant="ghost"
+            >
+              <X aria-hidden="true" />
+            </Button>
+          </div>
         </div>
 
         <div className="grid min-h-0 flex-1 overflow-hidden p-3">
@@ -449,6 +463,7 @@ function MobileArtifactSheet({
             <ArtifactPreviewContent
               artifact={artifact}
               fill
+              onRetry={() => ensurePreviewUrl(true)}
               previewExpiresAt={previewExpiresAt}
               previewUrl={previewUrl}
               showHtmlWarning={false}
@@ -485,12 +500,15 @@ function MobileArtifactSheet({
 
 export function ArtifactPreviewTrigger({
   artifact,
+  autoOpen = false,
   children,
   initialPreviewExpiresAt,
   initialPreviewUrl,
+  onPreviewOpenChange,
   taskId,
 }: ArtifactPreviewTriggerProps) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen);
+  const [clientReady, setClientReady] = useState(false);
   const isMobile = useIsMobile();
   const interactiveHtml = isInteractiveHtmlArtifact(artifact);
   const { ensurePreviewUrl, error, loading, previewExpiresAt, previewUrl } = useArtifactPreviewUrl(
@@ -503,6 +521,32 @@ export function ArtifactPreviewTrigger({
   );
   const Surface = isMobile ? MobileArtifactSheet : DesktopArtifactDialog;
 
+  useEffect(() => {
+    setClientReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (autoOpen) {
+      setOpen(true);
+    }
+  }, [autoOpen]);
+
+  useEffect(() => {
+    if (!autoOpen || previewUrl || loading || error) {
+      return;
+    }
+
+    void ensurePreviewUrl();
+  }, [autoOpen, ensurePreviewUrl, error, loading, previewUrl]);
+
+  const setPreviewOpen = useCallback(
+    (nextOpen: boolean) => {
+      setOpen(nextOpen);
+      onPreviewOpenChange?.(nextOpen);
+    },
+    [onPreviewOpenChange]
+  );
+
   return (
     <>
       {children({
@@ -510,24 +554,26 @@ export function ArtifactPreviewTrigger({
         loading,
         openPreview: () => {
           if (previewUrl) {
-            setOpen(true);
+            setPreviewOpen(true);
             return;
           }
 
-          void ensurePreviewUrl().finally(() => setOpen(true));
+          void ensurePreviewUrl().finally(() => setPreviewOpen(true));
         },
       })}
-      <Surface
-        artifact={artifact}
-        ensurePreviewUrl={ensurePreviewUrl}
-        error={error}
-        interactiveHtml={interactiveHtml}
-        loading={loading}
-        onOpenChange={setOpen}
-        open={open}
-        previewExpiresAt={previewExpiresAt}
-        previewUrl={previewUrl}
-      />
+      {!autoOpen || clientReady ? (
+        <Surface
+          artifact={artifact}
+          ensurePreviewUrl={ensurePreviewUrl}
+          error={error}
+          interactiveHtml={interactiveHtml}
+          loading={loading}
+          onOpenChange={setPreviewOpen}
+          open={open}
+          previewExpiresAt={previewExpiresAt}
+          previewUrl={previewUrl}
+        />
+      ) : null}
     </>
   );
 }

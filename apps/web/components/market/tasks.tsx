@@ -30,6 +30,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { AssignEvaluatorAction } from '@/components/market/actions/assign-evaluator-action';
 import { SubmissionPayoutAction } from '@/components/market/actions/submission-payout-action';
 import {
   ArtifactMediaHero,
@@ -44,8 +45,11 @@ import { CountdownTimer } from '@/components/market/motion/countdown-timer';
 import { RelativeTime } from '@/components/market/motion/relative-time';
 import { LiveStatusBanner } from './tasks/live-status-banner';
 import { PublishedCelebration } from '@/components/market/tasks/published-celebration';
+import { PublishedHtmlResult } from '@/components/market/published-html-result';
 import { TaskActionsPanel } from '@/components/market/task-actions-panel';
+import { TaskEvaluationTerms } from '@/components/market/task-evaluation-terms';
 import { TaskParticipationModule } from '@/components/market/task-participation-module';
+import { TaskDescriptionDisclosure } from '@/components/market/task-description-disclosure';
 import { TaskReviewStatus } from '@/components/market/task-review-status';
 import { TaskVisibilityBadge } from '@/components/market/unlisted-badge';
 import { Badge } from '@/components/ui/badge';
@@ -97,10 +101,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import type { MarketStats } from '@/lib/api/server';
+import type { MarketStats, TaskEvaluationIdentities } from '@/lib/api/server';
 import { explorerTxUrl } from '@/lib/explorer';
-import { compactAddress, formatDateTime, formatUsdcUnits } from '@/lib/format';
+import { compactAddress, formatBps, formatDateTime, formatUsdcUnits } from '@/lib/format';
 import { MODE_TOOLTIPS } from '@/lib/market/status-config';
+import { selectPublishedHtmlArtifacts } from '@/lib/market/published-html';
 import {
   TASK_TAG_BADGE_VARIANT,
   resolvedAwardCount,
@@ -286,14 +291,6 @@ function labelize(value?: string | null) {
   return value ? value.replaceAll('_', ' ') : 'standard';
 }
 
-function formatBps(value?: number | null) {
-  if (!value) {
-    return 'None';
-  }
-
-  return `${(value / 100).toFixed(2)}%`;
-}
-
 export function countLabel(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
@@ -316,7 +313,7 @@ function taskDeadlineLabel(task: TaskDetailResponse | TaskResponse) {
 
 // For auctions the operative figure is the live clock price (dutch) or lowest bid
 // (english), not the static reward. Fall back to reward when the live value is absent.
-function taskDisplayReward(task: TaskDetailResponse | TaskResponse) {
+export function taskDisplayReward(task: TaskDetailResponse | TaskResponse) {
   if (task.mode === 'auction') {
     if (
       (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') &&
@@ -2690,12 +2687,13 @@ function TaskSummaryRail({
 
         <SummaryGroup title="Task type">
           <div className="flex flex-wrap gap-2">
+            <Link href={modeHref}>
+              <Badge className="hover:opacity-80" variant={taskModeBadgeVariant(task.mode)}>
+                {task.mode}
+              </Badge>
+            </Link>
             <InfoTooltip label={MODE_TOOLTIPS[task.mode]}>
-              <Link href={modeHref}>
-                <Badge className="hover:opacity-80" variant={taskModeBadgeVariant(task.mode)}>
-                  {task.mode}
-                </Badge>
-              </Link>
+              <span className="sr-only">About {task.mode} tasks</span>
             </InfoTooltip>
             {task.auctionType ? (
               <Badge variant="terminal">{labelize(task.auctionType)} auction</Badge>
@@ -2795,12 +2793,20 @@ function TaskBrief({ body }: { body: string }) {
 
 export function TaskDetailPanel({
   backHref = '/dashboard/tasks',
+  evaluationIdentities,
+  htmlSubmissions = [],
+  initialArtifactId,
   marketStats,
   modeData,
   profileBasePath = '/dashboard/agents',
   task,
 }: {
   backHref?: string;
+  // Resolved by the route, not here: this panel stays synchronous so it keeps rendering under
+  // a plain client render in component tests.
+  evaluationIdentities?: TaskEvaluationIdentities | null;
+  htmlSubmissions?: SubmissionResponse[];
+  initialArtifactId?: string;
   marketStats?: MarketStats | null;
   modeData?: TaskModeData;
   profileBasePath?: string;
@@ -2861,6 +2867,17 @@ export function TaskDetailPanel({
   const detailTags = taskDetailTags(task);
   const bonusSummary = dreamsBonusSummary(task);
   const dashboardDetail = backHref.startsWith('/dashboard');
+  const publishedHtmlArtifacts =
+    task.taskVisibility === 'private'
+      ? []
+      : selectPublishedHtmlArtifacts(htmlSubmissions, task.primaryAward?.workerAddress);
+  const requestedHtmlArtifact = initialArtifactId
+    ? publishedHtmlArtifacts.find((entry) => entry.artifact.id === initialArtifactId)
+    : undefined;
+  const publishedHtmlArtifact = requestedHtmlArtifact ?? publishedHtmlArtifacts[0];
+  const publishedHtmlHref = publishedHtmlArtifact
+    ? `/tasks/${encodeURIComponent(task.id)}?artifact=${encodeURIComponent(publishedHtmlArtifact.artifact.id)}`
+    : null;
   const participationModule = participationAction ? (
     <TaskParticipationModule action={participationAction} task={task} />
   ) : null;
@@ -2921,6 +2938,42 @@ export function TaskDetailPanel({
         </section>
         <LiveStatusBanner marketStats={marketStats} modeData={modeData} task={task} />
         <SettlementPayoutsPanel profileBasePath={profileBasePath} task={task} />
+        {descriptionBody || detailTags.length > 0 || publishedHtmlArtifact ? (
+          <section
+            className="grid gap-4 border-t border-border/58 pt-5"
+            data-testid="task-description-surface"
+          >
+            {descriptionBody || publishedHtmlArtifact ? (
+              <TaskDescriptionDisclosure
+                leadingContent={
+                  publishedHtmlArtifact && publishedHtmlHref ? (
+                    <PublishedHtmlResult
+                      artifact={publishedHtmlArtifact.artifact}
+                      artifactCount={publishedHtmlArtifacts.length}
+                      href={publishedHtmlHref}
+                      initiallyOpen={Boolean(requestedHtmlArtifact)}
+                      taskId={task.id}
+                      taskTitle={title}
+                    />
+                  ) : undefined
+                }
+              >
+                {descriptionBody ? <TaskBrief body={descriptionBody} /> : undefined}
+              </TaskDescriptionDisclosure>
+            ) : null}
+            {detailTags.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {detailTags.map((tag) => (
+                  <Link href={taskFiltersHref(listBase, { tags: tag }) as Route} key={tag}>
+                    <Badge className="hover:opacity-80" variant={TASK_TAG_BADGE_VARIANT}>
+                      {tag}
+                    </Badge>
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
         {!submissionReviewEligible && participationModule ? (
           <div className="order-1 lg:order-4">{participationModule}</div>
         ) : null}
@@ -2950,25 +3003,16 @@ export function TaskDetailPanel({
           </div>
         ) : null}
         <WorkRequirementsPanel className="order-2 lg:order-1" task={task} />
-        {descriptionBody || detailTags.length > 0 ? (
-          <section className="order-2 grid gap-5 border-t border-border/58 pt-5 lg:order-1">
-            <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
-              Details
-            </h2>
-            {descriptionBody ? <TaskBrief body={descriptionBody} /> : null}
-            {detailTags.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {detailTags.map((tag) => (
-                  <Link href={taskFiltersHref(listBase, { tags: tag }) as Route} key={tag}>
-                    <Badge className="hover:opacity-80" variant={TASK_TAG_BADGE_VARIANT}>
-                      {tag}
-                    </Badge>
-                  </Link>
-                ))}
-              </div>
-            ) : null}
-          </section>
-        ) : null}
+        {/* Mutually exclusive by construction: the card renders only once terms exist, the
+            action only while none do and the connected viewer can still add them. */}
+        <TaskEvaluationTerms
+          className="order-2 lg:order-1"
+          disputeResolverAgentId={evaluationIdentities?.disputeResolverAgentId}
+          evaluatorAgentId={evaluationIdentities?.evaluatorAgentId}
+          profileBasePath={profileBasePath}
+          task={task}
+        />
+        <AssignEvaluatorAction className="order-2 lg:order-1" task={task} />
         {cancelActions.length > 0 ? (
           <div className="order-3">
             <TaskActionsPanel

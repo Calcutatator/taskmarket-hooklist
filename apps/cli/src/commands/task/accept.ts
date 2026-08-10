@@ -15,7 +15,6 @@ export const acceptCmd = new Command('accept')
     const task = (await apiGet(`/api/tasks/${taskId}`)) as TaskDetail | null;
     if (!task) {
       printError('Task not found');
-      process.exit(1);
       return;
     }
 
@@ -36,13 +35,12 @@ export const acceptCmd = new Command('accept')
             ? 'Pitch window has closed. Use taskmarket task select-worker to pick from received pitches, or cancel the task.'
             : 'Accept is not available for this task in its current state.'
       );
-      process.exit(1);
       return;
     }
 
-    await x402Post(`/api/tasks/${taskId}/accept`, {
+    const { idempotencyKey } = await x402Post(`/api/tasks/${taskId}/accept`, {
       taskId,
       worker: opts.worker,
     });
-    printResult({ accepted: true });
+    printResult({ accepted: true }, { idempotencyKey });
   });

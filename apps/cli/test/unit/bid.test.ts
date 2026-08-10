@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 
 vi.mock('../../src/lib/x402.js', () => ({
   x402Post: vi.fn(),
@@ -6,6 +7,9 @@ vi.mock('../../src/lib/x402.js', () => ({
 
 vi.mock('../../src/lib/output.js', () => ({
   printResult: vi.fn(),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 import { bidCmd } from '../../src/commands/task/bid.js';
@@ -18,7 +22,7 @@ describe('task bid command', () => {
   });
 
   it('converts USDC price to base units and posts to bids endpoint', async () => {
-    vi.mocked(x402Post).mockResolvedValue({ bidId: 'bid-1' });
+    vi.mocked(x402Post).mockResolvedValue(writeOutcome({ bidId: 'bid-1' }));
 
     await bidCmd.parseAsync(['node', 'bid', '0xtask', '--price', '3'], { from: 'node' });
 
@@ -26,11 +30,11 @@ describe('task bid command', () => {
       taskId: '0xtask',
       price: '3000000',
     });
-    expect(printResult).toHaveBeenCalledWith({ bidId: 'bid-1' });
+    expect(printResult).toHaveBeenCalledWith({ bidId: 'bid-1' }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('handles decimal prices', async () => {
-    vi.mocked(x402Post).mockResolvedValue({ bidId: 'bid-2' });
+    vi.mocked(x402Post).mockResolvedValue(writeOutcome({ bidId: 'bid-2' }));
 
     await bidCmd.parseAsync(['node', 'bid', '0xtask', '--price', '1.5'], { from: 'node' });
 

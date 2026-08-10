@@ -24,6 +24,7 @@
 import type { PendingAction } from '@taskmarket/shared';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { useEffect, type ReactNode } from 'react';
+import { expect, within } from 'storybook/test';
 import { base, baseSepolia } from 'viem/chains';
 import { createConfig, http, useAccount, useConnect, WagmiProvider } from 'wagmi';
 import { mock } from 'wagmi/connectors';
@@ -59,7 +60,48 @@ function ActionsCatalog() {
   return <div>Taskmarket task actions</div>;
 }
 
+const dreamsResponses = {
+  'wallet.dreamsBalance': { claimableBaseUnits: (500n * 10n ** 18n).toString() },
+  'wallet.exchangeRate': {
+    dreamsPerUsdc: (10n * 10n ** 18n).toString(),
+    workerSplitBps: 8_000,
+  },
+  'wallet.getWithdrawalAddress': { withdrawalAddress: null },
+} as const;
+
+function installActionsRequestMock() {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (input, init) => {
+    const requestUrl =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const procedures = new URL(
+      requestUrl,
+      globalThis.location?.origin ?? 'http://localhost'
+    ).pathname
+      .replace(/^\/trpc\//, '')
+      .split(',');
+    const responses = procedures.map(
+      (procedure) => dreamsResponses[procedure as keyof typeof dreamsResponses]
+    );
+
+    if (responses.every(Boolean)) {
+      return new Response(JSON.stringify(responses.map((data) => ({ result: { data } }))), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 200,
+      });
+    }
+
+    return originalFetch(input, init);
+  };
+
+  return () => {
+    globalThis.fetch = originalFetch;
+  };
+}
+
 const meta = {
+  beforeEach: installActionsRequestMock,
   component: ActionsCatalog,
   title: 'Product/Task actions',
 } satisfies Meta<typeof ActionsCatalog>;
@@ -201,6 +243,12 @@ export const RequesterActionVariants: Story = {
       </div>
     </ConnectedRequester>
   ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(await canvas.findByText('DREAMS rewards')).toBeVisible();
+    await expect(await canvas.findByText('500 DREAMS')).toBeVisible();
+  },
 };
 
 export const WorkerActionVariants: Story = {

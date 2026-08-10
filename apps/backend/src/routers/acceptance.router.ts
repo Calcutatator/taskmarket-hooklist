@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
-import { tasks, taskAwards, agents, feedbacks, submissions } from '../db/schema';
+import { tasks, taskAwards, agents, submissions } from '../db/schema';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   contractAcceptSubmission,
@@ -9,7 +9,6 @@ import {
   contractRateTask,
 } from '../services/contract';
 import { getServerConfig } from '../config/env';
-import { logger } from '../lib/logger';
 import { randomUUID } from 'crypto';
 import { keccak256, toBytes } from 'viem';
 import {
@@ -17,7 +16,14 @@ import {
   AcceptSubmissionsInputSchema,
   RateInputSchema,
 } from '../schemas/acceptance.schemas';
-import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
+import { settledPaymentReference } from '../middleware/x402';
+import { runRelayedIntent } from '../services/relayed-intent-request';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
+import type {
+  AcceptanceAcceptIntentPayload,
+  AcceptanceAcceptSubmissionsIntentPayload,
+  AcceptanceRateIntentPayload,
+} from '../services/intents/acceptance-intents';
 
 function sortKeys(obj: unknown): unknown {
   if (Array.isArray(obj)) return obj.map(sortKeys);
@@ -35,6 +41,7 @@ export const acceptanceRouter = router({
   accept: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/accept',
         tags: ['Tasks'],
@@ -102,26 +109,9 @@ export const acceptanceRouter = router({
         ? BigInt(requesterAgentRow[0].agentId)
         : 0n;
 
-      try {
-        await contractAcceptSubmission(
-          input.taskId as `0x${string}`,
-          payer as `0x${string}`,
-          input.worker as `0x${string}`,
-          deliverable,
-          requesterOnChainId,
-          task.contractAddress
-        );
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'task_accept',
-          error,
-        });
-      }
-
-      // Detect self-award: same address OR same ERC-8004 agentId (sybil case).
+      // Detect self-award: same address OR same ERC-8004 agentId (sybil case). Resolved
+      // before the chain call so the intent's payload carries everything its completion
+      // needs, whether that runs here or from the reconciler hours later (ADR-0045).
       const workerAgentRow = await ctx.db
         .select({ agentId: agents.agentId })
         .from(agents)
@@ -134,17 +124,35 @@ export const acceptanceRouter = router({
           workerOnChainId != null &&
           requesterAgentRow[0].agentId === workerOnChainId);
 
-      if (isSelfAward) {
-        try {
-          await ctx.db.update(tasks).set({ selfAward: true }).where(eq(tasks.id, input.taskId));
-        } catch (err) {
-          // On-chain acceptance already succeeded; DB flag is best-effort.
-          logger.warn('acceptSubmission: failed to persist selfAward flag', {
-            err,
-            taskId: input.taskId,
-          });
-        }
-      }
+      await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'acceptance.accept',
+        payer,
+        payment: settledPaymentReference(ctx.res),
+        // The deliverable hash is recorded, not left to be re-resolved later: the query above
+        // picks the newest unrejected submission, and on a bounty that is a different worker's
+        // work by the time a rebroadcast runs. What the requester accepted is a fact about
+        // this request, so it belongs on the row (ADR-0050).
+        payload: {
+          contractAddress: task.contractAddress,
+          deliverableHash: deliverable,
+          isSelfAward,
+          requester: payer,
+          requesterAgentId: requesterAgentRow[0]?.agentId ?? null,
+          taskId: input.taskId,
+          worker: input.worker,
+        } satisfies AcceptanceAcceptIntentPayload,
+        send: () =>
+          contractAcceptSubmission(
+            input.taskId as `0x${string}`,
+            payer as `0x${string}`,
+            input.worker as `0x${string}`,
+            deliverable,
+            requesterOnChainId,
+            task.contractAddress
+          ),
+      });
 
       return { success: true };
     }),
@@ -152,6 +160,7 @@ export const acceptanceRouter = router({
   acceptSubmissions: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/accept-submissions',
         tags: ['Tasks'],
@@ -238,25 +247,31 @@ export const acceptanceRouter = router({
         ? BigInt(requesterAgentRow[0].agentId)
         : 0n;
 
-      try {
-        await contractAcceptSubmissions(
-          input.taskId as `0x${string}`,
-          payer as `0x${string}`,
-          workers,
-          shares,
+      await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'acceptance.acceptSubmissions',
+        payer,
+        payment: settledPaymentReference(ctx.res),
+        payload: {
+          contractAddress: task.contractAddress,
           deliverables,
-          requesterAgentId,
-          task.contractAddress
-        );
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'task_accept_submissions',
-          error,
-        });
-      }
+          requester: payer,
+          requesterAgentId: requesterAgentRow[0]?.agentId ?? null,
+          taskId: input.taskId,
+          winners: input.winners,
+        } satisfies AcceptanceAcceptSubmissionsIntentPayload,
+        send: () =>
+          contractAcceptSubmissions(
+            input.taskId as `0x${string}`,
+            payer as `0x${string}`,
+            workers,
+            shares,
+            deliverables,
+            requesterAgentId,
+            task.contractAddress
+          ),
+      });
 
       return { success: true };
     }),
@@ -264,6 +279,7 @@ export const acceptanceRouter = router({
   rate: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/rate',
         tags: ['Tasks'],
@@ -336,6 +352,12 @@ export const acceptanceRouter = router({
 
       const raterAgentId = task.requesterAgentId ? BigInt(task.requesterAgentId) : 0n;
 
+      // `feedbackId` seeds `feedbackURI`, and the `createdAt` clock below seeds `fileContent`
+      // and therefore `feedbackHash`, so four payload fields move between two attempts of one
+      // request. Under ADR-0061 that reads as a different write -- and it stays unreachable
+      // only because this is a paid route, where the pre-settlement check in x402Middleware
+      // refuses a repeated key before the handler runs. Making this write free means deriving
+      // the id and pinning the timestamp first, or every retry of a rating is refused.
       const feedbackId = randomUUID();
       const feedbackURI = `${config.BACKEND_URL}/api/feedback/${feedbackId}`;
 
@@ -366,62 +388,41 @@ export const acceptanceRouter = router({
       const fileContent = JSON.stringify(feedbackData, null, 2);
       const feedbackHash = keccak256(toBytes(fileContent)) as `0x${string}`;
 
-      let ratingTxHash: `0x${string}`;
-      let ratingBlockNumber: number;
-      try {
-        ({ hash: ratingTxHash, blockNumber: ratingBlockNumber } = await contractRateTask(
-          input.taskId as `0x${string}`,
-          payer as `0x${string}`,
-          input.worker as `0x${string}`,
-          input.rating,
-          workerAgentId,
-          raterAgentId,
-          feedbackURI,
+      await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'acceptance.rate',
+        payer,
+        payment: settledPaymentReference(ctx.res),
+        payload: {
+          contractAddress: task.contractAddress,
           feedbackHash,
-          task.contractAddress
-        ));
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'task_rate',
-          error,
-        });
-      }
-
-      await ctx.db.insert(feedbacks).values({
-        id: feedbackId,
-        taskId: input.taskId,
-        workerAddress: input.worker.toLowerCase(),
-        workerAgentId: workerAgentResult[0]?.agentId ?? null,
-        requesterAddress: payer.toLowerCase(),
-        requesterAgentId: task.requesterAgentId ?? null,
-        rating: input.rating,
-        feedbackText: input.feedbackText ?? null,
-        fileContent,
-        ratingTxHash,
-        ratingBlockNumber,
+          feedbackId,
+          feedbackText: input.feedbackText ?? null,
+          feedbackURI,
+          fileContent,
+          rating: input.rating,
+          requesterAddress: payer.toLowerCase(),
+          requesterAgentId: task.requesterAgentId ?? null,
+          taskId: input.taskId,
+          worker: input.worker,
+          workerAgentId: workerAgentResult[0]?.agentId ?? null,
+        } satisfies AcceptanceRateIntentPayload,
+        send: async () =>
+          (
+            await contractRateTask(
+              input.taskId as `0x${string}`,
+              payer as `0x${string}`,
+              input.worker as `0x${string}`,
+              input.rating,
+              workerAgentId,
+              raterAgentId,
+              feedbackURI,
+              feedbackHash,
+              task.contractAddress
+            )
+          ).hash,
       });
-
-      await ctx.db
-        .update(taskAwards)
-        .set({ rating: input.rating })
-        .where(
-          and(
-            eq(taskAwards.taskId, input.taskId),
-            sql`lower(${taskAwards.workerAddress}) = lower(${input.worker})`
-          )
-        );
-
-      await ctx.db
-        .update(agents)
-        .set({
-          ratedTasks: sql`${agents.ratedTasks} + 1`,
-          totalStars: sql`${agents.totalStars} + ${input.rating}`,
-          updatedAt: new Date(),
-        })
-        .where(sql`lower(${agents.address}) = lower(${input.worker})`);
 
       return { success: true, feedbackId };
     }),

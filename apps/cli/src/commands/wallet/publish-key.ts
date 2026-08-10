@@ -13,17 +13,20 @@ export const publishKeyCommand = new Command('publish-key')
       keystore = await loadKeystore();
     } catch {
       printError('No keystore found. Run `taskmarket init` first.');
+      return;
     }
 
     const dek = await fetchDeviceKey(keystore.deviceId, keystore.apiToken);
     const privateKey = decryptPrivateKey(dek, keystore.encryptedKey);
     const publicKey = deriveCompressedPublicKey(privateKey);
 
-    const result = (await apiPost('/trpc/agents.setPublicKey', {
+    const { data: result, idempotencyKey } = await apiPost<{
+      result: { data: { publicKey: string } };
+    }>('/trpc/agents.setPublicKey', {
       deviceId: keystore.deviceId,
       apiToken: keystore.apiToken,
       publicKey,
-    })) as { result: { data: { publicKey: string } } };
+    });
 
-    printResult({ publicKey: result.result.data.publicKey });
+    printResult({ publicKey: result.result.data.publicKey }, { idempotencyKey });
   });

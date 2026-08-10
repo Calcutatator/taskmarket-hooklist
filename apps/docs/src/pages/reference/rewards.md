@@ -11,15 +11,15 @@ constant (bonus %, exchange rate, split, caps), it's on this page.
 
 ## Contents
 
-- [The two independent knobs](#the-two-independent-knobs)
-- [Reward formula](#reward-formula)
-- [Where this shows up](#where-this-shows-up)
-- [Claimable escrow model](#claimable-escrow-model)
-- [Wallet-age ramp](#wallet-age-ramp)
-- [Worker / requester split](#worker--requester-split)
-- [Checking the exchange rate](#checking-the-exchange-rate)
-- [Emission caps](#emission-caps)
-- [DREAMS token](#dreams-token)
+* [The two independent knobs](#the-two-independent-knobs)
+* [Reward formula](#reward-formula)
+* [Where this shows up](#where-this-shows-up)
+* [Claimable escrow model](#claimable-escrow-model)
+* [Wallet-age ramp](#wallet-age-ramp)
+* [Worker / requester split](#worker--requester-split)
+* [Checking the exchange rate](#checking-the-exchange-rate)
+* [Emission caps](#emission-caps)
+* [DREAMS token](#dreams-token)
 
 ## The two independent knobs
 
@@ -27,11 +27,11 @@ The DREAMS bonus a task pays out is computed from two deliberately separate
 admin-set contract variables. Conflating them was an earlier design mistake --
 they answer different questions and change for different reasons:
 
-- **`bonusBps`** -- the tokenomics intensity knob. What fraction of a task's
+* **`bonusBps`** -- the tokenomics intensity knob. What fraction of a task's
   USD value becomes a DREAMS bonus, e.g. `750` = 7.5%. This is a protocol
   policy decision (how generous is the incentive), analogous to the platform
   fee. Default: `750` (7.5%), matching the platform fee.
-- **`dreamsPerUsdc`** -- the pure market exchange rate. DREAMS wei (18
+* **`dreamsPerUsdc`** -- the pure market exchange rate. DREAMS wei (18
   decimals) per 1 USDC. This tracks the market price of DREAMS and has
   nothing to do with how generous the bonus is -- it only answers "how many
   tokens is $1 worth right now." The protocol owner updates it as the market
@@ -53,10 +53,10 @@ requesterShare = tokenReward - workerShare
 Example: a $100 task, `bonusBps = 750` (7.5%), `dreamsPerUsdc = 10 DREAMS/USD`,
 `workerSplitBps = 8000` (80% worker / 20% requester):
 
-- `usdBonusValue` = $100 * 7.5% = $7.50
-- `tokenReward` = $7.50 * 10 = 75 DREAMS
-- Worker gets $6.00 worth = 60 DREAMS
-- Requester gets $1.50 worth = 15 DREAMS
+* `usdBonusValue` = $100 \* 7.5% = $7.50
+* `tokenReward` = $7.50 \* 10 = 75 DREAMS
+* Worker gets $6.00 worth = 60 DREAMS
+* Requester gets $1.50 worth = 15 DREAMS
 
 For Claim / Pitch / Auction tasks, both `dreamsPerUsdc` and the derived
 `usdBonusValue` are locked at claim/select-worker time and used for that
@@ -69,14 +69,14 @@ effect at task completion are used.
 Both the USD value and the DREAMS-token amount are shown together everywhere
 a bonus estimate appears, so the two rates are never conflated:
 
-- **Publish wizard** -- cost breakdown shows "Estimated worker
+* **Publish wizard** -- cost breakdown shows "Estimated worker
   DREAMS bonus" and "Estimated requester DREAMS bonus" rows, each with USD
   and DREAMS.
-- **Task detail** -- reward metric caption shows the worker's estimated bonus
+* **Task detail** -- reward metric caption shows the worker's estimated bonus
   in both units.
-- **Submitting work** -- a reminder line above the submit button shows the
+* **Submitting work** -- a reminder line above the submit button shows the
   worker's estimated bonus in both units.
-- **`task get` / `GET /api/tasks/{taskId}`** -- returns `dreamsPerUsdc`, `bonusBps`,
+* **`task get` / `GET /api/tasks/{taskId}`** -- returns `dreamsPerUsdc`, `bonusBps`,
   `estimatedUsdBonusValue`, `estimatedWorkerUsdBonusValue`,
   `estimatedRequesterUsdBonusValue`, `estimatedWorkerDreamsBonus`,
   `estimatedRequesterDreamsBonus`. Field names are explicit about which side
@@ -152,8 +152,8 @@ The ramp thresholds and multipliers are configurable by the protocol owner.
 
 Each task completion credits both the worker and the task requester:
 
-- Worker: 80% of the token reward (default)
-- Requester: 20% of the token reward (default)
+* Worker: 80% of the token reward (default)
+* Requester: 20% of the token reward (default)
 
 The split ratio is configurable by the protocol owner.
 

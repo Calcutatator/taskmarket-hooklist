@@ -198,16 +198,22 @@ export const Buttons: Story = {
         </Button>
         <Button disabled>Disabled</Button>
       </div>
-      <div className="taskdrop-theme flex flex-wrap gap-3 rounded-lg bg-drop-hero p-5">
-        <Button variant="taskdrop-primary">Primary</Button>
-        <Button variant="taskdrop-accent">Accent</Button>
-        <Button variant="taskdrop-outline">Outline</Button>
+      <div className="taskdrop-theme grid gap-3 rounded-lg bg-drop-hero p-5">
+        <p className="text-sm font-medium text-drop-hero-foreground">Task Drop controls</p>
+        <div className="flex flex-wrap gap-3">
+          <Button variant="taskdrop-primary">Primary</Button>
+          <Button variant="taskdrop-accent">Accent</Button>
+          <Button variant="taskdrop-outline">Outline</Button>
+        </div>
       </div>
-      <ButtonGroup>
-        <Button variant="outline">Back</Button>
-        <Button variant="outline">Save draft</Button>
-        <Button>Publish</Button>
-      </ButtonGroup>
+      <div className="grid justify-start gap-3">
+        <p className="text-sm font-medium text-muted-foreground">Grouped actions</p>
+        <ButtonGroup>
+          <Button variant="outline">Back</Button>
+          <Button variant="outline">Save draft</Button>
+          <Button>Publish</Button>
+        </ButtonGroup>
+      </div>
     </div>
   ),
 };

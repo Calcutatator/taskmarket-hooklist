@@ -10,12 +10,12 @@ export const sendCommand = new Command('send')
   .requiredOption('--body <text>', 'Email body text')
   .action(async (opts: { to: string; subject: string; body: string }) => {
     const keystore = await loadKeystore();
-    const result = (await apiPost('/api/emails/send', {
+    const { data: result, idempotencyKey } = await apiPost<{ sent: boolean }>('/api/emails/send', {
       deviceId: keystore.deviceId,
       apiToken: keystore.apiToken,
       to: opts.to,
       subject: opts.subject,
       bodyText: opts.body,
-    })) as { sent: boolean };
-    printResult({ sent: result.sent });
+    });
+    printResult({ sent: result.sent }, { idempotencyKey });
   });

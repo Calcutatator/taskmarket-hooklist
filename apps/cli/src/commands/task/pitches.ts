@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { apiGet } from '../../lib/api.js';
-import { printError, printResult } from '../../lib/output.js';
+import { printResult, renderFailure } from '../../lib/output.js';
 import { signReadAuth } from '../../lib/read-auth.js';
 import { taskAccessGrantHeaders } from '../../lib/task-access-grants.js';
 
@@ -14,6 +14,6 @@ export const pitchesCmd = new Command('pitches')
       const headers = { ...(auth?.headers ?? {}), ...(await taskAccessGrantHeaders(taskId)) };
       printResult(await apiGet(`/api/tasks/${taskId}/pitches`, { headers }));
     } catch (err) {
-      printError(err instanceof Error ? err.message : String(err));
+      renderFailure(err);
     }
   });

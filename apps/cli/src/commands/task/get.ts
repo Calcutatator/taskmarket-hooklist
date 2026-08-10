@@ -30,6 +30,7 @@ export const getCmd = new Command('get')
         `Task not found: ${taskId} (or this is a private task you don't have access to -- ` +
           `if you have a password for it, run: taskmarket task unlock ${taskId} --password <password>)`
       );
+      return;
     }
     printResult(task);
   });

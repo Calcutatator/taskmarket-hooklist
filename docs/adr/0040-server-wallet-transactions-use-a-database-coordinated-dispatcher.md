@@ -17,7 +17,7 @@
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** Supersedes ADR-0019
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
+- **Amends / Amended-by:** Amended by ADR-0045; amended by ADR-0063; amended by ADR-0069; amended by ADR-0073
 - **Pending Amends / Amended-by:** —
 
 ## Context
@@ -118,7 +118,8 @@ excepting the reconciler's own replacement path.
 - Replacement transactions cost gas, and a chain-wide fee spike could cause repeated replacement
   attempts. The stuck threshold is deliberately conservative.
 - `ServerTransactionPendingError` is a new outcome callers must handle: a transaction that is
-  neither confirmed nor failed. Treating it as failure risks double-submitting an intent.
+  neither confirmed nor failed. Treating it as failure risks double-submitting an intent. ADR-0045 amends this
+  decision with the durable-intent mechanism that handles it.
 - The allocator can drift if the server wallet is ever used outside this dispatcher. The resync
   path recovers from drift upward, but not from a nonce consumed out of band mid-sequence.
 

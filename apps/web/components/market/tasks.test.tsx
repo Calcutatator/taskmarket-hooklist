@@ -57,6 +57,13 @@ vi.mock('@/lib/api/client', () => ({
 
 vi.mock('@/lib/use-read-auth-signature', () => ({
   useReadAuthSignature: () => false,
+  // Every paid action's `useInFlightWrite` asks for one, so the whole module must be stubbed.
+  useReadAuthSignatureState: () => ({
+    error: null,
+    ready: false,
+    requestSignature: () => {},
+    status: 'idle',
+  }),
 }));
 
 vi.mock('sonner', () => ({
@@ -992,23 +999,116 @@ describe('Task marketplace components', () => {
     expect(rail).toHaveClass('lg:pl-5');
   });
 
-  it('places task details directly below work requirements', () => {
+  it.each(['/dashboard/tasks', '/tasks'])(
+    'renders a collapsed description preview before submission review on the %s surface',
+    async (backHref) => {
+      const user = userEvent.setup();
+      render(
+        <TaskDetailPanel
+          backHref={backHref}
+          modeData={{
+            submissions: [
+              {
+                artifacts: [],
+                fileUrl: 'ipfs://deliverable',
+                id: 'sub-description-order',
+                signature: '0xsig',
+                submittedAt: new Date().toISOString(),
+                taskId: task.id,
+                workerAddress: '0x3333333333333333333333333333333333333333',
+              },
+            ],
+          }}
+          task={{
+            ...taskDetail,
+            auctionBidCount: null,
+            auctionType: null,
+            description:
+              'Summarize protocol feedback\nInclude a concise findings report with direct references, implementation notes, edge cases, and enough supporting detail to make the recommendation actionable without additional research.',
+            mode: 'bounty',
+            pendingActions: [
+              {
+                action: 'accept',
+                command: `taskmarket task accept ${task.id} --worker 0x3333333333333333333333333333333333333333`,
+                role: 'requester',
+              },
+            ],
+            status: 'pending_approval',
+            submissionCount: 1,
+            tags: ['research'],
+          }}
+        />
+      );
+
+      const description = screen.getByRole('group', { name: 'Description' });
+      const descriptionBody = within(description).getByTestId('task-description-body');
+      const activity = document.getElementById('task-activity');
+      const tagLink = screen.getByRole('link', { name: 'research' });
+      const toggle = within(description).getByRole('button', {
+        name: 'Show full description',
+      });
+
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(descriptionBody).toHaveAttribute('data-collapsed', 'true');
+      expect(descriptionBody).toHaveClass('max-h-[200px]', 'overflow-hidden');
+      expect(within(description).getByTestId('task-description-fade')).toBeVisible();
+      expect(within(description).getByText(/Include a concise findings report/i)).toBeVisible();
+      expect(
+        activity &&
+          Boolean(description.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING)
+      ).toBe(true);
+      expect(description).not.toContainElement(tagLink);
+
+      toggle.focus();
+      expect(toggle).toHaveFocus();
+      await user.click(toggle);
+
+      expect(
+        within(description).getByRole('button', { name: 'Collapse description' })
+      ).toHaveAttribute('aria-expanded', 'true');
+      expect(descriptionBody).toHaveAttribute('data-collapsed', 'false');
+      expect(descriptionBody).not.toHaveClass('max-h-[200px]', 'overflow-hidden');
+      expect(within(description).queryByTestId('task-description-fade')).not.toBeInTheDocument();
+      expect(tagLink).toBeVisible();
+    }
+  );
+
+  it('keeps structured brief sections intact inside the description disclosure', () => {
     render(
       <TaskDetailPanel
         modeData={{}}
         task={{
           ...taskDetail,
-          description: 'Summarize protocol feedback\nInclude a concise findings report.',
+          description:
+            'Summarize protocol feedback\nPrepare a concise findings report.\n\nDELIVERABLES\nOne report with cited findings.',
         }}
       />
     );
 
-    const requirementsSection = screen.getByRole('heading', {
-      name: /work requirements/i,
-    }).parentElement;
-    const detailsSection = screen.getByRole('heading', { name: /^details$/i }).parentElement;
+    const description = screen.getByRole('group', { name: 'Description' });
+    const deliverables = within(description)
+      .getByText('Deliverables')
+      .closest('details') as HTMLDetailsElement;
 
-    expect(requirementsSection?.nextElementSibling).toBe(detailsSection);
+    expect(within(description).getAllByText('Prepare a concise findings report.')).toHaveLength(2);
+    expect(deliverables).toHaveAttribute('open');
+    expect(within(deliverables).getByText('One report with cited findings.')).toBeInTheDocument();
+  });
+
+  it('does not render an empty description disclosure and keeps tags available', () => {
+    render(
+      <TaskDetailPanel
+        backHref="/tasks"
+        modeData={{}}
+        task={{ ...taskDetail, description: 'Summarize protocol feedback', tags: ['research'] }}
+      />
+    );
+
+    expect(screen.queryByRole('group', { name: 'Description' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'research' })).toHaveAttribute(
+      'href',
+      '/tasks?tags=research'
+    );
   });
 
   it('shows an estimated worker DREAMS bonus caption when the hook is attached', () => {

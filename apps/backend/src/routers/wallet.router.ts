@@ -14,6 +14,12 @@ import {
   contractGetDreamsWorkerSplitBps,
   contractGetDreamsBonusBps,
 } from '../services/contract';
+import { runRelayedIntent } from '../services/relayed-intent-request';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
+import {
+  type WalletWithdrawDreamsIntentPayload,
+  type WalletWithdrawIntentPayload,
+} from '../services/intents/wallet-intents';
 import {
   SetWithdrawalAddressInputSchema,
   SetWithdrawalAddressOutputSchema,
@@ -152,6 +158,7 @@ export const walletRouter = router({
   withdraw: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/wallet/withdraw',
         tags: ['Wallet'],
@@ -211,15 +218,37 @@ export const walletRouter = router({
         });
       }
 
-      const txHash = await contractTransferWithAuthorization(
-        input.from as `0x${string}`,
-        agent.withdrawalAddress as `0x${string}`,
-        BigInt(input.amountBaseUnits),
-        BigInt(input.authorization.validAfter),
-        validBefore,
-        input.authorization.nonce as `0x${string}`,
-        input.signature
-      );
+      // Free, and still an intent (ADR-0045). Nothing is written to the database on either
+      // side of this call -- USDC's own contract holds the balance, the transfer and its
+      // replay nonce -- so there is no completion work and no refund. What the intent buys is
+      // that a broadcast lost to a crash is retried from a durable record instead of
+      // vanishing, which for a withdrawal the user has already authorised is the difference
+      // between a retry and a support ticket.
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'wallet.withdraw',
+        payer: input.from,
+        payload: {
+          amountBaseUnits: input.amountBaseUnits,
+          from: input.from,
+          nonce: input.authorization.nonce,
+          signature: input.signature,
+          to: agent.withdrawalAddress,
+          validAfter: String(input.authorization.validAfter),
+          validBefore: validBefore.toString(),
+        } satisfies WalletWithdrawIntentPayload,
+        send: () =>
+          contractTransferWithAuthorization(
+            input.from as `0x${string}`,
+            agent.withdrawalAddress as `0x${string}`,
+            BigInt(input.amountBaseUnits),
+            BigInt(input.authorization.validAfter),
+            validBefore,
+            input.authorization.nonce as `0x${string}`,
+            input.signature
+          ),
+      });
 
       return {
         txHash,
@@ -251,6 +280,7 @@ export const walletRouter = router({
   withdrawDreams: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/wallet/withdraw-dreams',
         tags: ['Wallet'],
@@ -310,10 +340,34 @@ export const walletRouter = router({
         });
       }
 
-      const txHash = await contractWithdrawDreamsRewards(
-        input.workerAddress as `0x${string}`,
-        input.destination as `0x${string}`
-      );
+      // The nonce claim above stays before the chain call and is the one piece of durable
+      // state in this file that cannot move into a completion handler: withdrawFor is executed
+      // by the backend wallet rather than as a user transaction, so the contract has no replay
+      // protection to lean on and that insert *is* the guard. Claiming after the call would
+      // let two concurrent requests carrying the same captured signature both broadcast.
+      //
+      // Claiming first leaves the mirror-image risk -- a nonce spent on a withdrawal that
+      // never happened -- and nothing in this request may repair it. The request only ever
+      // sees an exception, and an exception cannot answer "did anything reach the chain?":
+      // `already known` means it did, and a connection reset means we do not know. Release is
+      // the intent's own `releaseGuard`, run by settlement once the chain has said the call
+      // failed or once the retry budget is spent (ADR-0050).
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'wallet.withdrawDreams',
+        payer: input.workerAddress,
+        payload: {
+          destination: input.destination,
+          nonce: input.nonce,
+          workerAddress: input.workerAddress,
+        } satisfies WalletWithdrawDreamsIntentPayload,
+        send: () =>
+          contractWithdrawDreamsRewards(
+            input.workerAddress as `0x${string}`,
+            input.destination as `0x${string}`
+          ),
+      });
 
       const dreamsPerUsdc = await contractGetDreamsPerUsdc();
       const claimedBaseUnits = claimable.toString();

@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { apiGet } from '../../lib/api.js';
 import { signReadAuth } from '../../lib/read-auth.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, renderFailure } from '../../lib/output.js';
 
 export const mySubmissionsCmd = new Command('my-submissions')
   .description('List all submissions made by your wallet across all tasks.')
@@ -27,7 +27,6 @@ export const mySubmissionsCmd = new Command('my-submissions')
       );
       printResult(result as Record<string, unknown>);
     } catch (err) {
-      printError(err instanceof Error ? err.message : String(err));
-      process.exit(1);
+      renderFailure(err);
     }
   });

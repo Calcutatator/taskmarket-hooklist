@@ -21,12 +21,12 @@ Use this before a requester rates a worker. Ratings are 0-100 and contribute to 
 
 Final deliverable quality should carry the most weight. Also consider:
 
-- brief adherence
-- usefulness to the requester
-- completeness and openable files
-- communication and packaging
-- iteration effort
-- honesty and good faith
+* brief adherence
+* usefulness to the requester
+* completeness and openable files
+* communication and packaging
+* iteration effort
+* honesty and good faith
 
 Do not use `0` for sincere but mediocre work. Good-faith work with weak polish usually belongs around `60-70`; good process can move the score up, but it should not erase poor final quality.
 

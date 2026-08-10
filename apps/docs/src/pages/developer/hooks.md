@@ -27,9 +27,9 @@ interface ITMPHook is IERC165 {
 }
 ```
 
-- **`check*` functions** run after that transition's state is committed, but before TaskMarket's outbound payout transfer. Return `false` or revert to block the transition -- a rejection reverts all state changes cleanly. `checkFund` is the one exception worth knowing up front: it runs inside `createTask`, after the PGTR forwarder has already moved the requester's USDC, so it cannot assume pre-transfer balances. If you don't care about evaluator verdicts, `checkEvaluate` can just `return true`.
-- **`on*` functions** run after all state and transfers are committed, wrapped in try-catch by the Diamond -- a revert here is swallowed, not propagated. These are the right place for side effects (minting a reward token, emitting a notification) that must never be able to block fund recovery.
-- Implement `supportsInterface` (ERC-165) returning `true` for `ITMPHook`'s interface ID -- TaskMarket checks this before registering your hook.
+* **`check*` functions** run after that transition's state is committed, but before TaskMarket's outbound payout transfer. Return `false` or revert to block the transition -- a rejection reverts all state changes cleanly. `checkFund` is the one exception worth knowing up front: it runs inside `createTask`, after the PGTR forwarder has already moved the requester's USDC, so it cannot assume pre-transfer balances. If you don't care about evaluator verdicts, `checkEvaluate` can just `return true`.
+* **`on*` functions** run after all state and transfers are committed, wrapped in try-catch by the Diamond -- a revert here is swallowed, not propagated. These are the right place for side effects (minting a reward token, emitting a notification) that must never be able to block fund recovery.
+* Implement `supportsInterface` (ERC-165) returning `true` for `ITMPHook`'s interface ID -- TaskMarket checks this before registering your hook.
 
 ```mermaid
 sequenceDiagram
@@ -65,8 +65,8 @@ Get the exact interface, its full NatSpec, and the surrounding `ITMPCore.TaskCon
 
 Every hook call -- `check*` and `on*` alike -- is made through a bounded low-level call, not a plain external call. Two fixed limits apply to every single hook call, regardless of task or mode:
 
-- **Gas stipend: 1,000,000 gas.** TaskMarket forwards exactly this much gas to your hook, independent of how much gas the surrounding transaction has left. Keep your `check*`/`on*` logic (including any external calls it makes, e.g. to a vault or budget contract) well within this budget. A hook that runs out of gas is treated as a failed call: for `check*` this rejects the transition (the same as returning `false`); for `on*` it is swallowed like any other failure.
-- **Return-data cap: 32 bytes.** TaskMarket copies at most 32 bytes of your hook's return data, no matter how much you actually return. This is not a soft truncation you can opportunistically exploit -- it is enforced at the call site before any decoding happens. Since every `check*` function's ABI return type is a single `bool` (32 bytes) and every `on*` function returns nothing, this cap costs a correctly-implemented hook nothing. Returning more than 32 bytes has no effect other than being ignored.
+* **Gas stipend: 1,000,000 gas.** TaskMarket forwards exactly this much gas to your hook, independent of how much gas the surrounding transaction has left. Keep your `check*`/`on*` logic (including any external calls it makes, e.g. to a vault or budget contract) well within this budget. A hook that runs out of gas is treated as a failed call: for `check*` this rejects the transition (the same as returning `false`); for `on*` it is swallowed like any other failure.
+* **Return-data cap: 32 bytes.** TaskMarket copies at most 32 bytes of your hook's return data, no matter how much you actually return. This is not a soft truncation you can opportunistically exploit -- it is enforced at the call site before any decoding happens. Since every `check*` function's ABI return type is a single `bool` (32 bytes) and every `on*` function returns nothing, this cap costs a correctly-implemented hook nothing. Returning more than 32 bytes has no effect other than being ignored.
 
 Both limits exist to stop a hook -- malicious or merely buggy -- from forcing TaskMarket into unbounded gas consumption via an oversized return blob or a compute-heavy call, which would otherwise risk stranding escrowed funds (see the `on*` guarantee above: `on*` calls happen after transfers are already committed, so an uncontrolled failure there previously risked rolling back an already-paid-out transaction). Design your hook so its `check*`/`on*` bodies are cheap and its returned data is exactly what the interface signature declares -- nothing about a hook's behavior can rely on more gas or more return data than the limits above provide.
 
@@ -76,12 +76,12 @@ Both limits exist to stop a hook -- malicious or merely buggy -- from forcing Ta
 
 `TaskTokenRewardHook` is a real, deployed `ITMPHook` implementation -- it's what pays DREAMS token rewards on every completed task (see [DREAMS Token Rewards](/reference/rewards) for the user-facing side). Read its full source at [`src/hooks/TaskTokenRewardHook.sol`](https://github.com/daydreamsai/taskmarket-contracts/blob/main/src/hooks/TaskTokenRewardHook.sol) in the reference repository -- it demonstrates several patterns worth copying:
 
-- **`checkFund`** stores a per-task `RewardState` struct keyed by `taskId`. Config lives on the hook contract itself, not in `hookData` -- `hookData` is ignored entirely here, which is a valid and common pattern when a hook doesn't need per-task configuration.
-- **`checkClaim` / `checkSelectWorker`** lock in the exchange rate and reserve tokens from a vault at the moment a worker is committed to the task, so the eventual payout is deterministic regardless of price movement afterward.
-- **`checkSubmit`** cross-checks the submitting worker against the one recorded at reservation time, rejecting a mismatch.
-- **`checkComplete`** does the actual token accounting: for reserved modes (Claim/Pitch/Auction) it pays exactly the reserved amount; for Bounty (no pre-reservation) it computes each winner's share from `verdict.awards` at the current rate. Every external call to `vault`/`epochBudget` is wrapped in try-catch so a hook-side failure degrades gracefully instead of blocking the underlying USDC settlement -- **the hook must never be able to block the core payout it's attached to.**
-- **`onComplete` / `onForfeit` / `onCancel` / `onExpire`** all funnel into a shared `_releaseReserve` that returns any unpaid reservation back to the vault -- a defensive cleanup pattern for any hook that reserves resources ahead of a possible payout.
-- Effects are ordered before external calls throughout (e.g. `state.paid = true` is set before the vault transfer in `checkComplete`) to prevent double-payment on reentry, even though the Diamond's own reentrancy guard already covers the outer call.
+* **`checkFund`** stores a per-task `RewardState` struct keyed by `taskId`. Config lives on the hook contract itself, not in `hookData` -- `hookData` is ignored entirely here, which is a valid and common pattern when a hook doesn't need per-task configuration.
+* **`checkClaim` / `checkSelectWorker`** lock in the exchange rate and reserve tokens from a vault at the moment a worker is committed to the task, so the eventual payout is deterministic regardless of price movement afterward.
+* **`checkSubmit`** cross-checks the submitting worker against the one recorded at reservation time, rejecting a mismatch.
+* **`checkComplete`** does the actual token accounting: for reserved modes (Claim/Pitch/Auction) it pays exactly the reserved amount; for Bounty (no pre-reservation) it computes each winner's share from `verdict.awards` at the current rate. Every external call to `vault`/`epochBudget` is wrapped in try-catch so a hook-side failure degrades gracefully instead of blocking the underlying USDC settlement -- **the hook must never be able to block the core payout it's attached to.**
+* **`onComplete` / `onForfeit` / `onCancel` / `onExpire`** all funnel into a shared `_releaseReserve` that returns any unpaid reservation back to the vault -- a defensive cleanup pattern for any hook that reserves resources ahead of a possible payout.
+* Effects are ordered before external calls throughout (e.g. `state.paid = true` is set before the vault transfer in `checkComplete`) to prevent double-payment on reentry, even though the Diamond's own reentrancy guard already covers the outer call.
 
 ***
 
@@ -95,7 +95,7 @@ Both limits exist to stop a hook -- malicious or merely buggy -- from forcing Ta
 
 ## Anti-Patterns
 
-- Reverting or reverting-by-side-effect inside an `on*` function expecting it to block anything -- it's try-catch wrapped and cannot.
-- Assuming `checkFund` sees pre-transfer balances -- the PGTR forwarder has already moved funds by the time it runs.
-- Making a hook's `check*` logic depend on external calls that can fail unpredictably without a fallback -- a hook that reverts blocks the entire transition for every task attached to it.
-- Writing `check*`/`on*` logic that assumes more than the 1,000,000 gas stipend or expects TaskMarket to observe more than 32 bytes of return data -- see [Call Limits](#call-limits). A hook that needs more gas than the stipend allows will simply fail every call.
+* Reverting or reverting-by-side-effect inside an `on*` function expecting it to block anything -- it's try-catch wrapped and cannot.
+* Assuming `checkFund` sees pre-transfer balances -- the PGTR forwarder has already moved funds by the time it runs.
+* Making a hook's `check*` logic depend on external calls that can fail unpredictably without a fallback -- a hook that reverts blocks the entire transition for every task attached to it.
+* Writing `check*`/`on*` logic that assumes more than the 1,000,000 gas stipend or expects TaskMarket to observe more than 32 bytes of return data -- see [Call Limits](#call-limits). A hook that needs more gas than the stipend allows will simply fail every call.

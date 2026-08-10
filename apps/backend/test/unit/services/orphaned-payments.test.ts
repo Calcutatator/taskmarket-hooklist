@@ -8,11 +8,14 @@ vi.mock('../../../src/services/contract', () => ({
 
 import {
   recordAndRefundOrphanedPayment,
+  refundDidNotComplete,
+  settlePendingOrphanedRefunds,
   retryFailedOrphanedRefunds,
   handlePostPaymentFailure,
   handleStandardFeePostPaymentFailure,
 } from '../../../src/services/orphaned-payments';
 import { contractRefundOrphanedPayment } from '../../../src/services/contract';
+import { ServerTransactionPendingError } from '../../../src/lib/server-transaction-dispatcher';
 
 const PAYER = '0x1111111111111111111111111111111111111111';
 const PAYMENT_TX_HASH = '0xaaaa000000000000000000000000000000000000000000000000000000000000';
@@ -66,7 +69,7 @@ describe('services/orphaned-payments', () => {
         failureReason: 'Contract call rejected: EnforcedPause',
       });
 
-      expect(result).toEqual({ refunded: true, refundTxHash: REFUND_TX_HASH });
+      expect(result).toEqual({ pending: false, refunded: true, refundTxHash: REFUND_TX_HASH });
       expect(contractRefundOrphanedPayment).toHaveBeenCalledWith(PAYER, 1000n);
       expect(db.insert).toHaveBeenCalledOnce();
     });
@@ -88,7 +91,7 @@ describe('services/orphaned-payments', () => {
         failureReason: 'boom',
       });
 
-      expect(result).toEqual({ refunded: false, refundTxHash: null });
+      expect(result).toEqual({ pending: false, refunded: false, refundTxHash: null });
       expect(contractRefundOrphanedPayment).not.toHaveBeenCalled();
       expect(db.update).not.toHaveBeenCalled();
     });
@@ -112,7 +115,76 @@ describe('services/orphaned-payments', () => {
         failureReason: 'boom',
       });
 
-      expect(result).toEqual({ refunded: false, refundTxHash: null });
+      expect(result).toEqual({ pending: false, refunded: false, refundTxHash: null });
+    });
+
+    /**
+     * The same rule `handlePostPaymentFailure` states at its own guard, one level down: a
+     * pending transaction is not a failed one. `contractRefundOrphanedPayment` raises
+     * `ServerTransactionPendingError` when the refund transfer was broadcast but its receipt
+     * did not arrive in the request budget -- the transfer is live. Writing 'failed' there
+     * puts the row straight back in `retryFailedOrphanedRefunds`'s claimable set, and the
+     * retry sends a second plain ERC-20 transfer for the same payment. There is no on-chain
+     * idempotency behind it, so that is two refunds for one payment.
+     */
+    it('does not mark a row failed when the refund transfer is still in flight', async () => {
+      const db = makeFakeDb();
+      db.insert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+      const claim = updateChain([{ id: 'ignored' }]);
+      const settle = updateChain();
+      db.update.mockReturnValueOnce(claim).mockReturnValueOnce(settle);
+      vi.mocked(contractRefundOrphanedPayment).mockRejectedValue(
+        new ServerTransactionPendingError(REFUND_TX_HASH as `0x${string}`, 11)
+      );
+
+      const result = await recordAndRefundOrphanedPayment({
+        db: db as any,
+        payer: PAYER as `0x${string}`,
+        amount: 1000n,
+        paymentTxHash: PAYMENT_TX_HASH as `0x${string}`,
+        context: 'task_create',
+        failureReason: 'boom',
+      });
+
+      // The live hash is reported and recorded, and the row is not claimable again.
+      expect(result).toEqual({
+        pending: true,
+        refunded: false,
+        refundTxHash: REFUND_TX_HASH,
+      });
+
+      const written = settle.set.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+      expect(written?.refundStatus).not.toBe('failed');
+      expect(written?.refundTxHash).toBe(REFUND_TX_HASH);
+    });
+
+    it('leaves an in-flight refund in a state retryFailedOrphanedRefunds cannot re-claim', async () => {
+      const db = makeFakeDb();
+      db.insert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+      const claim = updateChain([{ id: 'ignored' }]);
+      const settle = updateChain();
+      db.update.mockReturnValueOnce(claim).mockReturnValueOnce(settle);
+      vi.mocked(contractRefundOrphanedPayment).mockRejectedValue(
+        new ServerTransactionPendingError(REFUND_TX_HASH as `0x${string}`, 11)
+      );
+
+      await recordAndRefundOrphanedPayment({
+        db: db as any,
+        payer: PAYER as `0x${string}`,
+        amount: 1000n,
+        paymentTxHash: PAYMENT_TX_HASH as `0x${string}`,
+        context: 'task_create',
+        failureReason: 'boom',
+      });
+
+      // `retryFailedOrphanedRefunds` selects on 'failed' and `attemptRefund` claims
+      // 'pending'/'failed'. Any status outside that set is safe; 'refunding' is the one the
+      // row is already holding and the one the schema's check constraint permits.
+      // The settle update must have happened at all -- an absent `set` payload would make the
+      // status check below pass on `undefined` rather than on a status.
+      const written = settle.set.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+      expect(written).toBeDefined();
+      expect(['pending', 'failed']).not.toContain(written?.refundStatus);
     });
   });
 
@@ -186,7 +258,111 @@ describe('services/orphaned-payments', () => {
     });
   });
 
+  // Verifies: ADR-0069
+  describe('settlePendingOrphanedRefunds (the exit from `refunding`)', () => {
+    function dbWithJoinRows(rows: unknown[]) {
+      const db = makeFakeDb() as any;
+      db.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(rows),
+          }),
+        }),
+      });
+      db.update.mockReturnValue(updateChain());
+      return db;
+    }
+
+    it('marks a pending refund refunded once its own transfer confirms', async () => {
+      const db = dbWithJoinRows([
+        {
+          id: 'orphan_1',
+          outboxStatus: 'confirmed',
+          outboxTxHash: REFUND_TX_HASH,
+          refundTxHash: REFUND_TX_HASH,
+        },
+      ]);
+
+      await expect(settlePendingOrphanedRefunds(db as any)).resolves.toEqual([
+        { id: 'orphan_1', refundStatus: 'refunded' },
+      ]);
+      expect(db.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not claim success for a refund transfer that was superseded', async () => {
+      // The outbox row confirmed, but on the replacement's hash: the payer's money never left
+      // the server wallet, so this must land where the retry sweep will send it again.
+      const db = dbWithJoinRows([
+        {
+          id: 'orphan_1',
+          outboxStatus: 'confirmed',
+          outboxTxHash: '0xcccc000000000000000000000000000000000000000000000000000000000000',
+          refundTxHash: REFUND_TX_HASH,
+        },
+      ]);
+
+      await expect(settlePendingOrphanedRefunds(db as any)).resolves.toEqual([
+        { id: 'orphan_1', refundStatus: 'failed' },
+      ]);
+    });
+
+    it('leaves a transfer that is still in flight exactly where it is', async () => {
+      const db = dbWithJoinRows([
+        {
+          id: 'orphan_1',
+          outboxStatus: 'broadcast',
+          outboxTxHash: REFUND_TX_HASH,
+          refundTxHash: REFUND_TX_HASH,
+        },
+      ]);
+
+      await expect(settlePendingOrphanedRefunds(db as any)).resolves.toEqual([]);
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it('hands a reverted transfer back to the retry sweep', async () => {
+      const db = dbWithJoinRows([
+        {
+          id: 'orphan_1',
+          outboxStatus: 'failed',
+          outboxTxHash: REFUND_TX_HASH,
+          refundTxHash: REFUND_TX_HASH,
+        },
+      ]);
+
+      await expect(settlePendingOrphanedRefunds(db as any)).resolves.toEqual([
+        { id: 'orphan_1', refundStatus: 'failed' },
+      ]);
+    });
+  });
+
   describe('handlePostPaymentFailure', () => {
+    // Verifies: ADR-0045
+    it('never refunds a transaction that is still in flight', async () => {
+      const db = makeFakeDb();
+      const pending = new ServerTransactionPendingError(
+        `0x${'cd'.repeat(32)}` as `0x${string}`,
+        42
+      );
+
+      await expect(
+        handlePostPaymentFailure({
+          db: db as any,
+          payer: PAYER,
+          amount: 1_000_000n,
+          paymentTxHash: PAYMENT_TX_HASH,
+          context: 'createTask',
+          error: pending,
+        })
+      ).rejects.toBe(pending);
+
+      // The whole point: a broadcast transaction may still be mined by the reconciler, so
+      // no orphan row is recorded and no refund transfer is sent. Refunding here would pay
+      // the requester back for a task that then lands on chain anyway.
+      expect(db.insert).not.toHaveBeenCalled();
+      expect(contractRefundOrphanedPayment).not.toHaveBeenCalled();
+    });
+
     it('rethrows the original error unchanged when no payment ever settled', async () => {
       const db = makeFakeDb();
       const originalError = new TRPCError({ code: 'BAD_REQUEST', message: 'unknown revert' });
@@ -253,6 +429,65 @@ describe('services/orphaned-payments', () => {
         code: 'INTERNAL_SERVER_ERROR',
         message: expect.stringContaining('flagged for manual review'),
       });
+    });
+  });
+
+  // Verifies: ADR-0069
+  describe('refundDidNotComplete (structured, not string-matched)', () => {
+    async function failureFrom(refundResult: 'ok' | 'pending' | 'failed', message: string) {
+      const db = makeFakeDb();
+      db.insert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+      db.update
+        .mockReturnValueOnce(updateChain([{ id: 'ignored' }]))
+        .mockReturnValueOnce(updateChain());
+      if (refundResult === 'ok') {
+        vi.mocked(contractRefundOrphanedPayment).mockResolvedValue(REFUND_TX_HASH as `0x${string}`);
+      } else if (refundResult === 'pending') {
+        vi.mocked(contractRefundOrphanedPayment).mockRejectedValue(
+          new ServerTransactionPendingError(REFUND_TX_HASH as `0x${string}`, 7)
+        );
+      } else {
+        vi.mocked(contractRefundOrphanedPayment).mockRejectedValue(new Error('out of gas'));
+      }
+      try {
+        await handlePostPaymentFailure({
+          db: db as any,
+          payer: PAYER as `0x${string}`,
+          amount: 1000n,
+          paymentTxHash: PAYMENT_TX_HASH as `0x${string}`,
+          context: 'tasks.create',
+          error: new Error(message),
+        });
+      } catch (error) {
+        return error;
+      }
+      throw new Error('handlePostPaymentFailure must always throw');
+    }
+
+    it('reports a failed refund even when the revert reason contains the word refunded', async () => {
+      // `failureMessage` is a decoded revert reason and `tasks.refundExpired` is a live
+      // operation, so a revert that says "refunded" is reachable, not hypothetical.
+      // The message is operator-controlled: `failureMessage` is a decoded revert reason, and
+      // `tasks.refundExpired` is a live operation, so a revert named like AlreadyRefunded is
+      // reachable. String-matching read this as a success and logged nothing.
+      const error = await failureFrom('failed', 'execution reverted: already refunded');
+      // The old test -- `!message.includes('refunded')` -- is false here, which is exactly the
+      // silence being fixed. The structured answer disagrees, and it is the one that is right.
+      expect((error as Error).message.includes('refunded')).toBe(true);
+      expect((error as Error).message).toContain('could not be completed');
+      expect(refundDidNotComplete(error)).toBe(true);
+    });
+
+    it('reports a completed refund as complete', async () => {
+      expect(refundDidNotComplete(await failureFrom('ok', 'boom'))).toBe(false);
+    });
+
+    it('does not report an in-flight refund as a failure', async () => {
+      expect(refundDidNotComplete(await failureFrom('pending', 'boom'))).toBe(false);
+    });
+
+    it('is false for anything that never reached a refund at all', () => {
+      expect(refundDidNotComplete(new Error('unrelated'))).toBe(false);
     });
   });
 

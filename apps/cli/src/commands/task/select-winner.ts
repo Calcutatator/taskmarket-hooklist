@@ -1,20 +1,22 @@
 import { Command } from 'commander';
 import { apiPost } from '../../lib/api.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, renderFailure } from '../../lib/output.js';
 
 export const selectWinnerCmd = new Command('select-winner')
   .description('Permissionlessly finalize the lowest bidder after the auction deadline')
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
   .action(async (taskId: string) => {
     let result: { success: boolean; workerAddress: string };
+    let idempotencyKey: string;
     try {
-      result = (await apiPost(`/api/tasks/${taskId}/bids/select-winner`, {
-        taskId,
-      })) as typeof result;
+      ({ data: result, idempotencyKey } = await apiPost<typeof result>(
+        `/api/tasks/${taskId}/bids/select-winner`,
+        { taskId }
+      ));
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to select winner.';
-      printError(msg);
+      renderFailure(err, { fallback: 'Failed to select winner.' });
+      return;
     }
 
-    printResult(result!);
+    printResult(result, { idempotencyKey });
   });

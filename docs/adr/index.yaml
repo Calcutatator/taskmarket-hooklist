@@ -193,3 +193,168 @@ adrs:
     title: "Server-wallet transactions use a durable nonce allocator and outbox"
     status: Accepted
     date: "2026-08-03"
+  - number: "0041"
+    file: "0041-discord-public-app-runs-as-a-railway-http-interactions-service.md"
+    title: Discord public app runs as a Railway HTTP Interactions service
+    status: Accepted
+    date: "2026-08-05"
+  - number: "0045"
+    file: "0045-relayed-writes-are-durable-intents-not-request-scoped-transactions.md"
+    title: "Relayed writes are durable intents, not request-scoped transactions"
+    status: Accepted
+    date: "2026-08-03"
+  - number: "0046"
+    file: "0046-relayed-intents-chain-follow-on-writes.md"
+    title: "Relayed intents chain follow-on writes rather than relaying inside handlers"
+    status: Superseded
+    date: "2026-08-03"
+  - number: "0047"
+    file: "0047-evaluator-assignment-is-its-own-intent-and-chaining-is-withdrawn.md"
+    title: "Evaluator assignment is its own intent, and the chaining subsystem is withdrawn"
+    status: Accepted
+    date: "2026-08-03"
+  - number: "0048"
+    file: "0048-orphaning-a-payment-is-decided-only-by-intent-settlement.md"
+    title: Orphaning a payment is decided only by intent settlement; the ledger is retained
+    status: Accepted
+    date: "2026-08-03"
+  - number: "0049"
+    file: "0049-in-flight-paid-writes-are-observable-through-a-dedicated-intent-status-surface.md"
+    title: "In-flight paid writes are observable through a dedicated intent-status surface, not `pendingActions`"
+    status: Accepted
+    date: "2026-08-03"
+  - number: "0050"
+    file: "0050-durable-writes-follow-the-chain-call-and-unbroadcast-intents-are-retried-before-refund.md"
+    title: "Durable writes follow the chain call, and an unbroadcast intent is retried before it is refunded"
+    status: Accepted
+    date: "2026-08-03"
+  - number: "0051"
+    file: "0051-replacement-gas-escalates-geometrically-under-a-configured-cap.md"
+    title: "Replacement gas escalates geometrically under a configured, per-deployment cap"
+    status: Accepted
+    date: "2026-08-03"
+  - number: "0052"
+    file: "0052-every-relayed-write-carries-a-client-generated-idempotency-key.md"
+    title: "Every relayed write carries a mandatory, client-generated, backend-opaque idempotency key"
+    status: Accepted
+    date: "2026-08-03"
+  - number: "0053"
+    file: "0053-relayed-write-observability-is-by-query-not-by-alerting.md"
+    title: "Relayed-write observability is by query, not by alerting"
+    status: Accepted
+    date: "2026-08-03"
+  - number: "0054"
+    file: "0054-settled-liability-is-written-with-the-money-that-settles-it.md"
+    title: Settled liability is written with the money that settles it
+    status: Accepted
+    date: "2026-08-03"
+  - number: "0055"
+    file: "0055-a-created-task-id-comes-from-the-receipt-not-a-nonce-prediction.md"
+    title: "A created task's id comes from its receipt, not from a requester-nonce prediction"
+    status: Accepted
+    date: "2026-08-03"
+  - number: "0056"
+    file: "0056-create-task-takes-the-evaluator-configuration.md"
+    title: "createTask takes the evaluator configuration, and creation stops needing a second call"
+    status: Accepted
+    date: "2026-08-04"
+  - number: "0057"
+    file: "0057-a-settled-payment-is-one-indivisible-reference-published-by-the-middleware.md"
+    title: "A settled payment is one indivisible reference, published by the middleware that settled it"
+    status: Accepted
+    date: "2026-08-04"
+  - number: "0058"
+    file: "0058-every-api-error-carries-a-machine-readable-reason.md"
+    title: "Every API error carries a machine-readable reason, and in-flight is a 409 rather than a 500"
+    status: Accepted
+    date: "2026-08-04"
+  - number: "0059"
+    file: "0059-an-intent-is-readable-by-the-address-recorded-as-having-initiated-it.md"
+    title: An intent is readable by the address recorded as having initiated it
+    status: Accepted
+    date: "2026-08-04"
+  - number: "0060"
+    file: "0060-a-relayed-payload-is-sufficient-and-a-broadcaster-is-pure.md"
+    title: "A relayed payload is sufficient, and a broadcaster is pure"
+    status: Accepted
+    date: "2026-08-04"
+  - number: "0061"
+    file: "0061-a-reused-idempotency-key-with-different-arguments-is-refused.md"
+    title: A reused idempotency key with different arguments is refused
+    status: Accepted
+    date: "2026-08-04"
+  - number: "0063"
+    file: "0063-the-reconciler-settles-a-nonce-spent-by-a-foreign-transaction.md"
+    title: The reconciler settles a nonce spent by a foreign transaction
+    status: Proposed
+    date: "2026-08-05"
+  - number: "0064"
+    file: "0064-deploy-and-owner-operations-use-a-separate-eoa-from-the-relayer.md"
+    title: Deploy and owner operations use a separate EOA from the relayer
+    status: Proposed
+    date: "2026-08-05"
+  - number: "0065"
+    file: "0065-the-backend-decodes-chain-events-from-the-generated-abi.md"
+    title: "The backend decodes chain events from the generated ABI, and CI keeps that artifact current"
+    status: Accepted
+    date: "2026-08-05"
+  - number: "0066"
+    file: "0066-replacement-stops-at-the-cap-and-one-self-transfer-clears-the-nonce.md"
+    title: "Replacement stops at the cap, and a single self-transfer clears the nonce"
+    status: Accepted
+    date: "2026-08-05"
+  - number: "0067"
+    file: "0067-an-intent-is-reserved-before-the-payment-challenge.md"
+    title: "An intent is reserved when the request arrives, before the payment challenge"
+    status: Accepted
+    date: "2026-08-05"
+  - number: "0068"
+    file: "0068-the-key-is-claimed-before-settlement-not-before-the-challenge.md"
+    title: "The idempotency key is claimed before settlement, not before the challenge"
+    status: Accepted
+    date: "2026-08-05"
+  - number: "0069"
+    file: "0069-the-outbox-row-is-the-intents-evidence-that-a-nonce-was-spent.md"
+    title: "The outbox row is an intent's evidence that a nonce may be spent"
+    status: Accepted
+    date: "2026-08-06"
+  - number: "0070"
+    file: "0070-a-reason-that-asserts-a-fact-carries-it.md"
+    title: "A reason that asserts a fact carries it, rather than leaving a reader to guess"
+    status: Accepted
+    date: "2026-08-06"
+  - number: "0071"
+    file: "0071-an-intent-asks-the-chain-whether-its-own-receipt-was-consumed.md"
+    title: An intent asks the chain whether its own receipt was consumed
+    status: Accepted
+    date: "2026-08-06"
+  - number: "0072"
+    file: "0072-a-foreign-spent-nonce-is-evidence-for-the-intent-under-it.md"
+    title: "A foreign-spent nonce is evidence for the intent under it, not just for the outbox row"
+    status: Accepted
+    date: "2026-08-07"
+  - number: "0073"
+    file: "0073-a-terminal-outbox-row-settles-the-intent-beneath-it.md"
+    title: "A terminal outbox row settles the intent beneath it, whoever wrote it"
+    status: Accepted
+    date: "2026-08-08"
+  - number: "0074"
+    file: "0074-an-undecodable-relay-failure-is-reported-as-in-flight-not-as-a-rejection.md"
+    title: "An undecodable relay failure is reported as in flight, not as a rejection"
+    status: Accepted
+    date: "2026-08-08"
+  - number: "0075"
+    file: "0075-a-relay-retry-is-spent-only-where-a-later-attempt-could-answer-differently.md"
+    title: A relay retry is spent only where a later attempt could answer differently
+    status: Accepted
+    date: "2026-08-08"
+  - number: "0076"
+    file: "0076-a-first-send-is-bounded-by-an-absolute-fee-ceiling-not-by-a-multiple-of-the-oracle.md"
+    title: "A first send is bounded by an absolute fee ceiling, not by a multiple of the oracle"
+    status: Accepted
+    date: "2026-08-08"
+  - number: "0077"
+    file: "0077-a-server-derived-idempotency-key-for-a-public-scope-is-keyed-on-the-platform-secret.md"
+    title: "A server-derived idempotency key for a public scope is keyed on the platform secret"
+    status: Accepted
+    date: "2026-08-09"
