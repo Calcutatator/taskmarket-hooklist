@@ -1,7 +1,7 @@
 'use client';
 
 import { CheckIcon, CopyIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -21,13 +21,26 @@ export function SkillInstallSnippet({
   defaultMethod?: SkillInstallMethod;
 }) {
   const [copied, setCopied] = useState(false);
+
+  // Cleared on unmount: an uncleared reset timer fires against an unmounted tree, and in jsdom
+  // that lands after the environment is gone, so React's state dispatch throws
+  // `window is not defined` and vitest fails a run in which every test passed.
+  const copiedTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    },
+    []
+  );
   const [method, setMethod] = useState<SkillInstallMethod>(defaultMethod);
   const command = commands[method];
 
   async function copyCommand() {
     await navigator.clipboard.writeText(command);
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
+    if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    copiedTimer.current = window.setTimeout(() => setCopied(false), 1600);
   }
 
   return (

@@ -5,7 +5,7 @@ import { Check, Code2, Copy, ExternalLink, Share2 } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { ArtifactPreviewTrigger } from '@/components/market/artifact-preview-button';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,18 @@ export function PublishedHtmlResult({
   const searchParams = useSearchParams();
   const [copied, setCopied] = useState(false);
 
+  // Cleared on unmount: an uncleared reset timer fires against an unmounted tree, and in jsdom
+  // that lands after the environment is gone, so React's state dispatch throws
+  // `window is not defined` and vitest fails a run in which every test passed.
+  const copiedTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    },
+    []
+  );
+
   function absoluteHref() {
     return new URL(href, window.location.origin).toString();
   }
@@ -38,7 +50,8 @@ export function PublishedHtmlResult({
     try {
       await navigator.clipboard.writeText(absoluteHref());
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+      copiedTimer.current = window.setTimeout(() => setCopied(false), 1600);
     } catch {
       // Native sharing remains available when clipboard access is unavailable.
     }
