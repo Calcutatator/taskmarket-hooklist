@@ -143,12 +143,12 @@ jobs:
 
   quality-contracts:
     runs-on: ubuntu-latest
-    # Raised from 30. This job installs Foundry and Slither, then runs the contract suite, the
-    # gas snapshot check, Slither, and coverage in sequence -- and coverage recompiles everything
-    # under `--ir-minimum`, which is the slowest step by a distance. rev020 adds a facet, taking
-    # the total from ~19 minutes to past the old cap, where coverage was killed mid-compile with
-    # SIGTERM and every preceding step green. The cap was measuring the suite's growth rather
-    # than catching a hang.
+    # Raised from 30. Coverage recompiles everything under `--ir-minimum` and now does it with
+    # `-j 1`, which the contract suite requires anyway (AGENTS.md: RevNNN step scripts share one
+    # process-wide environment through `vm.setEnv`, so parallel suites retarget each other) and
+    # which also keeps solc's peak memory under what the runner allows -- an unserialised
+    # coverage run was killed mid-compile, leaving `make` with no child to wait on. Serialising
+    # trades wall-clock for memory, so the cap has to allow for the slower compile.
     timeout-minutes: 45
 
     steps:

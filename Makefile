@@ -613,11 +613,11 @@ contract:
 		echo "Report written to packages/contracts/reports/slither-audit.md"; \
 	elif [ "$(word 1,$(ARGS))" = "coverage" ]; then \
 		mkdir -p packages/contracts/reports/coverage && \
-		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "(script/|src/mocks/|test/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info && \
+		cd packages/contracts && forge coverage -j 1 --ir-minimum --no-match-coverage "(script/|src/mocks/|test/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info && \
 		echo "lcov report written to packages/contracts/reports/coverage/lcov.info"; \
 	elif [ "$(word 1,$(ARGS))" = "coverage-check" ]; then \
 		mkdir -p packages/contracts/reports/coverage && \
-		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "(script/|src/mocks/|test/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info | tee /tmp/forge-coverage.txt && \
+		cd packages/contracts && forge coverage -j 1 --ir-minimum --no-match-coverage "(script/|src/mocks/|test/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info | tee /tmp/forge-coverage.txt && \
 		echo "lcov report written to reports/coverage/lcov.info" && \
 		bash scripts/check-coverage.sh /tmp/forge-coverage.txt; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot" ]; then \
