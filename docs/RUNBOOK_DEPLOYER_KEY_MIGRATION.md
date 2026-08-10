@@ -3,8 +3,21 @@
 Operational procedure for the decision recorded in
 [ADR-0064](adr/0064-deploy-and-owner-operations-use-a-separate-eoa-from-the-relayer.md).
 
-**Nothing in this runbook has been executed.** It is written to be followed by a human operator
-with the deployer key in hand, and it is not safe to automate.
+> **EXECUTED — 2026-08-10. Do not run this procedure against Base mainnet or Base Sepolia again.**
+>
+> Ownership on both chains now sits on `0xA66cC4F36a1955B80DEC0f175F176ADbCa28b582`, with
+> `TaskTokenRewardHook.backend()` correctly left on the relayer
+> `0x3C0820e2dabD5FEAe1fd03B78079DEe15c7F83D8`. The verified end state is recorded in the
+> Realization section of
+> [ADR-0064](adr/0064-deploy-and-owner-operations-use-a-separate-eoa-from-the-relayer.md).
+>
+> Re-running it would mean scheduling a backend outage for a migration that is already complete.
+> This document is retained as the procedure to follow for a **new chain**, where these roles
+> start out on the relayer key exactly as they did on Base. Read every address below as the chain
+> you are actually launching, not as Base.
+
+It is written to be followed by a human operator with the deployer key in hand, and it is not
+safe to automate.
 
 > **Placement note:** `docs/` has no existing runbooks convention — it is a flat directory of
 > uppercase guide documents, with `adr/`, `rfc/` and `specs/` as the only subdirectories, each

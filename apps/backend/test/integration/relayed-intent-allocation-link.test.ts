@@ -12,9 +12,8 @@ const { database } = isolatedDatabase;
 
 const restoreServerEnvironment = stubServerEnvironment();
 
-const { intentOutboxLink, listUnbroadcastIntents, markIntentBroadcast } = await import(
-  '../../src/services/relayed-intents'
-);
+const { intentOutboxLink, listUnbroadcastIntents, markIntentBroadcast } =
+  await import('../../src/services/relayed-intents');
 
 const FUTURE_DEADLINE = String(Math.floor(Date.now() / 1000) + 3600);
 
@@ -33,6 +32,7 @@ async function reservedOutboxRow(): Promise<string> {
 async function recordedIntent(): Promise<string> {
   const id = randomUUID();
   await database.insert(relayedIntents).values({
+    chainId: 84532,
     id,
     idempotencyKey: randomUUID(),
     operation: 'tasks.assignEvaluator',

@@ -89,7 +89,11 @@ function indexedDb(rows: StoredRow[] = []) {
             const column = query.sql.includes('payment_tx_hash')
               ? 'paymentTxHash'
               : 'idempotencyKey';
-            return rows.filter((row) => row[column] === query.params[0]);
+            // Matched against every bound parameter rather than `params[0]`. These lookups are
+            // scoped by chain (ADR-0078), so the key is no longer the first parameter, and a
+            // fake that assumed a position would silently stop finding rows -- reporting a
+            // conflict for a retry that should have returned the original intent.
+            return rows.filter((row) => query.params.includes(row[column]));
           },
         }),
       }),

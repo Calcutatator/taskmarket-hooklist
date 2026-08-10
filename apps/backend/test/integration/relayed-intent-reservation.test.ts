@@ -108,7 +108,9 @@ describeWithDatabase('a relayed intent is reserved before it is paid for', () =>
       .update(relayedIntents)
       .set({ broadcastAttempts: MAX_BROADCAST_ATTEMPTS })
       .where(eq(relayedIntents.id, reserved.id));
-    expect(await listAbandonedIntents({ cutoff: generousCutoff, db: database, limit: 10 })).toHaveLength(0);
+    expect(
+      await listAbandonedIntents({ cutoff: generousCutoff, db: database, limit: 10 })
+    ).toHaveLength(0);
   });
 
   it('becomes broadcastable in the same statement that attaches its payment', async () => {

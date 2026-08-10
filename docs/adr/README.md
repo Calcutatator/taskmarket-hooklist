@@ -288,6 +288,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0075 — A relay retry is spent only where a later attempt could answer differently](0075-a-relay-retry-is-spent-only-where-a-later-attempt-could-answer-differently.md)
 - [0076 — A first send is bounded by an absolute fee ceiling, not by a multiple of the oracle](0076-a-first-send-is-bounded-by-an-absolute-fee-ceiling-not-by-a-multiple-of-the-oracle.md)
 - [0077 — A server-derived idempotency key for a public scope is keyed on the platform secret](0077-a-server-derived-idempotency-key-for-a-public-scope-is-keyed-on-the-platform-secret.md)
+- [0078 — An idempotency key is unique within a chain, not globally](0078-an-idempotency-key-is-unique-within-a-chain-not-globally.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting
