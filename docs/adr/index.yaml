@@ -291,7 +291,7 @@ adrs:
   - number: "0064"
     file: "0064-deploy-and-owner-operations-use-a-separate-eoa-from-the-relayer.md"
     title: Deploy and owner operations use a separate EOA from the relayer
-    status: Proposed
+    status: Accepted
     date: "2026-08-05"
   - number: "0065"
     file: "0065-the-backend-decodes-chain-events-from-the-generated-abi.md"
@@ -361,5 +361,5 @@ adrs:
   - number: "0078"
     file: "0078-an-idempotency-key-is-unique-within-a-chain-not-globally.md"
     title: "An idempotency key is unique within a chain, not globally"
-    status: Proposed
+    status: Accepted
     date: "2026-08-10"
