@@ -4,7 +4,14 @@
 -- statement-breakpoint
 
 -- 1. Rename proposal_deadline → pitch_deadline
-ALTER TABLE "tasks" RENAME COLUMN "proposal_deadline" TO "pitch_deadline";
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'tasks' AND column_name = 'proposal_deadline'
+  ) THEN
+    ALTER TABLE "tasks" RENAME COLUMN "proposal_deadline" TO "pitch_deadline";
+  END IF;
+END $$;
 --> statement-breakpoint
 
 -- 2. Add auction-specific columns
