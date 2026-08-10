@@ -203,6 +203,20 @@ jobs:
       - name: Slither static analysis
         run: make contract audit
 
+      # solc under `--ir-minimum` is the memory peak of this job, and on rev020's file count it
+      # exceeds what the runner will give it: the compile was killed part-way and `make` reported
+      # no child left to wait on. Swap is the cheap remedy -- it costs wall-clock on the pages
+      # that spill and nothing otherwise, where the alternatives are a paid larger runner or
+      # dropping the gate. `--skip script` is not available: the Rev*Upgrade tests import the
+      # step scripts directly, so they have to compile.
+      - name: Add swap for the coverage compile
+        run: |
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Coverage check
         run: make contract coverage-check
 
