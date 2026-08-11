@@ -92,7 +92,22 @@ if [ -n "$NVM_SH" ]; then
   echo "    nvm found at $NVM_DIR, selecting Node $REQUIRED_NODE_MAJOR from .nvmrc"
   # shellcheck disable=SC1090
   . "$NVM_SH"
-  nvm install
+  # Checked explicitly rather than left to `set -e`. `nvm install` fetches a tarball from
+  # nodejs.org, and a dropped download exits non-zero (commonly 3) having printed nothing this
+  # script did not already print -- so under `set -e` the whole run dies at "[1/14] Toolchain"
+  # with a bare exit code and no stated cause. That has now happened on two separate sandbox
+  # runs, each costing a confused retry, because the failure looks nothing like the documented
+  # ECONNREFUSED case and gives the reader no next step.
+  nvm_status=0
+  nvm install || nvm_status=$?
+  if [ "$nvm_status" -ne 0 ]; then
+    echo "ERROR: 'nvm install' failed (exit $nvm_status) fetching Node $REQUIRED_NODE_MAJOR." >&2
+    echo "       This is almost always a dropped download from nodejs.org rather than anything" >&2
+    echo "       wrong with this checkout or your environment." >&2
+    echo "       Re-run this script. It is idempotent, and the toolchain step is the cheap one" >&2
+    echo "       to repeat -- it skips whatever already installed successfully." >&2
+    exit 1
+  fi
   nvm use
 else
   echo "    WARNING: no nvm.sh found (looked in \$NVM_DIR, /opt/nvm, \$HOME/.nvm, /usr/local/nvm)."
