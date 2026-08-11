@@ -965,7 +965,19 @@ export const submissionsRouter = router({
       const uniqueWorkerAddresses = Array.from(new Set(results.map((sub) => sub.workerAddress)));
       const agentResults =
         uniqueWorkerAddresses.length > 0
-          ? await ctx.db.select().from(agents).where(inArray(agents.address, uniqueWorkerAddresses))
+          ? await ctx.db
+              .select()
+              .from(agents)
+              // Lowercased on both sides: `agents.address` is stored lowercase while
+              // `submissions.workerAddress` is checksummed, so a direct `inArray` matched almost
+              // nothing -- every worker then rendered as a raw address instead of their agent
+              // name. The map built below already lowercases; only the query did not.
+              .where(
+                inArray(
+                  sql`lower(${agents.address})`,
+                  uniqueWorkerAddresses.map((address) => address.toLowerCase())
+                )
+              )
           : [];
       const agentsByAddress = new Map<string, Agent>();
       for (const agent of agentResults) {
