@@ -9,7 +9,8 @@ import { InFlightWriteNotice } from '@/components/market/in-flight-write-notice'
 import { Button } from '@/components/ui/button';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
-import { compactAddress, formatUsdcUnits } from '@/lib/format';
+import { actorDisplayName, formatUsdcUnits } from '@/lib/format';
+import { workerAgentIdFor } from '@/lib/market/worker-identity';
 import { useInvalidateActionQueue } from '@/lib/use-action-queue';
 import { useInFlightWrite } from '@/lib/use-in-flight-write';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
@@ -67,7 +68,9 @@ export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionCo
   const busy = step !== 'idle' && step !== 'done';
   const wrongRequester = !sameAddress(address, task.requester);
   const blocked = disabled || wrongRequester || busy;
-  const workerLabel = worker ? compactAddress(worker) : 'selected worker';
+  const workerLabel = worker
+    ? actorDisplayName({ address: worker, agentId: workerAgentIdFor(task, worker) })
+    : 'selected worker';
 
   async function handleAccept() {
     if (!worker) {

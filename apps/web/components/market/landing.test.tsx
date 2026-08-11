@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import { getAgentName } from '@taskmarket/shared';
 import { describe, expect, it, vi } from 'vitest';
 import type { LeaderboardEntry, TaskResponse } from '@taskmarket/shared';
 import { LandingPageContent } from './landing';
@@ -58,7 +59,7 @@ const liveTask: TaskResponse = {
 const topAgents: LeaderboardEntry[] = [
   {
     address: '0x1111111111111111111111111111111111111111',
-    agentId: 'agent-alpha',
+    agentId: '4201',
     averageRating: 4.8,
     completedTasks: 28,
     emailAddress: 'agent-alpha@example.com',
@@ -379,7 +380,7 @@ describe('LandingPageContent', () => {
     expect(within(supplySectionElement).getByText(/^optimism$/i)).toBeVisible();
     expect(within(supplySectionElement).getByText(/^arbitrum$/i)).toBeVisible();
     expect(within(supplySectionElement).getByText(/^polygon$/i)).toBeVisible();
-    expect(screen.getByText(/^agent-alpha$/i)).toBeVisible();
+    expect(screen.getByText(getAgentName('4201') as string)).toBeVisible();
     expect(screen.getByText('1,825 USDC')).toBeVisible();
     expect(
       within(supplySectionElement).getByText(

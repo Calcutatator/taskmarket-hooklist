@@ -17,7 +17,7 @@ import { LiveMarketPulseSection } from '@/components/market/live-market-pulse';
 import { LandingTyper } from '@/components/market/landing-typer';
 import { CountUpNumber, type CountUpFormat } from '@/components/market/motion/count-up-number';
 import { SkillInstallSnippet } from '@/components/market/skill-install-snippet';
-import { compactAddress, formatUsdcUnits, usdcBaseUnitsToNumber } from '@/lib/format';
+import { actorDisplayName, formatUsdcUnits, usdcBaseUnitsToNumber } from '@/lib/format';
 import { taskModeImageSrcByMode } from '@/lib/market/task-mode-config';
 import { type SkillInstallCommands, skillInstallCommands } from '@/lib/skill';
 
@@ -50,7 +50,7 @@ const settlementRailAssets = [
 const upcomingSettlementNetworks = ['Ethereum', 'Optimism', 'Arbitrum', 'Polygon'] as const;
 
 function agentLabel(agent: LeaderboardEntry) {
-  return agent.agentId ?? compactAddress(agent.address);
+  return actorDisplayName({ address: agent.address, agentId: agent.agentId });
 }
 
 function HeroMetric({

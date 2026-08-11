@@ -13,7 +13,7 @@ import type {
   TaskResponse,
   TaskStatusType,
 } from '@taskmarket/shared';
-import { formatDreams, getAgentName } from '@taskmarket/shared';
+import { formatDreams } from '@taskmarket/shared';
 import {
   ArrowUpDown,
   Check,
@@ -105,7 +105,13 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import type { MarketStats, TaskEvaluationIdentities } from '@/lib/api/server';
 import { explorerTxUrl } from '@/lib/explorer';
-import { compactAddress, formatBps, formatDateTime, formatUsdcUnits } from '@/lib/format';
+import {
+  actorDisplayName,
+  compactAddress,
+  formatBps,
+  formatDateTime,
+  formatUsdcUnits,
+} from '@/lib/format';
 import { TASK_ACTION_PRESENTATION } from '@/lib/market/task-action-presentation';
 import { MODE_TOOLTIPS } from '@/lib/market/status-config';
 import { selectPublishedHtmlArtifacts } from '@/lib/market/published-html';
@@ -897,7 +903,10 @@ export function TaskTable({
                         className="font-mono text-xs text-muted-foreground"
                         title={task.requester}
                       >
-                        {compactAddress(task.requester)}
+                        {actorDisplayName({
+                          address: task.requester,
+                          agentId: task.requesterAgentId,
+                        })}
                       </span>
                       <ActorTypeBadge actorType={task.requesterActorType} />
                     </span>
@@ -1908,9 +1917,7 @@ export function ActorLink({
   // Prefer a registered agent's name/id over a raw wallet address once one is on
   // record -- compactAddress(agentId) previously rendered a short numeric agentId
   // as-is (e.g. "42"), with nothing marking it as an agent identity.
-  const defaultText = agentId
-    ? (getAgentName(agentId) ?? `Agent #${agentId}`)
-    : compactAddress(address);
+  const defaultText = actorDisplayName({ address, agentId });
   const text = label ?? defaultText;
 
   if (!identity) {
@@ -1959,7 +1966,10 @@ export function SubmissionCard({
   const [heroArtifact, ...extraMedia] = mediaArtifacts;
   const primaryArtifact = heroArtifact ?? supportingArtifacts[0];
   const worker = submission.workerAddress;
-  const workerLabel = compactAddress(submission.workerAgentId ?? submission.workerAddress);
+  const workerLabel = actorDisplayName({
+    address: submission.workerAddress,
+    agentId: submission.workerAgentId,
+  });
   const acceptAction = reviewAction
     ? {
         ...reviewAction,
@@ -1993,7 +2003,6 @@ export function SubmissionCard({
               address={submission.workerAddress}
               agentId={submission.workerAgentId}
               className="truncate font-mono text-base font-semibold hover:text-primary"
-              label={workerLabel}
               profileBasePath={profileBasePath}
               title={worker}
             />
@@ -2054,7 +2063,6 @@ export function SubmissionCard({
                 address={submission.workerAddress}
                 agentId={submission.workerAgentId}
                 className="truncate font-mono text-sm font-semibold hover:text-primary"
-                label={workerLabel}
                 profileBasePath={profileBasePath}
                 title={worker}
               />
@@ -2124,7 +2132,6 @@ export function SubmissionCard({
             address={submission.workerAddress}
             agentId={submission.workerAgentId}
             className="min-w-0 truncate font-mono text-sm hover:text-primary"
-            label={workerLabel}
             profileBasePath={profileBasePath}
             title={worker}
           />

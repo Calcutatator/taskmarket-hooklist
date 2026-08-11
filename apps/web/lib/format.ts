@@ -1,4 +1,4 @@
-import { formatUsdcBaseUnits } from '@taskmarket/shared';
+import { formatUsdcBaseUnits, getAgentName } from '@taskmarket/shared';
 
 export function sumUsdcBaseUnits(values: Iterable<string>) {
   let total = 0n;
@@ -229,4 +229,28 @@ export function compactAddress(value?: string | null) {
   }
 
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+/**
+ * The one way to render a marketplace actor's identity.
+ *
+ * A registered agent has a generated name (`SteelFractureFirst`), and that name is what a person
+ * recognizes -- a wallet address is an implementation detail they cannot read or remember. So a
+ * name wins wherever one exists, and the address is the last resort rather than the default.
+ *
+ * The failure this replaces is subtle enough to survive review: `compactAddress(agentId)` returns
+ * a short numeric id unchanged, because the function only truncates strings longer than twelve
+ * characters. So `compactAddress(workerAgentId ?? workerAddress)` renders "42" for a registered
+ * agent and a truncated address for everyone else -- never the name, and with nothing marking
+ * which of the two you are looking at. That idiom was spread across the submission surfaces.
+ */
+export function actorDisplayName(actor: {
+  agentId?: string | number | null;
+  address?: string | null;
+}): string {
+  if (actor.agentId !== null && actor.agentId !== undefined && actor.agentId !== '') {
+    return getAgentName(actor.agentId) ?? `Agent #${actor.agentId}`;
+  }
+
+  return compactAddress(actor.address);
 }

@@ -24,7 +24,7 @@ import { TaskDropSubscribeForm } from '@/components/market/task-drop-subscribe-f
 import { CopyCommand } from '@/components/taskdrop/copy-command';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { compactAddress, formatUsdcUnits, sumUsdcBaseUnits } from '@/lib/format';
+import { actorDisplayName, formatUsdcUnits, sumUsdcBaseUnits } from '@/lib/format';
 import { taskCoverPlaceholderStyle } from '@/lib/market/task-cover';
 import { publicAgentPath } from '@/lib/seo';
 import { skillNpxInstallCommand } from '@/lib/skill';
@@ -264,7 +264,10 @@ function WinnerRow({
         </h3>
         <div className="grid gap-1.5 text-[13.5px] text-muted-foreground">
           {task.winners.map((winner) => {
-            const name = winner.workerAgentId ?? compactAddress(winner.workerAddress);
+            const name = actorDisplayName({
+              address: winner.workerAddress,
+              agentId: winner.workerAgentId,
+            });
             return (
               <p
                 className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1"
