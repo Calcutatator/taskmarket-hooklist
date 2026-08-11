@@ -32,7 +32,7 @@ vi.mock('../../../src/config/env', () => ({
 }));
 
 import { evaluationsRouter } from '../../../src/routers/evaluations.router';
-import { tasks } from '../../../src/db/schema';
+import { submissions, tasks } from '../../../src/db/schema';
 import { contractProjectSettlementForTx } from '../../../src/services/contract';
 import {
   contractAppeal,
@@ -274,9 +274,9 @@ describe('evaluations router', () => {
         ])
       );
 
-      await expect(
-        evaluationsRouter.createCaller(ctx).appeal({ taskId: TASK_ID })
-      ).rejects.toThrow('Only a task submitter can appeal');
+      await expect(evaluationsRouter.createCaller(ctx).appeal({ taskId: TASK_ID })).rejects.toThrow(
+        'Only a task submitter can appeal'
+      );
     });
 
     it('rejects a recovered losing submitter when another worker was awarded onchain', async () => {
@@ -289,9 +289,9 @@ describe('evaluations router', () => {
         makeChain([makeTask({ mode: 'bounty', status: 'appealing', claimedBy: null })])
       );
 
-      await expect(
-        evaluationsRouter.createCaller(ctx).appeal({ taskId: TASK_ID })
-      ).rejects.toThrow('Only the task worker can appeal');
+      await expect(evaluationsRouter.createCaller(ctx).appeal({ taskId: TASK_ID })).rejects.toThrow(
+        'Only the task worker can appeal'
+      );
       expect(contractAppeal).not.toHaveBeenCalled();
     });
 
@@ -308,10 +308,18 @@ describe('evaluations router', () => {
       await expect(
         evaluationsRouter.createCaller(ctx).appeal({ taskId: TASK_ID })
       ).resolves.toEqual({ txHash: '0xappealtx' });
-      // The router itself still reads only the task: the recovered worker comes from the chain
-      // (contractGetContestAppealState), never from a submission row. The second read belongs to
-      // the relayed intent's own broadcast bookkeeping (ADR-0045), not to this authorization.
-      expect(ctx.db.select).toHaveBeenCalledTimes(2);
+      // Asserted on what was read, not how many reads happened. This test's claim is that the
+      // recovered worker comes from the chain (contractGetContestAppealState) and never from a
+      // submission row -- and a count cannot say that, because the relayed intent's own
+      // bookkeeping also reads (ADR-0045). A count would pass just as happily if a submissions
+      // read were added and an intent read removed.
+      const tablesRead = (ctx.db.select.mock.results as { value?: unknown }[])
+        .map((result) => (result.value as { from?: { mock?: { calls?: unknown[][] } } })?.from)
+        .map((from) => from?.mock?.calls?.[0]?.[0])
+        .filter(Boolean);
+
+      expect(tablesRead).toContain(tasks);
+      expect(tablesRead).not.toContain(submissions);
     });
   });
 
