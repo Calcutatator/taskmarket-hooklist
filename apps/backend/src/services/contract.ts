@@ -18,6 +18,8 @@ import { UndeterminedRelayError, classifyRelayFailure } from '../lib/relay-failu
 import { getPublicClient, runWithRpcApplicationAttempt } from '../lib/rpc-gateway';
 import { getServerConfig } from '../config/env';
 import { logger } from '../lib/logger';
+import { TaskMarketForwarderABI } from '@taskmarket/contracts/abi';
+
 import { KNOWN_ERRORS } from './contract-errors';
 import { SETTLEMENT_READ_ABI, TASK_COMPLETED_EVENT } from './settlement-contract';
 import { currentRelayEnvelope, currentRelayOutboxLink, newRelayEnvelope } from './relay-envelope';
@@ -45,17 +47,20 @@ function decodeRelayRevert(err: unknown): string | null {
   if (err instanceof BaseError) {
     const revertError = err.walk((e) => e instanceof ContractFunctionRevertedError);
     if (revertError instanceof ContractFunctionRevertedError) {
-      // Every relayed call is simulated/decoded against FORWARDER_ABI (the relay()
-      // function), never MARKET_ABI -- but the actual revert data always originates
-      // from the Diamond side (EnforcedPause, TaskNotOpen, etc.), which FORWARDER_ABI
-      // has no knowledge of. viem can never decode that against the ABI it was given,
-      // so it sets `.signature` to the raw undecoded 4-byte selector instead of
-      // `.data.errorName` -- prefer looking that selector up in KNOWN_ERRORS before
-      // falling back to `.reason`/`.message` (viem's own verbose "unable to decode
-      // signature" text). Without this, KNOWN_ERRORS was silently never consulted
-      // for this -- the overwhelmingly common -- case: `.message` is always truthy,
-      // so the `if (name) return name` below always won first, and the raw-data
-      // fallback further down was dead code no relayed-call error could ever reach.
+      // Every relayed call is simulated/decoded against FORWARDER_ABI, never MARKET_ABI.
+      // Since FORWARDER_ABI became the generated artifact it does carry the forwarder's own
+      // errors, so a forwarder revert (RelayFailed, ReceiptExpired) now arrives already named
+      // in `.data.errorName`. The overwhelmingly common case is still the other one: the revert
+      // originates on the Diamond side (EnforcedPause, TaskNotOpen), which this ABI knows
+      // nothing about, so viem cannot decode it and sets `.signature` to the raw 4-byte
+      // selector instead. Look that selector up in KNOWN_ERRORS before falling back to
+      // `.reason`/`.message` (viem's own verbose "unable to decode signature" text).
+      //
+      // The order matters and is not interchangeable: `.message` is always truthy, so with the
+      // fallback first, `if (name) return name` won every time, KNOWN_ERRORS was silently never
+      // consulted, and the raw-data branch further down was dead code no relayed call could
+      // reach. Both paths now agree on the name either way -- the lookup and the decode return
+      // the same string -- so this only decides which one answers first.
       const signature = revertError.signature?.toLowerCase();
       if (signature && KNOWN_ERRORS[signature]) return KNOWN_ERRORS[signature];
 
@@ -148,10 +153,11 @@ const MARKET_ABI = parseAbi([
   'function evaluatorTimeout(bytes32)',
 ]);
 
-// ERC-8194 PGTR forwarder ABI — TaskMarketForwarder.relay()
-const FORWARDER_ABI = parseAbi([
-  'function relay(address pgtrSenderAddr, uint256 paymentAmount, uint256 validBefore, bytes32 receiptNonce, bytes calldata data)',
-]);
+// ERC-8194 PGTR forwarder ABI. Generated, not transcribed: this is the ABI every relayed call
+// is encoded and simulated against, so a signature that drifted from the contract would break
+// every paid write at once. It also carries the forwarder's errors, which is what lets viem name
+// a forwarder revert directly rather than handing back an undecoded selector (ADR-0065).
+const FORWARDER_ABI = TaskMarketForwarderABI;
 const IDENTITY_REGISTRY_ABI = parseAbi(['function register() external returns (uint256)']);
 const HOOK_ABI = parseAbi([
   'function withdrawFor(address worker, address destination) external',
