@@ -330,95 +330,102 @@ export function StepPublish({
       }
 
       runOptionalEffect(() => onFunnelEvent?.({ name: 'payment_started' }));
-      setPhase('payment');
-      const probeRes = await fetch(`${apiUrl}/api/tasks`, {
-        body: JSON.stringify(body),
-        headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
-        method: 'POST',
-      });
-      if (probeRes.status !== 402) {
-        const probeBody = await probeRes.json().catch(() => ({}) as { error?: string });
-        throw new Error(probeBody.error ?? `Task creation failed (status ${probeRes.status}).`);
-      }
-
-      const payReq = await probeRes.json();
-      const accepted = payReq.accepts?.[0];
-      const eip712 = accepted?.extra?.eip712;
-      if (!accepted || !eip712?.domain) {
-        throw new Error('Payment challenge did not include EIP-712 terms');
-      }
-
-      setPhase('signing');
-      const requiredChainId = Number(eip712.domain.chainId);
-      try {
-        await switchChainAsync({ chainId: requiredChainId });
-      } catch {
-        await (
-          window as Window & {
-            ethereum?: {
-              request?: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-            };
-          }
-        ).ethereum?.request?.({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: `0x${requiredChainId.toString(16)}` }],
+      // The challenge and payment-bearing requests are one logical write. The backend validates
+      // the client-generated key before it returns the 402, so the hook has to own the complete
+      // exchange rather than only the paid round.
+      const outcome = await inFlight.submit(async (idempotencyKey) => {
+        setPhase('payment');
+        const probeRes = await fetch(`${apiUrl}/api/tasks`, {
+          body: JSON.stringify(body),
+          headers: {
+            'Content-Type': 'application/json',
+            ...(await getLegalRequestHeaders()),
+            [IDEMPOTENCY_KEY_HEADER]: idempotencyKey,
+          },
+          method: 'POST',
         });
-      }
+        if (probeRes.status !== 402) {
+          const probeBody = await probeRes.json().catch(() => ({}) as { error?: string });
+          throw new Error(probeBody.error ?? `Task creation failed (status ${probeRes.status}).`);
+        }
 
-      const validBefore = BigInt(Math.floor(Date.now() / 1000) + 300);
-      const nonce = randomNonce();
-      const signature = await signTypedDataAsync({
-        domain: {
-          chainId: requiredChainId,
-          name: eip712.domain.name,
-          verifyingContract: eip712.domain.verifyingContract as `0x${string}`,
-          version: eip712.domain.version,
-        },
-        message: {
-          from: address,
-          nonce,
-          to: accepted.payTo as `0x${string}`,
-          validAfter: 0n,
-          validBefore,
-          value: BigInt(accepted.amount),
-        },
-        primaryType: 'TransferWithAuthorization',
-        types: { TransferWithAuthorization: eip712.types.TransferWithAuthorization },
-      });
+        const payReq = await probeRes.json();
+        const accepted = payReq.accepts?.[0];
+        const eip712 = accepted?.extra?.eip712;
+        if (!accepted || !eip712?.domain) {
+          throw new Error('Payment challenge did not include EIP-712 terms');
+        }
 
-      const paymentPayload = {
-        accepted: {
-          amount: accepted.amount,
-          asset: accepted.asset,
-          maxTimeoutSeconds: accepted.maxTimeoutSeconds,
-          network: accepted.network,
-          payTo: accepted.payTo,
-          scheme: accepted.scheme,
-        },
-        network: accepted.network,
-        payload: {
-          authorization: {
+        setPhase('signing');
+        const requiredChainId = Number(eip712.domain.chainId);
+        try {
+          await switchChainAsync({ chainId: requiredChainId });
+        } catch {
+          await (
+            window as Window & {
+              ethereum?: {
+                request?: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+              };
+            }
+          ).ethereum?.request?.({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: `0x${requiredChainId.toString(16)}` }],
+          });
+        }
+
+        const validBefore = BigInt(Math.floor(Date.now() / 1000) + 300);
+        const nonce = randomNonce();
+        const signature = await signTypedDataAsync({
+          domain: {
+            chainId: requiredChainId,
+            name: eip712.domain.name,
+            verifyingContract: eip712.domain.verifyingContract as `0x${string}`,
+            version: eip712.domain.version,
+          },
+          message: {
             from: address,
             nonce,
-            to: accepted.payTo,
-            validAfter: '0',
-            validBefore: validBefore.toString(),
-            value: accepted.amount,
+            to: accepted.payTo as `0x${string}`,
+            validAfter: 0n,
+            validBefore,
+            value: BigInt(accepted.amount),
           },
-          signature,
-        },
-        scheme: accepted.scheme,
-        x402Version: 2,
-      };
+          primaryType: 'TransferWithAuthorization',
+          types: { TransferWithAuthorization: eip712.types.TransferWithAuthorization },
+        });
 
-      setPhase('submitting');
-      // This surface does not swap itself out for the notice -- it renders both, suppressing
-      // each submit path on `inFlight.state`. That makes the key discipline load-bearing here
-      // rather than incidental: the brief stays editable, so a failed publish followed by
-      // "Edit brief", a new reward or a new mode, and a second publish is an ordinary thing to
-      // do. Handing the key to `submit` rather than reading it off the hook is what stops that
-      // second, materially different task going out under the first one's key.
-      const outcome = await inFlight.submit(async (idempotencyKey) => {
+        const paymentPayload = {
+          accepted: {
+            amount: accepted.amount,
+            asset: accepted.asset,
+            maxTimeoutSeconds: accepted.maxTimeoutSeconds,
+            network: accepted.network,
+            payTo: accepted.payTo,
+            scheme: accepted.scheme,
+          },
+          network: accepted.network,
+          payload: {
+            authorization: {
+              from: address,
+              nonce,
+              to: accepted.payTo,
+              validAfter: '0',
+              validBefore: validBefore.toString(),
+              value: accepted.amount,
+            },
+            signature,
+          },
+          scheme: accepted.scheme,
+          x402Version: 2,
+        };
+
+        setPhase('submitting');
+        // This surface does not swap itself out for the notice -- it renders both, suppressing
+        // each submit path on `inFlight.state`. That makes the key discipline load-bearing here
+        // rather than incidental: the brief stays editable, so a failed publish followed by
+        // "Edit brief", a new reward or a new mode, and a second publish is an ordinary thing to
+        // do. Handing the complete exchange to `submit` is what stops that second, materially
+        // different task going out under the first one's key.
         const createRes = await fetch(`${apiUrl}/api/tasks`, {
           body: JSON.stringify(body),
           headers: {

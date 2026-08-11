@@ -4,7 +4,12 @@ vi.mock('@privy-io/react-auth', () => ({
   getAccessToken: vi.fn().mockResolvedValue('privy-token'),
 }));
 
-import { isPendingTransactionMessage, payX402Post, type X402Deps } from './x402-client';
+import {
+  isPendingTransactionMessage,
+  payX402Post,
+  probeX402Cost,
+  type X402Deps,
+} from './x402-client';
 
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
@@ -97,6 +102,10 @@ describe('payX402Post', () => {
       .headers;
     expect(probeHeaders['X-Taskmarket-Legal-Receipt']).toBe('receipt-1');
     expect(probeHeaders.Authorization).toBe('Bearer privy-token');
+    expect(probeHeaders['X-Taskmarket-Idempotency-Key']).toBeTruthy();
+    expect(probeHeaders['X-Taskmarket-Idempotency-Key']).toBe(
+      retryHeaders['X-Taskmarket-Idempotency-Key']
+    );
     expect(retryHeaders['X-Taskmarket-Legal-Receipt']).toBe('receipt-1');
     expect(retryHeaders.Authorization).toBe('Bearer privy-token');
     expect(retryHeaders['payment-signature']).toBeTruthy();
@@ -141,6 +150,29 @@ describe('payX402Post', () => {
 
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.error).toBe('Task already cancelled');
+  });
+});
+
+describe('probeX402Cost', () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+    localStorage.clear();
+  });
+
+  it('carries an idempotency key when requesting payment terms', async () => {
+    fetchMock.mockResolvedValueOnce({ status: 402, json: async () => paymentChallenge() });
+
+    const idempotencyKey = '00000000-0000-4000-8000-000000000001';
+    const amount = await probeX402Cost(
+      '/api/tasks/0xabc/cancel',
+      {},
+      'http://api.test',
+      idempotencyKey
+    );
+
+    const headers = (fetchMock.mock.calls[0][1] as { headers: Record<string, string> }).headers;
+    expect(headers['X-Taskmarket-Idempotency-Key']).toBe(idempotencyKey);
+    expect(amount).toBe('1000');
   });
 });
 
