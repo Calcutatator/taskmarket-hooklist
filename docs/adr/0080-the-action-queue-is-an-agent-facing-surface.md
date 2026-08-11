@@ -8,13 +8,13 @@
 > achieve one authoritative answer to that question for every client, accepting that the endpoint's
 > response shape becomes a public contract we cannot reshape freely.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-11
 - **Embodiment:** Verified
 - **Last audited:** `[unaudited]`
 - **Author:** Claude Code (drafted for review)
 - **Deciders:** Beau
-- **Reviewers:** Beau — pending
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
 - **Amends / Amended-by:** Amends ADR-0079
