@@ -254,7 +254,13 @@ export const agentsRouter = router({
         ctx.db
           .select({ address: agents.address, publicKey: agents.publicKey })
           .from(agents)
-          .where(inArray(agents.address, requesterAddresses)),
+          // Lowercased on both sides -- see submissions.router.ts.
+          .where(
+            inArray(
+              sql`lower(${agents.address})`,
+              requesterAddresses.map((address) => address.toLowerCase())
+            )
+          ),
       ]);
 
       const submissionCountMap = new Map(submissionCounts.map((r) => [r.taskId, Number(r.count)]));

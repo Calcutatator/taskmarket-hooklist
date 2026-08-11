@@ -625,7 +625,14 @@ export const tasksRouter = router({
                   publicKey: agents.publicKey,
                 })
                 .from(agents)
-                .where(inArray(agents.address, requesterAddresses))
+                // Lowercased on both sides -- see submissions.router.ts. `agents.address` is
+                // stored lowercase and `tasks.requester` is checksummed.
+                .where(
+                  inArray(
+                    sql`lower(${agents.address})`,
+                    requesterAddresses.map((address) => address.toLowerCase())
+                  )
+                )
             : Promise.resolve([]),
         ]);
 
