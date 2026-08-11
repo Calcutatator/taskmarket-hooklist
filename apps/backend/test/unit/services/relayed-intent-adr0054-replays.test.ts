@@ -1,8 +1,5 @@
 // Verifies: ADR-0050
 // Verifies: ADR-0054
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import ts from 'typescript';
 import { toFunctionSelector } from 'viem';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stubServerEnvironment } from '../../helpers/server-environment';
@@ -86,6 +83,7 @@ vi.mock('../../../src/services/contract', () => ({
 }));
 
 import * as contract from '../../../src/services/contract';
+import { KNOWN_ERRORS } from '../../../src/services/contract-errors';
 
 const { classifyRelayFailure } = await import('../../../src/lib/relay-failure');
 const { registerRelayedIntentHandlers } = await import('../../../src/services/intents/register');
@@ -298,50 +296,13 @@ describe.each(OPERATIONS)(
 );
 
 describe("the revert vocabulary those guards depend on being decodable", () => {
-  /**
-   * The KNOWN_ERRORS map, read out of the source and keyed by selector.
-   *
-   * Read rather than imported because the map is module-private. What matters is not that the
-   * names appear but that they appear under the *right* four bytes: a wrong selector is silently
-   * inert -- it never matches, the revert decodes as "unknown revert", and the guard degrades
-   * into a retry loop with nothing failing to say so.
-   */
-  function knownErrors(): Record<string, string> {
-    const path = join(process.cwd(), 'src', 'services', 'contract.ts');
-    const source = ts.createSourceFile(
-      path,
-      readFileSync(path, 'utf8'),
-      ts.ScriptTarget.Latest,
-      true
-    );
-    const found: Record<string, string> = {};
-
-    const visit = (node: ts.Node): void => {
-      if (
-        ts.isVariableDeclaration(node) &&
-        ts.isIdentifier(node.name) &&
-        node.name.text === 'KNOWN_ERRORS' &&
-        node.initializer &&
-        ts.isObjectLiteralExpression(node.initializer)
-      ) {
-        for (const property of node.initializer.properties) {
-          if (!ts.isPropertyAssignment(property)) continue;
-          if (!ts.isStringLiteral(property.name)) continue;
-          if (!ts.isStringLiteral(property.initializer)) continue;
-          found[property.name.text.toLowerCase()] = property.initializer.text;
-        }
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(source);
-
-    return found;
-  }
-
-  const errors = knownErrors();
+  // Imported, not parsed out of the source. The map used to be a module-private literal in
+  // contract.ts, which is why this once walked the TypeScript AST to read it; it is now derived
+  // from the generated ABI artifacts and exported, so the real thing is available directly.
+  const errors = KNOWN_ERRORS;
 
   it('found the map it is checking', () => {
-    // Guards the guard: a parse returning nothing would make both assertions below vacuous.
+    // Guards the guard: an empty map would make both assertions below vacuous.
     expect(Object.keys(errors).length).toBeGreaterThan(50);
   });
 
