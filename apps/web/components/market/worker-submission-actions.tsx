@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation';
 
 import { RejectSubmissionButton } from '@/components/market/actions/reject-submission-button';
 import { SubmissionPayoutAction } from '@/components/market/actions/submission-payout-action';
+import { emitActionInboxEvent } from '@/lib/market/action-inbox-events';
 import { commandForTaskWorker } from '@/lib/market/task-action-command';
 import type { WorkerSubmissionGroup } from '@/lib/market/submission-review';
+import { useInvalidateActionQueue } from '@/lib/use-action-queue';
 
 export type WorkerSubmissionActionsProps = {
   acceptAction?: PendingAction;
@@ -24,6 +26,7 @@ export function WorkerSubmissionActions({
   task,
 }: WorkerSubmissionActionsProps) {
   const router = useRouter();
+  const invalidateActionQueue = useInvalidateActionQueue();
 
   if (group.rejected || (!acceptAction && !rejectAction)) {
     return null;
@@ -39,17 +42,21 @@ export function WorkerSubmissionActions({
   return (
     <div className="grid min-w-0 gap-3" role="group" aria-label="Submitter decisions">
       {targetedAcceptAction ? (
-        <SubmissionPayoutAction
-          action={targetedAcceptAction}
-          onSuccess={() => router.refresh()}
-          task={task}
-        />
+        <SubmissionPayoutAction action={targetedAcceptAction} task={task} />
       ) : null}
       {rejectAction ? (
         <RejectSubmissionButton
           action={rejectAction}
           disabled={false}
-          onRejectSuccess={onRejectSuccess}
+          onRejectSuccess={(workerKey) => {
+            emitActionInboxEvent({
+              action: 'reject_submission',
+              event: 'lifecycle_action_completed',
+              taskId: task.id,
+            });
+            void invalidateActionQueue();
+            onRejectSuccess(workerKey);
+          }}
           onSuccess={() => router.refresh()}
           target={{
             activeSubmissionCount: group.submissions.length,

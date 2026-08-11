@@ -10,13 +10,14 @@ import {
   IconListCheck,
   IconListDetails,
   IconMoodSmile,
-  IconNews,
+  IconInbox,
   IconPackages,
   IconSettings,
   IconUser,
   IconUsers,
 } from '@tabler/icons-react';
 import Link from 'next/link';
+import { useAccount } from 'wagmi';
 
 import { FirstRunChecklist } from '@/components/market/first-run-checklist';
 import { NavDocuments } from '@/components/nav-documents';
@@ -32,6 +33,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { useActionQueue } from '@/lib/use-action-queue';
 
 const taskmarketIconSrc = '/taskmarket-final-icon-transparent.svg';
 
@@ -47,6 +49,11 @@ const data = {
       title: 'Tasks',
       url: '/dashboard/tasks',
       icon: IconListDetails,
+    },
+    {
+      title: 'Inbox',
+      url: '/dashboard/inbox',
+      icon: IconInbox,
     },
     {
       title: 'Task Drops',
@@ -73,14 +80,6 @@ const data = {
     },
   ],
   documents: [
-    {
-      // The route path stays /dashboard/inbox to avoid breaking existing links;
-      // only the user-facing label changed to News. A /dashboard/news alias could
-      // be added later if a cleaner URL is wanted.
-      name: 'News',
-      url: '/dashboard/inbox',
-      icon: IconNews,
-    },
     {
       name: 'Humans',
       url: '/dashboard/humans',
@@ -115,6 +114,14 @@ const data = {
 };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { address } = useAccount();
+  const actionQueue = useActionQueue(address);
+  const navMain = data.navMain.map((item) =>
+    item.title === 'Inbox'
+      ? { ...item, actionCount: address ? actionQueue.data?.total : undefined }
+      : item
+  );
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
@@ -139,7 +146,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
+        <NavMain items={navMain} />
         <FirstRunChecklist />
         <NavDocuments items={data.documents} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />

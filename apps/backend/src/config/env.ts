@@ -116,6 +116,26 @@ const envSchema = z
     CORS_ORIGIN: z.string().optional().default('*'),
     CHAIN_ID: z.coerce.number().default(8453),
     SERVER_PRIVATE_KEY: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+    DEV_PRIVATE_KEY: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{64}$/)
+      .optional(),
+    REQUESTER_PRIVATE_KEY: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{64}$/)
+      .optional(),
+    WORKER_PRIVATE_KEY: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{64}$/)
+      .optional(),
+    EVALUATOR_PRIVATE_KEY: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{64}$/)
+      .optional(),
+    WORKER_B_PRIVATE_KEY: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{64}$/)
+      .optional(),
     // Production/testnet: https://facilitator.daydreams.systems (works for Base Sepolia from localhost)
     // Local debugging only: http://localhost:8009
     X402_FACILITATOR_URL: z.string().url().default('https://facilitator.daydreams.systems'),
@@ -385,6 +405,22 @@ export function getHardSubmissionCeilingOverride(): number | undefined {
   }
 
   return result.data.HARD_SUBMISSION_CEILING;
+}
+
+export function getEvaluatorSmokePrivateKeys(): {
+  evaluatorPrivateKey: `0x${string}`;
+  resolverPrivateKey: `0x${string}`;
+} {
+  const config = getServerConfig();
+  if (!config.EVALUATOR_PRIVATE_KEY || !config.WORKER_B_PRIVATE_KEY) {
+    throw new Error(
+      'EVALUATOR_PRIVATE_KEY and WORKER_B_PRIVATE_KEY are required for distinct-actor evaluator smoke coverage'
+    );
+  }
+  return {
+    evaluatorPrivateKey: config.EVALUATOR_PRIVATE_KEY as `0x${string}`,
+    resolverPrivateKey: config.WORKER_B_PRIVATE_KEY as `0x${string}`,
+  };
 }
 
 export function getServerConfig(): Env {

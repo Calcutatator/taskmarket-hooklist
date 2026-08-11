@@ -22,7 +22,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   drops: 'Task Drops',
   'for-agents': 'For agents',
   humans: 'Humans',
-  inbox: 'News',
+  inbox: 'Inbox',
   leaderboard: 'Leaderboard',
   new: 'New',
   protocol: 'Protocol',

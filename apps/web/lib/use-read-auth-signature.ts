@@ -6,16 +6,18 @@ import {
   READ_AUTH_SIGNATURE_HEADER,
 } from '@taskmarket/shared';
 import {
-  clearCachedReadAuthHeaders,
+  getCachedReadAuthAddress,
+  getOrCreateCachedReadAuthHeaders,
   hasCachedReadAuthHeaders,
-  setCachedReadAuthHeaders,
+  removeReadAuthConsumer,
+  updateReadAuthConsumerAddress,
 } from './read-auth';
 
 // Proves ownership of the connected wallet (Phase 2's ctx.caller mechanism,
-// ADR-0016/ADR-0022) so reads that branch on caller identity -- agents.inbox's
+// ADR-0016/ADR-0023) so reads that branch on caller identity -- agents.inbox's
 // own unlisted tasks, submission-visibility gating, etc. -- see this wallet as
 // authenticated. Signs taskmarket:read:<address> once per address per
-// component lifetime and caches the resulting headers (read globally by the
+// in-memory wallet session and caches the resulting headers (read globally by the
 // tRPC client in api/client.tsx) so a poll or refetch reuses them rather than
 // re-prompting the wallet. A rejected or failed signature is non-fatal --
 // callers still run their query, just without caller-scoped data, same as any
@@ -33,15 +35,20 @@ export function useReadAuthSignatureState(
   { autoStart = true }: { autoStart?: boolean } = {}
 ): ReadAuthSignatureState {
   const { signMessageAsync } = useSignMessage();
-  const [readyFor, setReadyFor] = useState<string | undefined>(undefined);
+  const [readyFor, setReadyFor] = useState<string | undefined>(() => {
+    const normalizedAddress = address?.toLowerCase();
+    return normalizedAddress && getCachedReadAuthAddress() === normalizedAddress
+      ? normalizedAddress
+      : undefined;
+  });
   const [attempt, setAttempt] = useState(autoStart ? 1 : 0);
   const [requestedFor, setRequestedFor] = useState<string | undefined>(undefined);
   const [status, setStatus] = useState<ReadAuthSignatureState['status']>('idle');
   const [error, setError] = useState<string | null>(null);
+  const consumerRef = useRef<object>({});
   const requestIdRef = useRef(0);
   const pendingRef = useRef<{
     attempt: number;
-    address: `0x${string}`;
     normalizedAddress: string;
     promise: Promise<`0x${string}`>;
     requestId: number;
@@ -55,10 +62,20 @@ export function useReadAuthSignatureState(
   }, [normalizedAddress]);
 
   useEffect(() => {
+    updateReadAuthConsumerAddress(consumerRef.current, address);
+  }, [address]);
+
+  useEffect(
+    () => () => {
+      removeReadAuthConsumer(consumerRef.current);
+    },
+    []
+  );
+
+  useEffect(() => {
     if (!address) {
       requestIdRef.current += 1;
       pendingRef.current = null;
-      clearCachedReadAuthHeaders();
       setReadyFor(undefined);
       setRequestedFor(undefined);
       setError(null);
@@ -71,9 +88,13 @@ export function useReadAuthSignatureState(
     // second consumer mounting later (an in-flight write starting to poll, say) must not put a
     // wallet prompt in front of someone who already signed. Ahead of the autoStart branch
     // below, which would otherwise clear the very cache this reads.
+    //
+    // `hasCachedReadAuthHeaders` rather than comparing `getCachedReadAuthAddress()`: the two
+    // answer the same question here, and this one states it.
+    const currentNormalizedAddress = address.toLowerCase();
     if (hasCachedReadAuthHeaders(address)) {
       pendingRef.current = null;
-      setReadyFor(normalizedAddress);
+      setReadyFor(currentNormalizedAddress);
       setError(null);
       setStatus('ready');
       return;
@@ -82,14 +103,12 @@ export function useReadAuthSignatureState(
     if (!autoStart && requestedFor !== normalizedAddress) {
       requestIdRef.current += 1;
       pendingRef.current = null;
-      clearCachedReadAuthHeaders();
       setReadyFor(undefined);
       setError(null);
       setStatus('idle');
       return;
     }
 
-    const currentNormalizedAddress = address.toLowerCase();
     let pending = pendingRef.current;
     if (
       !pending ||
@@ -97,15 +116,19 @@ export function useReadAuthSignatureState(
       pending.attempt !== attempt
     ) {
       const requestId = ++requestIdRef.current;
-      clearCachedReadAuthHeaders();
       setReadyFor(undefined);
       setError(null);
       setStatus('signing');
       pending = {
         attempt,
-        address,
         normalizedAddress: currentNormalizedAddress,
-        promise: signMessageAsync({ message: buildReadAuthMessage(address) }),
+        promise: getOrCreateCachedReadAuthHeaders(address, async () => {
+          const signature = await signMessageAsync({ message: buildReadAuthMessage(address) });
+          return {
+            [READ_AUTH_ADDRESS_HEADER]: address,
+            [READ_AUTH_SIGNATURE_HEADER]: signature,
+          };
+        }).then((headers) => headers[READ_AUTH_SIGNATURE_HEADER] as `0x${string}`),
         requestId,
       };
       pendingRef.current = pending;
@@ -114,27 +137,22 @@ export function useReadAuthSignatureState(
     let active = true;
     const currentPending = pending;
     currentPending.promise
-      .then((signature) => {
+      .then(() => {
         if (!active || requestIdRef.current !== currentPending.requestId) return;
-        setCachedReadAuthHeaders(currentPending.address, {
-          [READ_AUTH_ADDRESS_HEADER]: currentPending.address,
-          [READ_AUTH_SIGNATURE_HEADER]: signature,
-        });
+        if (getCachedReadAuthAddress() !== currentPending.normalizedAddress) return;
         setReadyFor(currentPending.normalizedAddress);
         setError(null);
         setStatus('ready');
       })
       .catch(() => {
         if (!active || requestIdRef.current !== currentPending.requestId) return;
-        clearCachedReadAuthHeaders();
         setReadyFor(undefined);
         setError('The wallet did not approve the verification request. Try again.');
         setStatus('error');
       });
 
-    // A wallet signature can settle after this consumer has unmounted. Keep the
-    // pending promise reusable across React's effect replay, but prevent this
-    // effect instance from mutating the process-wide auth cache once disposed.
+    // A wallet signature can settle after this consumer has unmounted. The shared
+    // session still caches it, but this disposed consumer must not update local state.
     return () => {
       active = false;
     };

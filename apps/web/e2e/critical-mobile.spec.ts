@@ -193,7 +193,8 @@ test('navigates dashboard sections without document reload and preserves browser
     .poll(() => page.evaluate(() => window.sessionStorage.getItem('dashboard-beforeunload')))
     .toBe('false');
 
-  await tasks.evaluate((element: HTMLAnchorElement) => element.click());
+  await tasks.scrollIntoViewIfNeeded();
+  await tasks.click();
   await page.waitForLoadState('networkidle');
   await expect(page).toHaveURL(/\/dashboard\?section=tasks$/);
   await expect(tasks).toHaveAttribute('aria-current', 'page');

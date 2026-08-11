@@ -31,18 +31,19 @@ import { createHash } from 'crypto';
 import { privateKeyToAccount } from 'viem/accounts';
 import { buildSubmitMessage } from '@taskmarket/shared';
 import {
-  log,
-  ok,
-  get,
-  post,
-  x402Post,
-  getAccounts,
   API_URL,
+  expectActionQueueIntent,
+  get,
+  getAccounts,
+  log,
+  nudgeChainForward,
+  ok,
   pollTaskStatus,
   pollUntil,
-  sleep,
-  nudgeChainForward,
+  post,
   requireShortAppealWindow,
+  sleep,
+  x402Post,
 } from './_x402';
 
 const toHours = (secs: number): number => secs / 3600;
@@ -210,6 +211,13 @@ async function scenarioA(
     appealWindowHours: toHours(shortWindowSecs),
   });
 
+  // Action-queue assertions (Action Inbox). The queue is a projection of on-chain state, so it
+  // is checked at both edges of each transition: the action appears for the actor who can take
+  // it, and stops appearing once it has been taken. `evaluator` stands in for the dispute
+  // resolver here because this script assigns one account to both slots -- rev018 only requires
+  // each to differ from the requester.
+  await expectActionQueueIntent(taskId, evaluator, 'evaluate_work', true);
+
   log('5/8', '[A] Evaluator submitting APPROVE verdict...');
   const { txHash: evalTx } = (await x402Post(
     `/api/tasks/${taskId}/evaluate`,
@@ -226,6 +234,9 @@ async function scenarioA(
   const afterEval = await pollStatus(taskId, ['appealing']);
   ok('status after evaluate', afterEval);
 
+  await expectActionQueueIntent(taskId, evaluator, 'evaluate_work', false);
+  await expectActionQueueIntent(taskId, worker, 'appeal_verdict', true);
+
   log('6/8', `[A] Waiting ${shortWindowSecs + 5}s for appeal window to expire...`);
   await sleep((shortWindowSecs + 5) * 1000);
   // Syncs Anvil's frozen block.timestamp forward -- see nudgeChainForward in _x402.ts.
@@ -240,6 +251,7 @@ async function scenarioA(
   log('8/8', '[A] Polling for completed status...');
   const finalStatus = await pollStatus(taskId, ['completed', 'accepted']);
   ok('final status', finalStatus);
+  await expectActionQueueIntent(taskId, worker, 'appeal_verdict', false);
 }
 
 // --- Scenario B: REJECT verdict, no appeal, finalize → cancelled ---
@@ -287,6 +299,7 @@ async function scenarioB(
   log('8/8', '[B] Polling for cancelled status (task terminates after REJECT)...');
   const finalStatus = await pollStatus(taskId, ['cancelled']);
   ok('final status', finalStatus);
+  await expectActionQueueIntent(taskId, evaluator, 'evaluate_work', false);
 }
 
 // --- Scenario C: APPROVE verdict, worker appeals, dispute resolver settles → completed ---
@@ -333,6 +346,7 @@ async function scenarioC(
 
   const afterAppeal = await pollStatus(taskId, ['disputed']);
   ok('status after appeal', afterAppeal);
+  await expectActionQueueIntent(taskId, evaluator, 'resolve_dispute', true);
 
   log('8/9', '[C] Dispute resolver settling dispute (APPROVE, partial award)...');
   const { txHash: resolveTx } = (await x402Post(
@@ -349,6 +363,7 @@ async function scenarioC(
   log('9/9', '[C] Polling for completed status...');
   const finalStatus = await pollStatus(taskId, ['completed', 'accepted']);
   ok('final status', finalStatus);
+  await expectActionQueueIntent(taskId, evaluator, 'resolve_dispute', false);
 }
 
 /**

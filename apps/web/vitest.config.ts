@@ -20,7 +20,16 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./test/setup.ts'],
-    testTimeout: 15_000,
+    // 30s, not because any test is slow -- the slowest here runs in about 1.3s in isolation --
+    // but because vitest forks per test file, and a fully parallel run on a busy machine starves
+    // individual workers badly enough to cross a 15s deadline. The symptom was a timeout on a
+    // different, unrelated test file every run, each of which passes on its own.
+    //
+    // A deadline is the wrong tool for catching a slow test anyway: it fires on whichever test
+    // happened to be scheduled during the squeeze, not on the one that got slower. So this is
+    // set for the slowest machine that has to pass, and capping fork concurrency was considered
+    // and rejected -- it would cost wall-clock on CI, which does not have this problem.
+    testTimeout: 30_000,
     projects: [
       {
         extends: true,

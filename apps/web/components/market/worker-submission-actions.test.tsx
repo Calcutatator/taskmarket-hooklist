@@ -8,11 +8,12 @@ import type { WorkerSubmissionGroup } from '@/lib/market/submission-review';
 
 import { WorkerSubmissionActions } from './worker-submission-actions';
 
-const { account, payX402Post, refresh } = vi.hoisted(() => ({
+const { account, invalidateActionQueue, payX402Post, refresh } = vi.hoisted(() => ({
   account: {
     address: '0x1111111111111111111111111111111111111111' as `0x${string}` | undefined,
     isConnected: true,
   },
+  invalidateActionQueue: vi.fn(),
   payX402Post: vi.fn(),
   refresh: vi.fn(),
 }));
@@ -37,6 +38,10 @@ vi.mock('sonner', () => ({
 
 vi.mock('@/lib/x402-client', () => ({
   payX402Post: (...args: unknown[]) => payX402Post(...args),
+}));
+
+vi.mock('@/lib/use-action-queue', () => ({
+  useInvalidateActionQueue: () => invalidateActionQueue,
 }));
 
 const requester = '0x1111111111111111111111111111111111111111';
@@ -91,6 +96,26 @@ describe('WorkerSubmissionActions', () => {
     account.address = requester;
     account.isConnected = true;
     payX402Post.mockResolvedValue({ ok: true, txHash: '0xabc' });
+    invalidateActionQueue.mockResolvedValue(undefined);
+  });
+
+  it('invalidates the shared queue after rejecting a submitter', async () => {
+    const user = userEvent.setup();
+    render(
+      <WorkerSubmissionActions
+        group={group}
+        onRejectSuccess={vi.fn()}
+        rejectAction={rejectAction}
+        task={task}
+      />
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Reject submitter and all 2 submissions' })
+    );
+    await user.click(await screen.findByRole('button', { name: 'Reject all submissions' }));
+
+    await waitFor(() => expect(invalidateActionQueue).toHaveBeenCalledTimes(1));
   });
 
   it('targets payout to the selected group and explains latest-submission semantics', async () => {

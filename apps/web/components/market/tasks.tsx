@@ -7,12 +7,13 @@ import type {
   ProofResponse,
   SubmissionResponse,
   TaskAward,
+  TaskActionIntentValue,
   TaskDetailResponse,
   TaskModeType,
   TaskResponse,
   TaskStatusType,
 } from '@taskmarket/shared';
-import { formatDreams, getAgentName } from '@taskmarket/shared';
+import { formatDreams } from '@taskmarket/shared';
 import {
   ArrowUpDown,
   Check,
@@ -52,6 +53,7 @@ import { TaskParticipationModule } from '@/components/market/task-participation-
 import { TaskDescriptionDisclosure } from '@/components/market/task-description-disclosure';
 import { TaskReviewStatus } from '@/components/market/task-review-status';
 import { TaskVisibilityBadge } from '@/components/market/unlisted-badge';
+import { VerdictEvidencePanel } from '@/components/market/verdict-evidence-panel';
 import { Badge } from '@/components/ui/badge';
 import {
   Breadcrumb,
@@ -103,7 +105,14 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import type { MarketStats, TaskEvaluationIdentities } from '@/lib/api/server';
 import { explorerTxUrl } from '@/lib/explorer';
-import { compactAddress, formatBps, formatDateTime, formatUsdcUnits } from '@/lib/format';
+import {
+  actorDisplayName,
+  compactAddress,
+  formatBps,
+  formatDateTime,
+  formatUsdcUnits,
+} from '@/lib/format';
+import { TASK_ACTION_PRESENTATION } from '@/lib/market/task-action-presentation';
 import { MODE_TOOLTIPS } from '@/lib/market/status-config';
 import { selectPublishedHtmlArtifacts } from '@/lib/market/published-html';
 import {
@@ -111,6 +120,7 @@ import {
   resolvedAwardCount,
   settledAwards,
   splitPayoutLabel,
+  taskRatingProgress,
   taskModeBadgeVariant,
   taskStatusBadgeVariant,
   taskStatusLabel,
@@ -451,15 +461,9 @@ function isAwardRecipient(task: TaskDetailResponse | TaskResponse, address: stri
   );
 }
 
-function ratingProgress(task: TaskDetailResponse | TaskResponse): string | null {
-  const awards = settledAwards(task);
-  const ratingsByWorker = new Map<string, boolean>();
-  for (const award of awards) {
-    const key = award.workerAddress.toLowerCase();
-    ratingsByWorker.set(key, Boolean(ratingsByWorker.get(key) || award.rating !== null));
-  }
-  if (ratingsByWorker.size <= 1) return null;
-  return `${[...ratingsByWorker.values()].filter(Boolean).length} of ${ratingsByWorker.size} rated`;
+function ratingProgressLabel(task: TaskDetailResponse | TaskResponse): string | null {
+  const progress = taskRatingProgress(task);
+  return progress ? `${progress.rated} of ${progress.total} rated` : null;
 }
 
 // Whether an 'open' task's submission window has already closed (deadline passed but
@@ -494,7 +498,7 @@ function statusContext(task: TaskDetailResponse | TaskResponse) {
       return 'Awaiting requester review';
     case 'completed':
       return (
-        ratingProgress(task) ??
+        ratingProgressLabel(task) ??
         (task.primaryAward?.rating == null ? 'Completed, rating pending' : 'Completed')
       );
     case 'cancelled':
@@ -516,7 +520,7 @@ function pendingActionEmptyReason(task: TaskDetailResponse | TaskResponse) {
   switch (task.status) {
     case 'completed':
       return (
-        ratingProgress(task) ??
+        ratingProgressLabel(task) ??
         (task.primaryAward?.rating == null
           ? 'Payment confirmed. The requester can still leave a rating.'
           : 'This task is complete.')
@@ -899,7 +903,10 @@ export function TaskTable({
                         className="font-mono text-xs text-muted-foreground"
                         title={task.requester}
                       >
-                        {compactAddress(task.requester)}
+                        {actorDisplayName({
+                          address: task.requester,
+                          agentId: task.requesterAgentId,
+                        })}
                       </span>
                       <ActorTypeBadge actorType={task.requesterActorType} />
                     </span>
@@ -1910,9 +1917,7 @@ export function ActorLink({
   // Prefer a registered agent's name/id over a raw wallet address once one is on
   // record -- compactAddress(agentId) previously rendered a short numeric agentId
   // as-is (e.g. "42"), with nothing marking it as an agent identity.
-  const defaultText = agentId
-    ? (getAgentName(agentId) ?? `Agent #${agentId}`)
-    : compactAddress(address);
+  const defaultText = actorDisplayName({ address, agentId });
   const text = label ?? defaultText;
 
   if (!identity) {
@@ -1961,7 +1966,10 @@ export function SubmissionCard({
   const [heroArtifact, ...extraMedia] = mediaArtifacts;
   const primaryArtifact = heroArtifact ?? supportingArtifacts[0];
   const worker = submission.workerAddress;
-  const workerLabel = compactAddress(submission.workerAgentId ?? submission.workerAddress);
+  const workerLabel = actorDisplayName({
+    address: submission.workerAddress,
+    agentId: submission.workerAgentId,
+  });
   const acceptAction = reviewAction
     ? {
         ...reviewAction,
@@ -1995,7 +2003,6 @@ export function SubmissionCard({
               address={submission.workerAddress}
               agentId={submission.workerAgentId}
               className="truncate font-mono text-base font-semibold hover:text-primary"
-              label={workerLabel}
               profileBasePath={profileBasePath}
               title={worker}
             />
@@ -2056,7 +2063,6 @@ export function SubmissionCard({
                 address={submission.workerAddress}
                 agentId={submission.workerAgentId}
                 className="truncate font-mono text-sm font-semibold hover:text-primary"
-                label={workerLabel}
                 profileBasePath={profileBasePath}
                 title={worker}
               />
@@ -2126,7 +2132,6 @@ export function SubmissionCard({
             address={submission.workerAddress}
             agentId={submission.workerAgentId}
             className="min-w-0 truncate font-mono text-sm hover:text-primary"
-            label={workerLabel}
             profileBasePath={profileBasePath}
             title={worker}
           />
@@ -2390,7 +2395,12 @@ function SettlementPayoutsPanel({
   const recipientCount = awardRecipientCount(awards);
 
   return (
-    <section aria-label="Settlement payouts" className="grid gap-4 border-t border-border/58 pt-5">
+    <section
+      aria-label="Settlement payouts"
+      className="grid scroll-mt-24 gap-4 border-t border-border/58 pt-5"
+      id="settlement-payouts"
+      tabIndex={-1}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
           Settlement payouts
@@ -2794,6 +2804,7 @@ function TaskBrief({ body }: { body: string }) {
 export function TaskDetailPanel({
   backHref = '/dashboard/tasks',
   evaluationIdentities,
+  focusIntent,
   htmlSubmissions = [],
   initialArtifactId,
   marketStats,
@@ -2805,6 +2816,7 @@ export function TaskDetailPanel({
   // Resolved by the route, not here: this panel stays synchronous so it keeps rendering under
   // a plain client render in component tests.
   evaluationIdentities?: TaskEvaluationIdentities | null;
+  focusIntent?: TaskActionIntentValue;
   htmlSubmissions?: SubmissionResponse[];
   initialArtifactId?: string;
   marketStats?: MarketStats | null;
@@ -2835,6 +2847,10 @@ export function TaskDetailPanel({
   // loaded submissions), so stripping it here too made the control disappear from the
   // page entirely for that window, not just move surfaces.
   const submissionsLoaded = (modeData?.submissions?.length ?? 0) > 0;
+  const decisionEvidenceReady =
+    submissionsLoaded &&
+    (task.submissionCount ?? 0) > 0 &&
+    (modeData?.submissions?.length ?? 0) >= (task.submissionCount ?? 0);
   // Benchmark's optional `task submit` channel (alongside its primary `task proof`
   // flow) already gets real accept/reject_submission pending actions from the
   // backend (contestHasSubmissions), but had no frontend review surface at all.
@@ -2879,12 +2895,15 @@ export function TaskDetailPanel({
     ? `/tasks/${encodeURIComponent(task.id)}?artifact=${encodeURIComponent(publishedHtmlArtifact.artifact.id)}`
     : null;
   const participationModule = participationAction ? (
-    <TaskParticipationModule action={participationAction} task={task} />
+    <div className="scroll-mt-24" id="task-participation" tabIndex={-1}>
+      <TaskParticipationModule action={participationAction} task={task} />
+    </div>
   ) : null;
+  const focusLabel = focusIntent ? TASK_ACTION_PRESENTATION[focusIntent].focusLabel : null;
 
   return (
     <div className="grid w-full min-w-0 gap-6 lg:grid-cols-3">
-      <PublishedCelebration />
+      <PublishedCelebration task={task} />
       <div className="flex w-full min-w-0 flex-col gap-5 lg:col-span-2">
         {!dashboardDetail ? (
           <Breadcrumb className="px-1">
@@ -2909,6 +2928,21 @@ export function TaskDetailPanel({
         >
           {title}
         </h1>
+        {focusLabel ? (
+          <div
+            aria-live="polite"
+            className="rounded-lg border border-primary/45 bg-primary/8 px-4 py-3"
+            role="status"
+          >
+            <p className="font-mono text-xs font-semibold uppercase tracking-wide text-primary">
+              Inbox action
+            </p>
+            <p className="mt-1 text-sm font-medium text-foreground">{focusLabel}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              The link has taken you to the relevant task section below.
+            </p>
+          </div>
+        ) : null}
         <section
           aria-label="Task metrics"
           className="grid grid-cols-2 overflow-hidden rounded-lg border border-border/58 bg-card/38 md:grid-cols-4"
@@ -2937,6 +2971,10 @@ export function TaskDetailPanel({
           />
         </section>
         <LiveStatusBanner marketStats={marketStats} modeData={modeData} task={task} />
+        <VerdictEvidencePanel
+          forceVisible={focusIntent === 'appeal_verdict' || focusIntent === 'finalize_verdict'}
+          task={task}
+        />
         <SettlementPayoutsPanel profileBasePath={profileBasePath} task={task} />
         {descriptionBody || detailTags.length > 0 || publishedHtmlArtifact ? (
           <section
@@ -2991,10 +3029,11 @@ export function TaskDetailPanel({
           </>
         ) : null}
         {showNextActions ? (
-          <div className="order-1 lg:order-2">
+          <div className="order-1 scroll-mt-24 lg:order-2" id="task-next-actions" tabIndex={-1}>
             <TaskActionsPanel
               claimedBy={task.claimedBy}
               emptyReason={pendingActionEmptyReason(task)}
+              evidenceReady={decisionEvidenceReady}
               pendingActions={mainNextActions}
               requester={task.requester}
               task={task}
@@ -3018,6 +3057,7 @@ export function TaskDetailPanel({
             <TaskActionsPanel
               claimedBy={task.claimedBy}
               emptyReason={pendingActionEmptyReason(task)}
+              evidenceReady={decisionEvidenceReady}
               hideWhenNoVisibleActions
               pendingActions={cancelActions}
               requester={task.requester}

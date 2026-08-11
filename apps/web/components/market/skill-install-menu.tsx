@@ -48,12 +48,22 @@ export function SkillInstallMenu({ className }: { className?: string }) {
   );
 
   async function copyCommand(method: SkillInstallMethod) {
-    await navigator.clipboard.writeText(commands[method]);
+    try {
+      await navigator.clipboard.writeText(commands[method]);
+    } catch {
+      return;
+    }
     setCopiedMethod(method);
     // Copying a second command before the first has reset would otherwise leave two timers, and
     // the earlier one would clear the newer label.
     if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
-    resetTimer.current = window.setTimeout(() => setCopiedMethod(null), 1600);
+    // The handle is cleared as it fires, so the unmount cleanup above never calls
+    // clearTimeout on a timer that has already run -- harmless, but it makes "is a reset
+    // pending" an honest question to ask of the ref.
+    resetTimer.current = window.setTimeout(() => {
+      resetTimer.current = null;
+      setCopiedMethod(null);
+    }, 1600);
   }
 
   return (

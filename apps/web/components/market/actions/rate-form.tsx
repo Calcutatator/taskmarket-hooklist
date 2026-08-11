@@ -12,7 +12,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
-import { compactAddress } from '@/lib/format';
+import { actorDisplayName } from '@/lib/format';
+import { workerAgentIdFor } from '@/lib/market/worker-identity';
+import { useInvalidateActionQueue } from '@/lib/use-action-queue';
 import { useInFlightWrite } from '@/lib/use-in-flight-write';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
 
@@ -23,6 +25,7 @@ export function RateForm({ action, disabled, onSuccess, task }: TaskActionCompon
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
+  const invalidateActionQueue = useInvalidateActionQueue();
   const [rating, setRating] = useState<number>(85);
   const [feedback, setFeedback] = useState<string>('');
   const [step, setStep] = useState<X402Step | 'done' | 'idle'>('idle');
@@ -91,6 +94,7 @@ export function RateForm({ action, disabled, onSuccess, task }: TaskActionCompon
       setStep('done');
       setTxHash(result.txHash ?? null);
       onSuccess?.();
+      void invalidateActionQueue();
       const url = result.txHash ? explorerTxUrl(result.txHash) : null;
       toast.success(
         'Rating recorded',
@@ -143,7 +147,9 @@ export function RateForm({ action, disabled, onSuccess, task }: TaskActionCompon
       <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/42 px-3 py-2 text-xs">
         <span className="text-muted-foreground">Rating recipient</span>
         <span className="font-mono text-foreground" title={worker ?? undefined}>
-          {worker ? compactAddress(worker) : 'Unavailable'}
+          {worker
+            ? actorDisplayName({ address: worker, agentId: workerAgentIdFor(task, worker) })
+            : 'Unavailable'}
         </span>
       </div>
       <div className="grid gap-2 rounded-xl border border-border/60 bg-background/42 p-3 text-xs leading-5 text-muted-foreground">

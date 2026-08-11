@@ -207,6 +207,25 @@ describe('computePendingActions', () => {
     expect(resolve.command).toContain('--award <worker>:<amount-usdc>:<rank>');
   });
 
+  it('scopes a contest appeal to the authenticated submitter projection', () => {
+    const [appeal] = computePendingActions(
+      task({
+        mode: 'bounty',
+        status: 'appealing',
+        claimedBy: null,
+        appealEligibleWorker: SECOND_WORKER,
+        appealDeadline: FUTURE,
+      }),
+      NOW
+    );
+
+    expect(appeal).toMatchObject({
+      action: 'appeal',
+      eligibleAddress: SECOND_WORKER,
+      availableUntil: FUTURE.toISOString(),
+    });
+  });
+
   it('offers refund and extension after an empty open task expires', () => {
     const actions = computePendingActions(task({ expiryTime: PAST }), NOW);
 

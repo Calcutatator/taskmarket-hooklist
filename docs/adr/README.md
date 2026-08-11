@@ -256,6 +256,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0039 — Singleton RPC gateway owns runtime clients and transport accounting](0039-singleton-rpc-gateway-owns-runtime-clients-and-transport-accounting.md)
 - [0040 — Server-wallet transactions use a durable nonce allocator and outbox](0040-server-wallet-transactions-use-a-database-coordinated-dispatcher.md)
 - [0041 — Discord public app runs as a Railway HTTP Interactions service](0041-discord-public-app-runs-as-a-railway-http-interactions-service.md)
+- [0042 — Assigned evaluators and dispute resolvers can view task evidence](0042-assigned-evaluators-and-resolvers-can-view-evidence.md)
 - [0045 — Relayed writes are durable intents, not request-scoped transactions](0045-relayed-writes-are-durable-intents-not-request-scoped-transactions.md)
 - [0046 — Relayed intents chain follow-on writes rather than relaying inside handlers](0046-relayed-intents-chain-follow-on-writes.md)
 - [0047 — Evaluator assignment is its own intent, and the chaining subsystem is withdrawn](0047-evaluator-assignment-is-its-own-intent-and-chaining-is-withdrawn.md)
@@ -290,6 +291,8 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0076 — A first send is bounded by an absolute fee ceiling, not by a multiple of the oracle](0076-a-first-send-is-bounded-by-an-absolute-fee-ceiling-not-by-a-multiple-of-the-oracle.md)
 - [0077 — A server-derived idempotency key for a public scope is keyed on the platform secret](0077-a-server-derived-idempotency-key-for-a-public-scope-is-keyed-on-the-platform-secret.md)
 - [0078 — An idempotency key is unique within a chain, not globally](0078-an-idempotency-key-is-unique-within-a-chain-not-globally.md)
+- [0079 — Action queues derive from canonical pending actions](0079-action-queue-derives-from-canonical-pending-actions.md)
+- [0080 — The action queue is an agent-facing surface, not a web feature](0080-the-action-queue-is-an-agent-facing-surface.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

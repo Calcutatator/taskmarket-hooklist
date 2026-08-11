@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
+import { getAgentName } from '@taskmarket/shared';
 
 import * as format from './format';
 import {
+  actorDisplayName,
+  compactAddress,
   formatDateTime,
   formatRelativePast,
   formatTimeLeft,
   formatUsdcUnits,
   sumUsdcBaseUnits,
 } from './format';
+
+const WALLET = '0x1111111111111111111111111111111111111111';
 
 describe('sumUsdcBaseUnits', () => {
   it('sums base-unit strings and ignores malformed values', () => {
@@ -158,5 +163,40 @@ describe('bpsShareOfBaseUnits', () => {
     expect(format.bpsShareOfBaseUnits('', 750)).toBeNull();
     expect(format.bpsShareOfBaseUnits('not-a-number', 750)).toBeNull();
     expect(format.bpsShareOfBaseUnits('0', 750)).toBeNull();
+  });
+});
+
+describe('actorDisplayName', () => {
+  // The bug this exists to prevent: `compactAddress` returns any string of twelve characters or
+  // fewer unchanged, so feeding it an agentId rendered the raw number and never the name.
+  it('renders a registered agent generated name rather than its id or address', () => {
+    const name = actorDisplayName({ agentId: '42', address: WALLET });
+
+    expect(name).toBe(getAgentName('42'));
+    expect(name).not.toBe('42');
+    expect(name).not.toContain('0x');
+  });
+
+  it('prefers the name even when an address is also present', () => {
+    expect(actorDisplayName({ agentId: '7', address: WALLET })).toBe(getAgentName('7'));
+  });
+
+  it('falls back to a compact address for an unregistered wallet', () => {
+    expect(actorDisplayName({ agentId: null, address: WALLET })).toBe(compactAddress(WALLET));
+  });
+
+  it('treats an empty-string agentId as absent rather than as an agent', () => {
+    expect(actorDisplayName({ agentId: '', address: WALLET })).toBe(compactAddress(WALLET));
+  });
+
+  it('names an agent whose id has no generated name rather than showing a bare number', () => {
+    // getAgentName only returns null for a non-numeric id; that must still read as an identity.
+    expect(actorDisplayName({ agentId: 'not-a-number', address: null })).toBe(
+      'Agent #not-a-number'
+    );
+  });
+
+  it('reports unknown when there is neither an agent nor an address', () => {
+    expect(actorDisplayName({ agentId: null, address: null })).toBe('unknown');
   });
 });

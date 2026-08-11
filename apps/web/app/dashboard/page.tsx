@@ -12,7 +12,6 @@ import { DashboardActivityFeed } from '@/components/market/dashboard-activity-fe
 import { DashboardDistributionChart } from '@/components/market/dashboard-distribution-chart';
 import { DashboardHeatmap } from '@/components/market/dashboard-heatmap';
 import {
-  DashboardSectionTabs,
   parseDashboardSection,
   type DashboardSection,
 } from '@/components/market/dashboard-section-tabs';
@@ -286,18 +285,15 @@ export default async function Page({ searchParams }: DashboardPageProps) {
   const section = parseDashboardSection(params.section);
   const content = await renderSection(section);
 
-  const marketContent = (
-    <div className="flex flex-col gap-4 md:gap-6">
-      <DashboardSectionTabs section={section} />
-      {content}
-    </div>
-  );
-
   return (
     <div className="flex flex-1 flex-col">
       <div className="@container/main flex flex-1 flex-col gap-2">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-          <DashboardScope marketContent={marketContent} marketTitle={SECTION_TITLES[section]} />
+          <DashboardScope
+            marketContent={content}
+            marketSection={section}
+            marketTitle={SECTION_TITLES[section]}
+          />
         </div>
       </div>
     </div>

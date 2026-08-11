@@ -43,7 +43,7 @@ import {
   DrawerTitle,
 } from '@/components/ui/drawer';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { compactAddress } from '@/lib/format';
+import { actorDisplayName } from '@/lib/format';
 import {
   countSubmissionArtifactTypes,
   defaultSubmissionArtifactFilter,
@@ -306,7 +306,10 @@ function SubmissionGalleryDialogInner({
   const safeIndex = selectedIndex >= 0 ? selectedIndex : 0;
   const entry = visibleEntries[safeIndex] as SubmissionMediaEntry;
   const { artifact, submission } = entry;
-  const workerLabel = compactAddress(submission.workerAgentId ?? submission.workerAddress);
+  const workerLabel = actorDisplayName({
+    address: submission.workerAddress,
+    agentId: submission.workerAgentId,
+  });
 
   // The Details disclosure below the frame reads the current entry's preview URL, but
   // that URL is now owned inside whichever GallerySlide is mounted at offset 0 (each

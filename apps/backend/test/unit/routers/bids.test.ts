@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
-import { createIntentCtx, makeChain } from '../helpers';
+import { createIntentCtx, createMockCtx, makeChain } from '../helpers';
 
 const dialect = new PgDialect();
 function renderSql(query: SQL): { sql: string; params: unknown[] } {
@@ -332,6 +332,54 @@ describe('bids router', () => {
           'Not authorized to bid on this private task'
         );
         expect(contractSubmitBid).not.toHaveBeenCalled();
+      });
+
+      it.each(['evaluator', 'disputeResolver'] as const)(
+        'rejects an assigned %s whose only private-task entitlement is evidence access',
+        async (role) => {
+          const evidenceViewerTask = makeTask({
+            taskVisibility: 'private',
+            requester: PRIVATE_REQUESTER,
+            [role]: WORKER,
+          });
+          const ctx = createMockCtx(WORKER);
+          ctx.db.select
+            .mockReturnValueOnce(makeChain([evidenceViewerTask]))
+            .mockReturnValueOnce(makeChain([]))
+            .mockReturnValueOnce(makeChain([]));
+
+          const caller = bidsRouter.createCaller(ctx);
+          await expect(caller.submit(submitInput)).rejects.toThrow(
+            'Not authorized to bid on this private task'
+          );
+          expect(contractSubmitBid).not.toHaveBeenCalled();
+          expect(ctx.db.insert).not.toHaveBeenCalled();
+        }
+      );
+
+      it('allows an assigned evaluator to bid when independently allowlisted', async () => {
+        const allowlistedEvaluatorTask = makeTask({
+          taskVisibility: 'private',
+          requester: PRIVATE_REQUESTER,
+          evaluator: WORKER,
+        });
+        const ctx = createIntentCtx(WORKER);
+        ctx.db.select
+          .mockReturnValueOnce(makeChain([allowlistedEvaluatorTask]))
+          .mockReturnValueOnce(makeChain([{ viewerAddress: WORKER }]))
+          .mockReturnValueOnce(makeChain([]))
+          .mockReturnValueOnce(makeChain([]))
+          // linkIntentToBroadcast's outbox lookup, then the read-back naming the row that
+          // actually persisted -- see the allowlisted-wallet case below.
+          .mockReturnValueOnce(makeChain([]))
+          .mockReturnValueOnce(makeChain([{ id: BID_ID }]));
+
+        const caller = bidsRouter.createCaller(ctx);
+        await expect(caller.submit(submitInput)).resolves.toEqual({
+          success: true,
+          bidId: BID_ID,
+        });
+        expect(contractSubmitBid).toHaveBeenCalledOnce();
       });
 
       it('allows an allowlisted wallet address to bid on a private task', async () => {
@@ -795,6 +843,28 @@ describe('bids router', () => {
         );
         expect(contractAcceptAuction).not.toHaveBeenCalled();
       });
+
+      it.each(['evaluator', 'disputeResolver'] as const)(
+        'rejects an assigned %s whose only private-task entitlement is evidence access',
+        async (role) => {
+          const evidenceViewerTask = {
+            ...privateDutchTask,
+            [role]: WORKER,
+          };
+          const ctx = createMockCtx(WORKER);
+          ctx.db.select
+            .mockReturnValueOnce(makeChain([evidenceViewerTask]))
+            .mockReturnValueOnce(makeChain([]))
+            .mockReturnValueOnce(makeChain([]));
+
+          const caller = bidsRouter.createCaller(ctx);
+          await expect(caller.auctionAccept(ACCEPT_INPUT)).rejects.toThrow(
+            'Not authorized to accept this private task'
+          );
+          expect(contractAcceptAuction).not.toHaveBeenCalled();
+          expect(ctx.db.update).not.toHaveBeenCalled();
+        }
+      );
 
       it('allows an allowlisted wallet address to accept a private dutch auction task', async () => {
         const ctx = createIntentCtx(WORKER);

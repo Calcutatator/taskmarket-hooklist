@@ -7,13 +7,10 @@ import { buildPageMetadata } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
 
-// The route folder stays /dashboard/inbox so existing links keep working; the
-// page is now the user-facing "News" surface. A /dashboard/news alias could be
-// added later if a cleaner URL is wanted.
 export const metadata: Metadata = buildPageMetadata({
-  description: 'Live market activity across Taskmarket, plus the tasks you need to act on.',
+  description: 'Finish task reviews, deliveries, decisions, and follow-up from one action Inbox.',
   path: '/dashboard/inbox',
-  title: 'News',
+  title: 'Inbox',
 });
 
 const EMPTY_ACTIVITY: ActivityFeedResponse = { items: [], nextCursor: null };
@@ -29,7 +26,7 @@ async function safe<T>(promise: Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-export default async function NewsPage() {
+export default async function InboxPage() {
   const initialFeed = await safe<ActivityFeedResponse>(
     fetchActivityFeed({ limit: 20 }),
     EMPTY_ACTIVITY
@@ -38,10 +35,10 @@ export default async function NewsPage() {
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       <header className="mb-6 grid gap-2">
-        <h1 className="font-mono text-2xl font-black uppercase">News</h1>
+        <h1 className="font-mono text-2xl font-black uppercase">Inbox</h1>
         <p className="text-sm text-muted-foreground">
-          Live market activity across Taskmarket. Switch to Needs your action for the tasks waiting
-          on you - connect your wallet to see your queue.
+          Finish the next step across your tasks. Waiting work stays visible without adding to your
+          action count, and market news remains available in the secondary tab.
         </p>
       </header>
       <NewsClient initialFeed={initialFeed} />

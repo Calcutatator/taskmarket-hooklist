@@ -1,5 +1,5 @@
 /**
- * Task visibility smoke test (ADR-0014, ADR-0016/ADR-0022, ADR-0030): covers
+ * Task visibility smoke test (ADR-0014, ADR-0016/ADR-0022, ADR-0030, ADR-0042): covers
  * both tiers of Taskmarket's task-visibility model end to end against a live
  * backend.
  *
@@ -75,6 +75,9 @@
  *  19. Spot-check a retrofitted sibling endpoint: bids.listByTask on the
  *      auction-mode both-mechanisms task -- an outsider gets an empty list,
  *      the requester's own signed read does not
+ *  19b. Assigned evaluator and dispute resolver can directly read a private
+ *      task and its never-mode submission; an outsider cannot read either,
+ *      and the task remains absent from public discovery
  *  20. An outsider cannot submit work on a private (allowlist-only) bounty
  *      task; the allowlisted worker can
  *  21. An outsider cannot bid on a private (both-mechanisms, english) auction
@@ -163,6 +166,7 @@ async function assertRejects(
   );
 }
 
+// Verifies: ADR-0042
 async function main() {
   const { requester, worker } = getAccounts();
 
@@ -329,8 +333,12 @@ async function main() {
 
   // === Part B: private tasks (Phase 3, ADR-0030) ===
   const outsider = randomAccount();
+  const evaluator = randomAccount();
+  const disputeResolver = randomAccount();
   console.log('\n--- Part B: private tasks (Phase 3, ADR-0030) ---');
   console.log('outsider:', outsider.address, '(signed, but never allowlisted or invited)');
+  console.log('evaluator:', evaluator.address);
+  console.log('dispute resolver:', disputeResolver.address);
 
   // 10. Create three private tasks and a fresh public control task.
   log('10/26', 'Creating allowlist-only private task...');
@@ -392,7 +400,48 @@ async function main() {
   )) as { taskId: string };
   ok('both-mechanisms taskId', bothId);
 
-  log('10d/26', 'Creating a second public control task...');
+  log('10d/26', 'Creating private never-mode task with assigned evidence roles...');
+  const { taskId: assignedEvidenceId } = (await x402Post(
+    '/api/tasks',
+    {
+      description: 'Visibility smoke test — private assigned evidence roles',
+      reward: '1000',
+      duration: 1,
+      mode: 'bounty',
+      taskVisibility: 'private',
+      submissionVisibility: 'never',
+      allowedViewers: [worker.address],
+      evaluator: evaluator.address,
+      disputeResolver: disputeResolver.address,
+      tags: ['smoke-visibility'],
+    },
+    requester
+  )) as { taskId: string };
+  ok('assigned-evidence taskId', assignedEvidenceId);
+
+  const assignedEvidencePayload = 'private evidence for assigned decision roles';
+  const assignedEvidenceSignature = await worker.signMessage({
+    message: buildSubmitMessage(assignedEvidenceId, [contentHash(assignedEvidencePayload)]),
+  });
+  const { submissionId: assignedEvidenceSubmissionId } = (await post(
+    `/api/tasks/${assignedEvidenceId}/submissions`,
+    {
+      taskId: assignedEvidenceId,
+      workerAddress: worker.address,
+      artifacts: [
+        {
+          fileName: 'private-evidence.txt',
+          mimeType: 'text/plain',
+          role: 'attachment',
+          file: Buffer.from(assignedEvidencePayload).toString('base64'),
+        },
+      ],
+      signature: assignedEvidenceSignature,
+    }
+  )) as { submissionId: string };
+  ok('assigned-evidence submissionId', assignedEvidenceSubmissionId);
+
+  log('10e/26', 'Creating a second public control task...');
   const { taskId: publicId2 } = (await x402Post(
     '/api/tasks',
     {
@@ -413,13 +462,13 @@ async function main() {
   log('11/26', 'Listing tasks (GET /api/tasks) as a third party...');
   const privateList = (await get('/api/tasks?limit=100')) as TaskListResponse;
   const privateListedIds = new Set(privateList.tasks.map((t) => t.id));
-  for (const id of [allowlistOnlyId, passwordOnlyId, bothId]) {
+  for (const id of [allowlistOnlyId, passwordOnlyId, bothId, assignedEvidenceId]) {
     if (privateListedIds.has(id)) throw new Error(`Private task ${id} appeared in tasks.list`);
   }
   if (!privateListedIds.has(publicId2)) {
     throw new Error('Second public control task missing from tasks.list');
   }
-  ok('all three private tasks absent from tasks.list', true);
+  ok('all private tasks, including assigned-role evidence, absent from tasks.list', true);
   ok('public control tasks present in tasks.list', true);
 
   // 12. Requester's own inbox, signed -- sees all three private tasks.
@@ -429,7 +478,7 @@ async function main() {
     { headers: await readAuthHeaders(requester) }
   )) as InboxResponse;
   const requesterSeenIds = new Set(requesterInbox.asRequester.map((t) => t.id));
-  for (const id of [allowlistOnlyId, passwordOnlyId, bothId]) {
+  for (const id of [allowlistOnlyId, passwordOnlyId, bothId, assignedEvidenceId]) {
     if (!requesterSeenIds.has(id)) {
       throw new Error(`Requester's own inbox is missing private task ${id}`);
     }
@@ -450,6 +499,9 @@ async function main() {
   if (!invitedIds.has(bothId)) {
     throw new Error("Both-mechanisms task missing from invited worker's invitedPrivateTasks");
   }
+  if (!invitedIds.has(assignedEvidenceId)) {
+    throw new Error("Assigned-evidence task missing from invited worker's invitedPrivateTasks");
+  }
   if (invitedIds.has(passwordOnlyId)) {
     throw new Error('Password-only task incorrectly appeared in a non-allowlisted invite list');
   }
@@ -459,13 +511,42 @@ async function main() {
   // the three -- proves canView isn't fooled by "any authenticated caller".
   log('14/26', 'Fetching all three private tasks as a signed-but-uninvited outsider...');
   const outsiderHeaders = await readAuthHeaders(outsider);
-  for (const id of [allowlistOnlyId, passwordOnlyId, bothId]) {
+  for (const id of [allowlistOnlyId, passwordOnlyId, bothId, assignedEvidenceId]) {
     const fetched = (await get(`/api/tasks/${id}`, { headers: outsiderHeaders })) as unknown;
     if (fetched !== null) {
       throw new Error(`Signed outsider could view private task ${id} (expected null)`);
     }
   }
   ok('signed-but-uninvited outsider cannot view any private task', true);
+
+  log('14b/26', 'Verifying assigned evaluator/resolver evidence reads and outsider denial...');
+  const outsiderEvidenceRows = (await get(`/api/tasks/${assignedEvidenceId}/submissions`, {
+    headers: outsiderHeaders,
+  })) as unknown[];
+  if (outsiderEvidenceRows.length !== 0) {
+    throw new Error('Signed outsider could read never-mode private task evidence');
+  }
+
+  for (const [label, account] of [
+    ['evaluator', evaluator],
+    ['dispute resolver', disputeResolver],
+  ] as const) {
+    const headers = await readAuthHeaders(account);
+    const task = (await get(`/api/tasks/${assignedEvidenceId}`, { headers })) as {
+      id: string;
+    } | null;
+    if (task?.id !== assignedEvidenceId) {
+      throw new Error(`Assigned ${label} could not directly read the private task`);
+    }
+    const rows = (await get(`/api/tasks/${assignedEvidenceId}/submissions`, {
+      headers,
+    })) as Array<{ id: string }>;
+    if (!rows.some((row) => row.id === assignedEvidenceSubmissionId)) {
+      throw new Error(`Assigned ${label} could not read the private never-mode submission`);
+    }
+  }
+  ok('assigned evaluator and resolver can read private never-mode evidence', true);
+  ok('outsider remains denied private never-mode evidence', true);
 
   // 15. Wrong password is rejected generically; a nonexistent task returns
   // the exact same error (no existence leak).
@@ -902,6 +983,7 @@ async function main() {
   console.log('allowlistOnlyTaskId:   ', allowlistOnlyId);
   console.log('passwordOnlyTaskId:    ', passwordOnlyId);
   console.log('bothMechanismsTaskId:  ', bothId);
+  console.log('assignedEvidenceTaskId:', assignedEvidenceId);
   console.log('publicTaskId2:         ', publicId2);
   console.log('dutchPrivateTaskId:    ', dutchPrivateId);
   console.log('pitchPrivateTaskId:    ', pitchPrivateId);

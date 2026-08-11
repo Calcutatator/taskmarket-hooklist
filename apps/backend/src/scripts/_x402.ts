@@ -10,6 +10,7 @@ import {
   buildReadAuthMessage,
   IDEMPOTENCY_KEY_HEADER,
 } from '@taskmarket/shared';
+import { getEvaluatorSmokePrivateKeys, getServerConfig } from '../config/env';
 
 export type Account = ReturnType<typeof privateKeyToAccount>;
 
@@ -351,10 +352,41 @@ export async function readAuthHeaders(account: Account): Promise<Record<string, 
   };
 }
 
+export async function expectRejected(label: string, fn: () => Promise<unknown>): Promise<void> {
+  let rejected = false;
+  try {
+    await fn();
+  } catch {
+    rejected = true;
+  }
+  if (!rejected) throw new Error(`Expected ${label} to be rejected`);
+  ok(`${label} rejected`, true);
+}
+
+export async function expectActionQueueIntent(
+  taskId: string,
+  account: Account,
+  intent: string,
+  expected: boolean
+): Promise<void> {
+  const queue = (await get(
+    `/api/agents/action-queue?address=${encodeURIComponent(account.address)}`,
+    { headers: await readAuthHeaders(account) }
+  )) as { items: Array<{ task: { id: string }; intent: string }> };
+  const present = queue.items.some((item) => item.task.id === taskId && item.intent === intent);
+  if (present !== expected) {
+    throw new Error(
+      `Expected ${intent} for ${account.address} on ${taskId} to be ${expected ? 'present' : 'absent'}`
+    );
+  }
+  ok(`${intent} ${expected ? 'present' : 'cleared'}`, true);
+}
+
 export function getAccounts() {
-  const devKey = process.env.DEV_PRIVATE_KEY as `0x${string}`;
-  const requesterKey = (process.env.REQUESTER_PRIVATE_KEY ?? devKey) as `0x${string}`;
-  const workerKey = (process.env.WORKER_PRIVATE_KEY ?? devKey) as `0x${string}`;
+  const config = getServerConfig();
+  const devKey = config.DEV_PRIVATE_KEY as `0x${string}` | undefined;
+  const requesterKey = (config.REQUESTER_PRIVATE_KEY ?? devKey) as `0x${string}` | undefined;
+  const workerKey = (config.WORKER_PRIVATE_KEY ?? devKey) as `0x${string}` | undefined;
 
   if (!requesterKey) {
     console.error('Set REQUESTER_PRIVATE_KEY or DEV_PRIVATE_KEY');
@@ -369,6 +401,18 @@ export function getAccounts() {
     requester: privateKeyToAccount(requesterKey),
     worker: privateKeyToAccount(workerKey),
   };
+}
+
+export function getEvaluatorAccounts() {
+  const { requester, worker } = getAccounts();
+  const { evaluatorPrivateKey, resolverPrivateKey } = getEvaluatorSmokePrivateKeys();
+  const evaluator = privateKeyToAccount(evaluatorPrivateKey);
+  const resolver = privateKeyToAccount(resolverPrivateKey);
+  const actors = [requester, worker, evaluator, resolver];
+  if (new Set(actors.map((account) => account.address.toLowerCase())).size !== actors.length) {
+    throw new Error('Requester, worker, evaluator, and dispute resolver must be distinct accounts');
+  }
+  return { requester, worker, evaluator, resolver };
 }
 
 // -----------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { keccak256, parseAbiItem, slice, toBytes } from 'viem';
+import { keccak256, parseAbiItem, slice, toBytes, zeroAddress } from 'viem';
 import { normalizeAddress } from '@taskmarket/shared';
 import { db } from '../db/client';
 // Allows the status-guarded handlers below to run against an injected test
@@ -39,7 +39,7 @@ import {
   REWARD_VAULT_EVENT_ITEMS,
 } from './indexer-abi-events';
 import { runCheckpointedRange } from './indexer-checkpoint';
-import { contractGetSettlementChainState } from './contract';
+import { contractGetSettlementChainState, contractGetTaskWorker } from './contract';
 import { projectSettlementRating } from './settlement-rating';
 import { recordTaskSettlement } from './settlement-recorder';
 import { processIndexedEvent } from './indexer-event';
@@ -699,11 +699,51 @@ async function processEvaluatorAssignedEvent(log: EventLog): Promise<void> {
 
 export async function processTaskEvaluatedEvent(
   log: EventLog,
-  database: Database = db
+  database: Database = db,
+  readTaskWorker: typeof contractGetTaskWorker = contractGetTaskWorker,
+  client: BlockTimestampReader = publicClient
 ): Promise<void> {
   const { taskId, verdictType, score } = log.args;
   const VERDICT_TYPES = ['APPROVE', 'REJECT', 'PARTIAL'];
   const verdictStr = VERDICT_TYPES[Number(verdictType)] ?? 'APPROVE';
+  const taskRows = await database
+    .select({
+      contractAddress: tasks.contractAddress,
+      appealWindow: tasks.appealWindow,
+      expiryTime: tasks.expiryTime,
+      mode: tasks.mode,
+      status: tasks.status,
+    })
+    .from(tasks)
+    .where(eq(tasks.id, taskId as string))
+    .limit(1);
+  const task = taskRows[0];
+  const canApply =
+    task !== undefined && ['open', 'pending_approval', 'review'].includes(task.status);
+  const isContest = task?.mode === 'bounty' || task?.mode === 'benchmark';
+  let canonicalWorker: string | null | undefined;
+  let recoveredAppealDeadline: Date | undefined;
+  let recoveredExpiryTime: Date | undefined;
+
+  if (canApply) {
+    if (task.appealWindow == null || log.blockNumber == null) {
+      throw new Error(`TaskEvaluated event: task=${taskId} is missing appeal timing context`);
+    }
+
+    const [block, worker] = await Promise.all([
+      client.getBlock({ blockNumber: log.blockNumber }),
+      isContest
+        ? readTaskWorker(taskId as `0x${string}`, task.contractAddress)
+        : Promise.resolve(null),
+    ]);
+    recoveredAppealDeadline = new Date((Number(block.timestamp) + task.appealWindow) * 1000);
+    recoveredExpiryTime =
+      recoveredAppealDeadline > task.expiryTime ? recoveredAppealDeadline : task.expiryTime;
+
+    if (worker !== null) {
+      canonicalWorker = worker.toLowerCase() === zeroAddress ? null : normalizeAddress(worker);
+    }
+  }
   // Guarded to the states evaluate() is callable from (see
   // evaluations.router.ts's isOpenModeEval/isReviewModeEval checks) so a
   // late-processed event can't regress a task that a synchronous write --
@@ -717,6 +757,13 @@ export async function processTaskEvaluatedEvent(
       status: 'appealing',
       verdictType: verdictStr,
       verdictScore: Number(score),
+      ...(canonicalWorker !== undefined ? { claimedBy: canonicalWorker } : {}),
+      ...(recoveredAppealDeadline !== undefined
+        ? {
+            appealDeadline: recoveredAppealDeadline,
+            expiryTime: recoveredExpiryTime,
+          }
+        : {}),
     })
     .where(
       and(

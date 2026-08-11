@@ -31,6 +31,7 @@
 import type { ActivityFeedResponse } from '@taskmarket/shared';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { MotionConfig } from 'motion/react';
+import { expect, within } from 'storybook/test';
 
 import { BurstStages } from '@/components/market/burst-stages';
 import { CreateTaskWizard } from '@/components/market/create-task-wizard';
@@ -136,6 +137,29 @@ export const TaskWizardDefaultAndCampaign: Story = {
   ),
 };
 
+export const TaskWizardReviewerAccessDisclosure: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <div className="mx-auto max-w-3xl p-6">
+      <CreateTaskWizard initialMarketStats={null} />
+    </div>
+  ),
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: /write the brief/i }));
+    const disclosure = await canvas.findByText(/grants that address confidential access/i);
+    await expect(disclosure).toHaveTextContent(/private task details and every submission/i);
+    await expect(canvas.getByLabelText('Evaluator address')).toHaveAttribute(
+      'aria-describedby',
+      disclosure.id
+    );
+    await expect(canvas.getByLabelText('Dispute resolver address')).toHaveAttribute(
+      'aria-describedby',
+      disclosure.id
+    );
+  },
+};
+
 export const WizardNavigationAndTemplates: Story = {
   render: () => (
     <div className="mx-auto grid max-w-6xl gap-8 p-6">
@@ -200,7 +224,7 @@ export const PublishedTaskCelebration: Story = {
   render: () => (
     <div className="min-h-[600px] bg-background">
       <MotionConfig reducedMotion="never">
-        <PublishedCelebration />
+        <PublishedCelebration task={taskFixture()} />
       </MotionConfig>
       <div id="task-activity" />
     </div>

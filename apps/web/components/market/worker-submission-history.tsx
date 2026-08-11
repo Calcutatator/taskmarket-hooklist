@@ -20,7 +20,7 @@ import { ActorLink, SubmissionCard } from '@/components/market/tasks';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
-import { compactAddress } from '@/lib/format';
+import { actorDisplayName } from '@/lib/format';
 import type { WorkerSubmissionGroup } from '@/lib/market/submission-review';
 import { cn } from '@/lib/utils';
 
@@ -73,9 +73,10 @@ export function WorkerSubmissionHistory({
   });
 
   const scopeKey = `${visibilityScopeKey}:${group.workerKey}`;
-  const workerLabel = compactAddress(
-    group.representativeSubmission.workerAgentId ?? group.workerAddress
-  );
+  const workerLabel = actorDisplayName({
+    address: group.workerAddress,
+    agentId: group.representativeSubmission.workerAgentId,
+  });
   const orderedSubmissions = useMemo(() => {
     const chronological = chronologicalSubmissions(group);
     return sort === 'oldest' ? chronological : chronological.reverse();

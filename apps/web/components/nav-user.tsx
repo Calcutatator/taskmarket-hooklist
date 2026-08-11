@@ -148,7 +148,12 @@ function NavUserContent({
                 <div className="px-2 py-1.5">
                   <FundWalletButton address={address} fullWidth size="sm" />
                 </div>
-                <DropdownMenuItem onSelect={() => connectOrCreateWallet()}>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    clearClientAuthState();
+                    connectOrCreateWallet();
+                  }}
+                >
                   <IconRefresh />
                   Switch wallet
                 </DropdownMenuItem>

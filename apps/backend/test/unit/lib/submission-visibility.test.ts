@@ -1,4 +1,5 @@
 // Verifies: ADR-0016 (submission visibility as an independent axis, public default)
+// Verifies: ADR-0042
 import { describe, expect, it } from 'vitest';
 import {
   canViewSubmission,
@@ -11,8 +12,17 @@ import {
 const REQUESTER = '0xRequester00000000000000000000000000000001';
 const WORKER = '0xWorker0000000000000000000000000000000001';
 const OTHER_WORKER = '0xWorker0000000000000000000000000000000002';
+const EVALUATOR = '0xEvaluator00000000000000000000000000000001';
+const DISPUTE_RESOLVER = '0xResolver000000000000000000000000000000001';
 const TASK_ID = 'task-1';
-const task = { id: TASK_ID, requester: REQUESTER, taskVisibility: 'public', claimedBy: null };
+const task = {
+  id: TASK_ID,
+  requester: REQUESTER,
+  taskVisibility: 'public',
+  claimedBy: null,
+  evaluator: null,
+  disputeResolver: null,
+};
 const submission = { workerAddress: WORKER };
 
 // Verifies: ADR-0021
@@ -93,6 +103,41 @@ describe('canViewSubmission', () => {
   });
 
   const nonPublicModes: SubmissionVisibilityMode[] = ['reveal_all', 'winner_only', 'never'];
+
+  describe('ADR-0042 assigned evidence viewers', () => {
+    for (const [role, address] of [
+      ['evaluator', EVALUATOR],
+      ['disputeResolver', DISPUTE_RESOLVER],
+    ] as const) {
+      for (const mode of ['public', ...nonPublicModes] as SubmissionVisibilityMode[]) {
+        it(`${role} sees every ${mode} submission while assigned`, () => {
+          expect(
+            canViewSubmission({
+              mode,
+              taskStatus: 'open',
+              caller: { address },
+              task: { ...task, taskVisibility: 'private', [role]: address },
+              submission,
+              winningAddresses: noWinners,
+            })
+          ).toBe(true);
+        });
+      }
+    }
+
+    it('cleared roles do not retain access to restricted submissions', () => {
+      expect(
+        canViewSubmission({
+          mode: 'never',
+          taskStatus: 'open',
+          caller: { address: EVALUATOR },
+          task: { ...task, taskVisibility: 'private', evaluator: null },
+          submission,
+          winningAddresses: noWinners,
+        })
+      ).toBe(false);
+    });
+  });
 
   describe('active task (not yet ended)', () => {
     for (const mode of nonPublicModes) {

@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createIntentCtx, makeChain } from '../helpers';
+import { createIntentCtx, createMockCtx, makeChain } from '../helpers';
 
 vi.mock('../../../src/lib/storage', () => ({
   getStorageBackend: vi.fn().mockReturnValue({
@@ -55,6 +55,8 @@ import {
 
 const WORKER = '0xWorker0000000000000000000000000000000001';
 const REQUESTER = '0xRequester00000000000000000000000000000001';
+const EVALUATOR = '0xEvaluator00000000000000000000000000000001';
+const DISPUTE_RESOLVER = '0xResolver000000000000000000000000000000001';
 const TASK_ID = '0xtask0000000000000000000000000000000001';
 const SUB_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -1644,6 +1646,57 @@ describe('submissions router', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe(SUB_ID);
+    });
+
+    it.each([
+      ['evaluator', EVALUATOR],
+      ['disputeResolver', DISPUTE_RESOLVER],
+    ] as const)('lets the assigned %s read every never-mode submission on a private task', async (role, address) => {
+      const ctx = createMockCtx(undefined, { address });
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            makeTask({
+              taskVisibility: 'private',
+              submissionVisibility: 'never',
+              status: 'open',
+              evaluator: role === 'evaluator' ? address : null,
+              disputeResolver: role === 'disputeResolver' ? address : null,
+            }),
+          ])
+        )
+        .mockReturnValueOnce(makeChain([submissionRow, otherSubmissionRow]))
+        .mockReturnValueOnce(makeChain([])) // allowed viewers
+        .mockReturnValueOnce(makeChain([])) // awarded workers
+        .mockReturnValueOnce(makeChain([])) // artifacts
+        .mockReturnValueOnce(makeChain([])); // agents
+
+      const result = await submissionsRouter.createCaller(ctx).listByTask({ taskId: TASK_ID });
+
+      expect(result.map((row) => row.id)).toEqual([submissionRow.id, otherSubmissionRow.id]);
+    });
+
+    it('hides private never-mode submissions after evaluator assignment is cleared', async () => {
+      const ctx = createMockCtx(undefined, { address: EVALUATOR });
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            makeTask({
+              taskVisibility: 'private',
+              submissionVisibility: 'never',
+              status: 'open',
+              evaluator: null,
+              disputeResolver: null,
+            }),
+          ])
+        )
+        .mockReturnValueOnce(makeChain([submissionRow]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await submissionsRouter.createCaller(ctx).listByTask({ taskId: TASK_ID });
+
+      expect(result).toEqual([]);
     });
 
     it('winner_only reveals only the task_awards-linked winner once the task ends', async () => {

@@ -4,8 +4,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { NavMain } from './nav-main';
 
 vi.mock('next/link', () => ({
-  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
-    <a data-next-link="true" href={href}>
+  default: ({
+    children,
+    href,
+    ...props
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => (
+    <a data-next-link="true" href={href} {...props}>
       {children}
     </a>
   ),
@@ -26,6 +30,7 @@ vi.mock('@/components/ui/sidebar', () => ({
     children: React.ReactNode;
     isActive?: boolean;
   }) => <span data-active={isActive}>{children}</span>,
+  SidebarMenuBadge: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SidebarMenuItem: ({ children }: { children: React.ReactNode }) => <li>{children}</li>,
 }));
 
@@ -50,5 +55,42 @@ describe('NavMain', () => {
       'false'
     );
     expect(screen.queryByRole('link', { name: /quick create/i })).not.toBeInTheDocument();
+  });
+
+  it('announces unresolved Inbox work while keeping the visual count compact', () => {
+    const { rerender } = render(
+      <NavMain
+        items={[
+          {
+            actionCount: 3,
+            icon: IconListDetails,
+            title: 'Inbox',
+            url: '/dashboard/inbox',
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole('link', { name: /inbox, 3 actions to do/i })).toHaveAttribute(
+      'href',
+      '/dashboard/inbox'
+    );
+    expect(screen.getByText('3')).toBeVisible();
+
+    rerender(
+      <NavMain
+        items={[
+          {
+            actionCount: 142,
+            icon: IconListDetails,
+            title: 'Inbox',
+            url: '/dashboard/inbox',
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole('link', { name: /inbox, 142 actions to do/i })).toBeInTheDocument();
+    expect(screen.getByText('99+')).toBeVisible();
   });
 });

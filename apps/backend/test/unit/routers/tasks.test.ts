@@ -11,6 +11,7 @@ vi.mock('../../../src/services/contract', () => ({
   contractUpdateTask: vi.fn().mockResolvedValue('0xupdatehash'),
   contractCancelTask: vi.fn().mockResolvedValue('0xcancelhash'),
   contractGetTaskHooks: vi.fn().mockResolvedValue([]),
+  contractGetContestAppealState: vi.fn(),
   contractGetDreamsPerUsdc: vi.fn().mockResolvedValue(0n),
   contractGetDreamsWorkerSplitBps: vi.fn().mockResolvedValue(0),
   contractGetDreamsBonusBps: vi.fn().mockResolvedValue(0),
@@ -70,6 +71,7 @@ import {
   contractUpdateTask,
   contractCancelTask,
   contractGetTaskHooks,
+  contractGetContestAppealState,
   contractGetDreamsPerUsdc,
   contractGetDreamsWorkerSplitBps,
   contractGetDreamsBonusBps,
@@ -84,6 +86,7 @@ import { notifyTaskDropSubscribers } from '../../../src/services/task-drops-emai
 const flushAsync = () => new Promise((resolve) => setImmediate(resolve));
 
 const PAYER = '0x1111111111111111111111111111111111111111';
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const DROP_ID = 'drop-1';
 const EVALUATOR = '0x2222222222222222222222222222222222222222';
 
@@ -136,6 +139,10 @@ const mockTaskRow = {
 describe('tasks router', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(contractGetContestAppealState).mockResolvedValue({
+      claimedWorker: ZERO_ADDRESS,
+      hasSubmission: false,
+    });
   });
 
   describe('create', () => {
@@ -650,6 +657,236 @@ describe('tasks router', () => {
       expect(result!.taskVisibility).toBe('unlisted');
     });
 
+    it('allows the assigned evaluator to directly read a private task', async () => {
+      const ctx = createMockCtx(undefined, { address: EVALUATOR });
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              ...mockTaskRow,
+              taskVisibility: 'private',
+              evaluator: EVALUATOR,
+              disputeResolver: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([])) // allowed viewers
+        .mockReturnValueOnce(makeChain([])) // awarded workers
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await tasksRouter.createCaller(ctx).get({ taskId: '0xabc' });
+
+      expect(result?.id).toBe('0xabc');
+      expect(result?.taskVisibility).toBe('private');
+    });
+
+    it('hides a private task after evaluator assignment is cleared', async () => {
+      const ctx = createMockCtx(undefined, { address: EVALUATOR });
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              ...mockTaskRow,
+              taskVisibility: 'private',
+              evaluator: null,
+              disputeResolver: null,
+            },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await tasksRouter.createCaller(ctx).get({ taskId: '0xabc' });
+
+      expect(result).toBeNull();
+      expect(ctx.db.select).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not offer a contest appeal to an anonymous caller', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              ...mockTaskRow,
+              status: 'appealing',
+              appealDeadline: new Date(Date.now() + 60 * 60 * 1000),
+            },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([{ count: 2 }])) // submissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // pitchCount
+        .mockReturnValueOnce(makeChain([])) // requesterAgentRow
+        .mockReturnValueOnce(makeChain([])) // awardRows
+        .mockReturnValueOnce(
+          makeChain([{ workerAddress: '0xworkerA' }, { workerAddress: '0xworkerB' }])
+        ); // distinctSubmitters
+
+      const result = await tasksRouter.createCaller(ctx).get({ taskId: '0xabc' });
+
+      expect(result?.pendingActions.some((action) => action.action === 'appeal')).toBe(false);
+    });
+
+    it.each(['bounty', 'benchmark'] as const)(
+      'offers a %s appeal only to the read-authenticated submitter',
+      async (mode) => {
+        const submitter = '0x00000000000000000000000000000000000000aa';
+        vi.mocked(contractGetContestAppealState).mockResolvedValueOnce({
+          claimedWorker: ZERO_ADDRESS,
+          hasSubmission: true,
+        });
+        const ctx = createMockCtx(undefined, { address: submitter });
+        ctx.db.select
+          .mockReturnValueOnce(
+            makeChain([
+              {
+                ...mockTaskRow,
+                mode,
+                status: 'appealing',
+                submissionVisibility: 'never',
+                appealDeadline: new Date(Date.now() + 60 * 60 * 1000),
+              },
+            ])
+          )
+          .mockReturnValueOnce(makeChain([{ count: 2 }])) // submissionCount
+          .mockReturnValueOnce(makeChain([{ count: 0 }])) // pitchCount
+          .mockReturnValueOnce(makeChain([])) // requesterAgentRow
+          .mockReturnValueOnce(makeChain([])) // awardRows
+          .mockReturnValueOnce(
+            makeChain([{ workerAddress: submitter }, { workerAddress: '0xanother' }])
+          ); // distinctSubmitters
+
+        const result = await tasksRouter.createCaller(ctx).get({ taskId: '0xabc' });
+
+        expect(result?.pendingActions.filter((action) => action.action === 'appeal')).toEqual([
+          expect.objectContaining({ eligibleAddress: submitter, role: 'worker' }),
+        ]);
+      }
+    );
+
+    it('does not offer a contest appeal to an authenticated non-submitter', async () => {
+      const outsider = '0x00000000000000000000000000000000000000ff';
+      const ctx = createMockCtx(undefined, { address: outsider });
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              ...mockTaskRow,
+              status: 'appealing',
+              appealDeadline: new Date(Date.now() + 60 * 60 * 1000),
+            },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([{ count: 2 }])) // submissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // pitchCount
+        .mockReturnValueOnce(makeChain([])) // requesterAgentRow
+        .mockReturnValueOnce(makeChain([])) // awardRows
+        .mockReturnValueOnce(
+          makeChain([{ workerAddress: '0xworkerA' }, { workerAddress: '0xworkerB' }])
+        ); // distinctSubmitters
+
+      const result = await tasksRouter.createCaller(ctx).get({ taskId: '0xabc' });
+
+      expect(result?.pendingActions.some((action) => action.action === 'appeal')).toBe(false);
+    });
+
+    it('does not offer a contest appeal to a losing submitter after another worker is awarded', async () => {
+      const winner = '0x00000000000000000000000000000000000000aa';
+      const losingSubmitter = '0x00000000000000000000000000000000000000bb';
+      const ctx = createMockCtx(undefined, { address: losingSubmitter });
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              ...mockTaskRow,
+              status: 'appealing',
+              claimedBy: winner,
+              appealDeadline: new Date(Date.now() + 60 * 60 * 1000),
+            },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([{ count: 2 }])) // submissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // pitchCount
+        .mockReturnValueOnce(makeChain([])) // workerAgent
+        .mockReturnValueOnce(makeChain([])) // requesterAgentRow
+        .mockReturnValueOnce(makeChain([])) // awardRows are recorded only after finalization
+        .mockReturnValueOnce(
+          makeChain([{ workerAddress: winner }, { workerAddress: losingSubmitter }])
+        ); // distinctSubmitters
+
+      const result = await tasksRouter.createCaller(ctx).get({ taskId: '0xabc' });
+
+      expect(result?.pendingActions.some((action) => action.action === 'appeal')).toBe(false);
+      expect(ctx.db.select).toHaveBeenCalledTimes(7);
+    });
+
+    it('does not offer a recovered contest appeal to a losing onchain submitter', async () => {
+      const winner = '0x00000000000000000000000000000000000000aa';
+      const losingSubmitter = '0x00000000000000000000000000000000000000bb';
+      vi.mocked(contractGetContestAppealState).mockResolvedValueOnce({
+        claimedWorker: winner,
+        hasSubmission: true,
+      });
+      const ctx = createMockCtx(undefined, { address: losingSubmitter });
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              ...mockTaskRow,
+              status: 'appealing',
+              claimedBy: null,
+              appealDeadline: new Date(Date.now() + 60 * 60 * 1000),
+            },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([{ count: 2 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(
+          makeChain([{ workerAddress: winner }, { workerAddress: losingSubmitter }])
+        );
+
+      const result = await tasksRouter.createCaller(ctx).get({ taskId: '0xabc' });
+
+      expect(result?.pendingActions.some((action) => action.action === 'appeal')).toBe(false);
+      expect(contractGetContestAppealState).toHaveBeenCalledOnce();
+    });
+
+    it('offers a recovered contest appeal to the onchain worker without a submission row', async () => {
+      const winner = '0x00000000000000000000000000000000000000aa';
+      vi.mocked(contractGetContestAppealState).mockResolvedValueOnce({
+        claimedWorker: winner,
+        hasSubmission: false,
+      });
+      const ctx = createMockCtx(undefined, { address: winner });
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              ...mockTaskRow,
+              status: 'appealing',
+              claimedBy: null,
+              appealDeadline: new Date(Date.now() + 60 * 60 * 1000),
+            },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await tasksRouter.createCaller(ctx).get({ taskId: '0xabc' });
+
+      expect(result?.pendingActions.filter((action) => action.action === 'appeal')).toEqual([
+        expect.objectContaining({ eligibleAddress: winner, role: 'worker' }),
+      ]);
+      expect(ctx.db.select).toHaveBeenCalledTimes(5);
+    });
+
     it('resolves worker and requester agents without address case sensitivity', async () => {
       const requester = `0x${'Aa'.repeat(20)}`;
       const worker = `0x${'Bb'.repeat(20)}`;
@@ -968,6 +1205,10 @@ describe('tasks router', () => {
     // Verifies: ADR-0027
     it('active bounty with two distinct submitters: pendingActions commands omit any suggested address (ADR-0027)', async () => {
       const ctx = createMockCtx();
+      const distinctSubmittersQuery = makeChain([
+        { workerAddress: '0xworkerA' },
+        { workerAddress: '0xworkerB' },
+      ]);
       const activeRowWithSubs = {
         ...mockTaskRow,
         status: 'open',
@@ -980,9 +1221,7 @@ describe('tasks router', () => {
         .mockReturnValueOnce(makeChain([{ count: 0 }])) // pitchCount
         .mockReturnValueOnce(makeChain([])) // requesterAgentRow
         .mockReturnValueOnce(makeChain([])) // awardRows
-        .mockReturnValueOnce(
-          makeChain([{ workerAddress: '0xworkerA' }, { workerAddress: '0xworkerB' }])
-        ); // distinct submitters -- ambiguous
+        .mockReturnValueOnce(distinctSubmittersQuery); // distinct submitters -- ambiguous
 
       const caller = tasksRouter.createCaller(ctx);
       const result = await caller.get({ taskId: '0xabc' });
@@ -995,6 +1234,7 @@ describe('tasks router', () => {
       expect(rejectSubmission?.command).toContain('<address>');
       expect(rejectSubmission?.command).not.toContain('0xworkerA');
       expect(rejectSubmission?.command).not.toContain('0xworkerB');
+      expect(distinctSubmittersQuery.limit).toHaveBeenCalledWith(2);
     });
 
     it('active bounty under submissionVisibility never: pendingActions commands hide the submitter address from an anonymous caller', async () => {

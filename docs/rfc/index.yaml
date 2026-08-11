@@ -38,3 +38,8 @@ rfcs:
     title: "RPC efficiency and provider-load operating model"
     status: Draft
     date: "2026-08-02"
+  - number: "0008"
+    file: "0008-action-inbox-and-guided-task-completion.md"
+    title: Action Inbox and guided task completion
+    status: Accepted
+    date: "2026-08-06"

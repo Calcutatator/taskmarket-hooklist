@@ -9,7 +9,7 @@ import { AnimatedNumber } from '@/components/market/motion/animated-number';
 import { LiveTetrisBackground } from '@/components/market/live-tetris-background';
 import { Badge } from '@/components/ui/badge';
 import { trpc } from '@/lib/api/client';
-import { compactAddress, formatNumber, formatUsdcUnits } from '@/lib/format';
+import { actorDisplayName, formatNumber, formatUsdcUnits } from '@/lib/format';
 import { isMediaArtifact } from '@/lib/market/task-cover';
 import { taskTitle } from '@/lib/market/task-title';
 
@@ -140,7 +140,7 @@ function TaskPulseCard({ detailBasePath, task }: { detailBasePath: string; task:
           <AnimatedCount label="pitches" value={pitchCount} />
           <AnimatedCount label="subs" value={submissionCount} />
           <span className="font-mono text-[0.7rem] uppercase text-muted-foreground">
-            {compactAddress(task.requester)}
+            {actorDisplayName({ address: task.requester, agentId: task.requesterAgentId })}
           </span>
         </div>
       </div>

@@ -198,6 +198,11 @@ adrs:
     title: Discord public app runs as a Railway HTTP Interactions service
     status: Accepted
     date: "2026-08-05"
+  - number: "0042"
+    file: "0042-assigned-evaluators-and-resolvers-can-view-evidence.md"
+    title: Assigned evaluators and dispute resolvers can view task evidence
+    status: Accepted
+    date: "2026-08-07"
   - number: "0045"
     file: "0045-relayed-writes-are-durable-intents-not-request-scoped-transactions.md"
     title: "Relayed writes are durable intents, not request-scoped transactions"
@@ -368,3 +373,13 @@ adrs:
     title: "An idempotency key is unique within a chain, not globally"
     status: Accepted
     date: "2026-08-10"
+  - number: "0079"
+    file: "0079-action-queue-derives-from-canonical-pending-actions.md"
+    title: Action queues derive from canonical pending actions
+    status: Accepted
+    date: "2026-08-06"
+  - number: "0080"
+    file: "0080-the-action-queue-is-an-agent-facing-surface.md"
+    title: "The action queue is an agent-facing surface, not a web feature"
+    status: Accepted
+    date: "2026-08-11"

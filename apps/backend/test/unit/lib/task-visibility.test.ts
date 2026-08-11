@@ -5,6 +5,8 @@ const REQUESTER = '0xRequester00000000000000000000000000000001';
 const CLAIMED_WORKER = '0xClaimed0000000000000000000000000000000001';
 const AWARDED_WORKER = '0xAwarded0000000000000000000000000000000001';
 const ALLOWED_VIEWER = '0xAllowed0000000000000000000000000000000001';
+const EVALUATOR = '0xEvaluator00000000000000000000000000000001';
+const DISPUTE_RESOLVER = '0xResolver000000000000000000000000000000001';
 const OUTSIDER = '0xOutsider000000000000000000000000000000001';
 const TASK_ID = 'task-1';
 
@@ -14,11 +16,14 @@ function makeTask(overrides: Partial<CanViewTask> = {}): CanViewTask {
     taskVisibility: 'public',
     requester: REQUESTER,
     claimedBy: null,
+    evaluator: null,
+    disputeResolver: null,
     ...overrides,
   };
 }
 
 // Verifies: ADR-0030
+// Verifies: ADR-0042
 describe('canView', () => {
   describe('public / unlisted tasks', () => {
     it('public task is viewable by anyone, including an unauthenticated caller', () => {
@@ -51,6 +56,31 @@ describe('canView', () => {
 
     it('is viewable by the claimedBy (pre-completion) assignee', () => {
       expect(canView(privateTask, { address: CLAIMED_WORKER })).toBe(true);
+    });
+
+    it('is viewable by the currently assigned evaluator', () => {
+      expect(
+        canView(
+          { ...privateTask, evaluator: EVALUATOR },
+          { address: EVALUATOR.toUpperCase() }
+        )
+      ).toBe(true);
+    });
+
+    it('is viewable by the currently assigned dispute resolver', () => {
+      expect(
+        canView(
+          { ...privateTask, disputeResolver: DISPUTE_RESOLVER },
+          { address: DISPUTE_RESOLVER.toUpperCase() }
+        )
+      ).toBe(true);
+    });
+
+    it('revokes role-derived access when the role is cleared', () => {
+      expect(canView({ ...privateTask, evaluator: null }, { address: EVALUATOR })).toBe(false);
+      expect(
+        canView({ ...privateTask, disputeResolver: null }, { address: DISPUTE_RESOLVER })
+      ).toBe(false);
     });
 
     it('is viewable by an awarded (post-completion) worker via awardedWorkerAddresses', () => {

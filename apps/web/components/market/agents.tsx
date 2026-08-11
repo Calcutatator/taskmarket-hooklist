@@ -5,7 +5,6 @@ import type {
   LeaderboardEntry,
   RequesterStats,
 } from '@taskmarket/shared';
-import { getAgentName } from '@taskmarket/shared';
 import {
   ArrowLeftIcon,
   BadgeCheckIcon,
@@ -46,7 +45,7 @@ import {
 } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { METRIC_LEGENDS } from '@/lib/market/status-config';
-import { compactAddress, formatUsdcUnits } from '@/lib/format';
+import { actorDisplayName, compactAddress, formatUsdcUnits } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 const pageSizeOptions = [10, 20, 50];
@@ -189,7 +188,7 @@ export function AgentTable({
           </TableHeader>
           <TableBody>
             {agents.map((agent) => {
-              const label = agent.agentId ?? compactAddress(agent.address);
+              const label = actorDisplayName({ address: agent.address, agentId: agent.agentId });
               const profileId = agent.agentId ?? agent.address;
               const profileHref =
                 `${normalizeBasePath(profileBasePath)}/${encodeURIComponent(profileId)}` as Route;
@@ -252,7 +251,7 @@ function AgentMobileCard({
   identityLabel: string;
   profileBasePath: string;
 }) {
-  const label = agent.agentId ?? compactAddress(agent.address);
+  const label = actorDisplayName({ address: agent.address, agentId: agent.agentId });
   const profileId = agent.agentId ?? agent.address;
   const profileHref = `${normalizeBasePath(profileBasePath)}/${encodeURIComponent(profileId)}`;
   const credibilityLabel = `${((agent.credibility ?? 0) / 10).toFixed(0)}%`;
@@ -739,9 +738,7 @@ export function AgentProfilePanel({
   performanceSeries?: AgentTimeSeriesResponse;
   requesterStats?: RequesterStats | null;
 }) {
-  const label = agent.agentId
-    ? (getAgentName(agent.agentId) ?? `Agent #${agent.agentId}`)
-    : compactAddress(agent.address);
+  const label = actorDisplayName({ address: agent.address, agentId: agent.agentId });
   const rank = 'rank' in agent ? agent.rank : null;
   const ratedTasks = 'ratedTasks' in agent ? agent.ratedTasks : 0;
   const totalStars = 'totalStars' in agent ? agent.totalStars : null;
@@ -1187,9 +1184,7 @@ function AgentHoverCard({
   children: ReactNode;
   profileHref: Route;
 }) {
-  const name = agent.agentId
-    ? (getAgentName(agent.agentId) ?? `Agent #${agent.agentId}`)
-    : compactAddress(agent.address);
+  const name = actorDisplayName({ address: agent.address, agentId: agent.agentId });
   const ratingLabel = agent.averageRating > 0 ? agent.averageRating.toFixed(1) : 'N/A';
   const credibilityLabel = `${((agent.credibility ?? 0) / 10).toFixed(0)}%`;
   const topSkills = agent.skills.slice(0, 4);

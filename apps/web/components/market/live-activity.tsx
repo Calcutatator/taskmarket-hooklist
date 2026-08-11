@@ -29,7 +29,7 @@ import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import { READ_AUTH_CONTEXT_KEY, trpc } from '@/lib/api/client';
 import type { MarketStats } from '@/lib/api/server';
-import { compactAddress } from '@/lib/format';
+import { actorDisplayName } from '@/lib/format';
 import {
   groupSubmissionsByWorker,
   sortSubmissionGroups,
@@ -260,23 +260,26 @@ function liveItems(task: TaskDetailResponse | TaskResponse, data: LiveModeData):
   switch (activeMode(task)) {
     case 'bids':
       return (data.bids ?? []).map((bid) => ({
-        actor: compactAddress(bid.workerAgentId ?? bid.workerAddress),
+        actor: actorDisplayName({ address: bid.workerAddress, agentId: bid.workerAgentId }),
         id: bid.id,
       }));
     case 'proofs':
       return (data.proofs ?? []).map((proof) => ({
-        actor: compactAddress(proof.workerAgentId ?? proof.workerAddress),
+        actor: actorDisplayName({ address: proof.workerAddress, agentId: proof.workerAgentId }),
         id: proof.id,
       }));
     case 'pitches':
       return (data.pitches ?? []).map((pitch) => ({
-        actor: compactAddress(pitch.workerAgentId ?? pitch.workerAddress),
+        actor: actorDisplayName({ address: pitch.workerAddress, agentId: pitch.workerAgentId }),
         id: pitch.id,
       }));
     case 'submissions':
     default:
       return (data.submissions ?? []).map((submission) => ({
-        actor: compactAddress(submission.workerAgentId ?? submission.workerAddress),
+        actor: actorDisplayName({
+          address: submission.workerAddress,
+          agentId: submission.workerAgentId,
+        }),
         id: submission.id,
       }));
   }
@@ -730,9 +733,10 @@ function BenchmarkSubmissionsSection({
             >
               {pagedActiveGroups.map((group) => (
                 <div
-                  aria-label={`Submitter ${compactAddress(
-                    group.representativeSubmission.workerAgentId ?? group.workerAddress
-                  )}, ${group.submissions.length} ${
+                  aria-label={`Submitter ${actorDisplayName({
+                    address: group.workerAddress,
+                    agentId: group.representativeSubmission.workerAgentId,
+                  })}, ${group.submissions.length} ${
                     group.submissions.length === 1 ? 'submission' : 'submissions'
                   }`}
                   className="grid min-w-0 gap-3"
@@ -753,8 +757,11 @@ function BenchmarkSubmissionsSection({
                         {group.submissions.length} submissions
                       </p>
                       <Button
-                        aria-label={`View all ${group.submissions.length} submissions from ${compactAddress(
-                          group.representativeSubmission.workerAgentId ?? group.workerAddress
+                        aria-label={`View all ${group.submissions.length} submissions from ${actorDisplayName(
+                          {
+                            address: group.workerAddress,
+                            agentId: group.representativeSubmission.workerAgentId,
+                          }
                         )}`}
                         data-testid={`benchmark-submitter-history-origin-${group.workerKey}`}
                         onClick={() => openHistory(group, 'active')}
@@ -839,9 +846,10 @@ function BenchmarkSubmissionsSection({
                   >
                     <div className="grid min-w-0 gap-1">
                       <p className="truncate font-mono text-sm font-semibold text-foreground">
-                        {compactAddress(
-                          group.representativeSubmission.workerAgentId ?? group.workerAddress
-                        )}
+                        {actorDisplayName({
+                          address: group.workerAddress,
+                          agentId: group.representativeSubmission.workerAgentId,
+                        })}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {group.submissions.length}{' '}
@@ -1120,7 +1128,10 @@ export function LiveActivityPanel({
   const activityData = usesScopedSubmissions ? { ...data, submissions: visibleSubmissions } : data;
   const items = submissionReviewEligible
     ? [...groupedReview.activeGroups, ...groupedReview.rejectedGroups].map((group) => ({
-        actor: compactAddress(group.representativeSubmission.workerAgentId ?? group.workerAddress),
+        actor: actorDisplayName({
+          address: group.workerAddress,
+          agentId: group.representativeSubmission.workerAgentId,
+        }),
         id: group.workerKey,
       }))
     : liveItems(task, activityData);
@@ -1528,9 +1539,10 @@ export function LiveActivityPanel({
                   motionDisabled={motionDisabled}
                 >
                   <div
-                    aria-label={`Submitter ${compactAddress(
-                      group.representativeSubmission.workerAgentId ?? group.workerAddress
-                    )}, ${group.submissions.length} ${
+                    aria-label={`Submitter ${actorDisplayName({
+                      address: group.workerAddress,
+                      agentId: group.representativeSubmission.workerAgentId,
+                    })}, ${group.submissions.length} ${
                       group.submissions.length === 1 ? 'submission' : 'submissions'
                     }`}
                     className="grid min-w-0 gap-3"
@@ -1550,8 +1562,11 @@ export function LiveActivityPanel({
                           {group.submissions.length} submissions
                         </p>
                         <Button
-                          aria-label={`View all ${group.submissions.length} submissions from ${compactAddress(
-                            group.representativeSubmission.workerAgentId ?? group.workerAddress
+                          aria-label={`View all ${group.submissions.length} submissions from ${actorDisplayName(
+                            {
+                              address: group.workerAddress,
+                              agentId: group.representativeSubmission.workerAgentId,
+                            }
                           )}`}
                           data-testid={`submitter-history-origin-${group.workerKey}`}
                           onClick={() => openHistory(group, 'active')}
@@ -1665,9 +1680,10 @@ export function LiveActivityPanel({
                   >
                     <div className="grid min-w-0 gap-1">
                       <p className="truncate font-mono text-sm font-semibold text-foreground">
-                        {compactAddress(
-                          group.representativeSubmission.workerAgentId ?? group.workerAddress
-                        )}
+                        {actorDisplayName({
+                          address: group.workerAddress,
+                          agentId: group.representativeSubmission.workerAgentId,
+                        })}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {group.submissions.length}{' '}

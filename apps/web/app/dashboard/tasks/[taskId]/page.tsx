@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { cache } from 'react';
+import { TaskActionIntent } from '@taskmarket/shared';
 
-import { TaskDetailPanel } from '@/components/market/tasks';
+import { CallerScopedTaskDetail } from '@/components/market/caller-scoped-task-detail';
 import { PrivateTaskAccessGate } from '@/components/market/private-task-access-gate';
 import {
   fetchMarketStats,
@@ -22,8 +23,9 @@ type TaskDetailPageProps = {
   params: Promise<{
     taskId: string;
   }>;
-  searchParams: Promise<{
+  searchParams?: Promise<{
     artifact?: string | string[];
+    focus?: string | string[];
   }>;
 };
 
@@ -66,6 +68,10 @@ export async function generateMetadata({ params }: TaskDetailPageProps): Promise
 
 export default async function TaskDetailPage({ params, searchParams }: TaskDetailPageProps) {
   const [{ taskId }, query] = await Promise.all([params, searchParams]);
+  const focusParam = query?.focus;
+  const focusIntent = TaskActionIntent.safeParse(
+    Array.isArray(focusParam) ? focusParam[0] : focusParam
+  ).data;
   const decodedTaskId = decodeRouteParam(taskId);
   const task = await getTask(decodedTaskId);
 
@@ -92,12 +98,13 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
       : Promise.resolve(null),
   ]);
   const htmlSubmissions = separateSubmissions ?? modeData.submissions ?? [];
-  const initialArtifactId = Array.isArray(query.artifact) ? query.artifact[0] : query.artifact;
+  const initialArtifactId = Array.isArray(query?.artifact) ? query.artifact[0] : query?.artifact;
 
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
-      <TaskDetailPanel
+      <CallerScopedTaskDetail
         evaluationIdentities={evaluationIdentities}
+        focusIntent={focusIntent}
         htmlSubmissions={htmlSubmissions}
         initialArtifactId={initialArtifactId}
         marketStats={marketStats}

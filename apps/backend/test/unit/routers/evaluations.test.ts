@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createIntentCtx, makeChain } from '../helpers';
+import { createIntentCtx, createMockCtx, makeChain } from '../helpers';
 
 const EVALUATED_AT = 1_800_000_000;
 
@@ -8,12 +8,13 @@ vi.mock('../../../src/services/contract', () => ({
     txHash: '0xevaluatetx',
     evaluatedAt: 1_800_000_000,
   }),
+  contractAppeal: vi.fn().mockResolvedValue('0xappealtx'),
+  contractGetContestAppealState: vi.fn(),
   contractEvaluatorTimeout: vi.fn().mockResolvedValue('0xevaluatortimeout'),
   // Completion handlers re-derive from the confirmed transaction rather than from the intent
   // payload, which predates it (ADR-0045).
   blockTimestampForTx: vi.fn().mockResolvedValue(1_800_000_000),
   contractProjectSettlementForTx: vi.fn().mockResolvedValue({ settlement: null, settledAt: null }),
-  contractAppeal: vi.fn().mockResolvedValue('0xappealtx'),
   contractFinalizeVerdictTx: vi.fn().mockResolvedValue('0xfinalizetx'),
   contractResolveDispute: vi.fn().mockResolvedValue({
     txHash: '0xresolvetx',
@@ -34,9 +35,11 @@ import { evaluationsRouter } from '../../../src/routers/evaluations.router';
 import { tasks } from '../../../src/db/schema';
 import { contractProjectSettlementForTx } from '../../../src/services/contract';
 import {
+  contractAppeal,
   contractEvaluate,
   contractEvaluatorTimeout,
   contractFinalizeVerdictTx,
+  contractGetContestAppealState,
   contractResolveDispute,
 } from '../../../src/services/contract';
 import { recordTaskSettlement } from '../../../src/services/settlement-recorder';
@@ -64,6 +67,8 @@ const REQUESTER = '0xRequester0000000000000000000000000000001';
 const TASK_ID = '0xtask0000000000000000000000000000000001';
 const EVALUATOR = '0xEvaluator000000000000000000000000000001';
 const WORKER = '0xWorker000000000000000000000000000000001';
+const OTHER_WORKER = '0xWorker000000000000000000000000000000002';
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 // The contract rejects disputeResolver == requester (self-assignment guard), so a task
 // whose resolver is its own requester is unreachable on chain -- resolveDispute fixtures
 // use a genuinely third address rather than borrowing the requester's.
@@ -86,6 +91,10 @@ function makeTask(overrides: Record<string, unknown> = {}) {
 describe('evaluations router', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(contractGetContestAppealState).mockResolvedValue({
+      claimedWorker: ZERO_ADDRESS,
+      hasSubmission: false,
+    });
   });
 
   describe('evaluate', () => {
@@ -225,6 +234,84 @@ describe('evaluations router', () => {
       await expect(evaluationsRouter.createCaller(ctx).evaluate(evalInput)).rejects.toThrow(
         'Task not found'
       );
+    });
+  });
+
+  describe('appeal', () => {
+    it('allows a contest submitter to appeal when no single worker is claimed', async () => {
+      vi.mocked(contractGetContestAppealState).mockResolvedValueOnce({
+        claimedWorker: ZERO_ADDRESS,
+        hasSubmission: true,
+      });
+      const ctx = createIntentCtx(WORKER);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([
+          makeTask({
+            mode: 'bounty',
+            status: 'appealing',
+            claimedBy: null,
+            appealDeadline: new Date(Date.now() + 60_000),
+          }),
+        ])
+      );
+
+      const result = await evaluationsRouter.createCaller(ctx).appeal({ taskId: TASK_ID });
+
+      expect(contractAppeal).toHaveBeenCalledWith(TASK_ID, WORKER);
+      expect(result).toEqual({ txHash: '0xappealtx' });
+    });
+
+    it('rejects a wallet that did not submit to the contest', async () => {
+      const ctx = createMockCtx(WORKER);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([
+          makeTask({
+            mode: 'benchmark',
+            status: 'appealing',
+            claimedBy: null,
+            appealDeadline: new Date(Date.now() + 60_000),
+          }),
+        ])
+      );
+
+      await expect(
+        evaluationsRouter.createCaller(ctx).appeal({ taskId: TASK_ID })
+      ).rejects.toThrow('Only a task submitter can appeal');
+    });
+
+    it('rejects a recovered losing submitter when another worker was awarded onchain', async () => {
+      vi.mocked(contractGetContestAppealState).mockResolvedValueOnce({
+        claimedWorker: OTHER_WORKER as `0x${string}`,
+        hasSubmission: true,
+      });
+      const ctx = createMockCtx(WORKER);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([makeTask({ mode: 'bounty', status: 'appealing', claimedBy: null })])
+      );
+
+      await expect(
+        evaluationsRouter.createCaller(ctx).appeal({ taskId: TASK_ID })
+      ).rejects.toThrow('Only the task worker can appeal');
+      expect(contractAppeal).not.toHaveBeenCalled();
+    });
+
+    it('allows the recovered awarded worker even without a submission row', async () => {
+      vi.mocked(contractGetContestAppealState).mockResolvedValueOnce({
+        claimedWorker: WORKER as `0x${string}`,
+        hasSubmission: false,
+      });
+      const ctx = createIntentCtx(WORKER);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([makeTask({ mode: 'benchmark', status: 'appealing', claimedBy: null })])
+      );
+
+      await expect(
+        evaluationsRouter.createCaller(ctx).appeal({ taskId: TASK_ID })
+      ).resolves.toEqual({ txHash: '0xappealtx' });
+      // The router itself still reads only the task: the recovered worker comes from the chain
+      // (contractGetContestAppealState), never from a submission row. The second read belongs to
+      // the relayed intent's own broadcast bookkeeping (ADR-0045), not to this authorization.
+      expect(ctx.db.select).toHaveBeenCalledTimes(2);
     });
   });
 

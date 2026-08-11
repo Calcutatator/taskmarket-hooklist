@@ -16,6 +16,7 @@ import {
   contractResolveDispute,
   contractEvaluatorTimeout,
 } from '../services/contract';
+import { resolveAppealAuthorization } from '../services/task-appeal-authorization';
 import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 // Shared with the rebroadcast path rather than duplicated here, so the first send and every
@@ -133,8 +134,22 @@ export const evaluationsRouter = router({
       if (taskResult.length === 0) throw new Error('Task not found');
       const task = taskResult[0];
 
-      if (!task.claimedBy || task.claimedBy.toLowerCase() !== payer.toLowerCase()) {
-        throw new Error('Only the task worker can appeal');
+      const preflight = ctx.res.locals.taskActionPreflight as
+        | { action?: string; payer?: string }
+        | undefined;
+      const authorization =
+        preflight?.action === 'appeal' && preflight.payer === payer.toLowerCase()
+          ? ({ authorized: true, authority: 'worker' } as const)
+          : await resolveAppealAuthorization(task, payer);
+      if (!authorization.authorized) {
+        if (authorization.authority === 'unverified') {
+          throw new Error('Unable to verify appeal eligibility');
+        }
+        throw new Error(
+          authorization.authority === 'worker'
+            ? 'Only the task worker can appeal'
+            : 'Only a task submitter can appeal'
+        );
       }
       if (task.status !== 'appealing') throw new Error('Task is not in Appealing state');
 

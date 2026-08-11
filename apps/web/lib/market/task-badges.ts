@@ -16,6 +16,20 @@ export function settledAwards(task: TaskDetailResponse | TaskResponse): TaskAwar
   return 'awards' in task ? (task.awards ?? []) : [];
 }
 
+export function taskRatingProgress(
+  task: TaskDetailResponse | TaskResponse
+): { rated: number; remaining: number; total: number } | null {
+  const ratingsByWorker = new Map<string, boolean>();
+  for (const award of settledAwards(task)) {
+    const key = award.workerAddress.toLowerCase();
+    ratingsByWorker.set(key, Boolean(ratingsByWorker.get(key) || award.rating !== null));
+  }
+  if (ratingsByWorker.size <= 1) return null;
+
+  const rated = [...ratingsByWorker.values()].filter(Boolean).length;
+  return { rated, remaining: ratingsByWorker.size - rated, total: ratingsByWorker.size };
+}
+
 // Falls back to the settled awards length for responses that don't carry a
 // computed awardCount (e.g. TaskResponse from list endpoints). Shared so every
 // surface that needs "how many winners" agrees, instead of re-deriving this

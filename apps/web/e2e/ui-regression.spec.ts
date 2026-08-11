@@ -176,7 +176,7 @@ test('keeps dashboard header actions aligned as one control group', async ({ pag
   const controls = actionGroup.locator(
     ':scope > [data-slot="button"], :scope > [data-slot="dropdown-menu-trigger"], :scope > [data-slot="skill-install-snippet"]'
   );
-  await expect(controls).toHaveCount(4);
+  await expect(controls).toHaveCount(5);
 
   const dimensions = await controls.evaluateAll((elements) =>
     elements.map((element) => {

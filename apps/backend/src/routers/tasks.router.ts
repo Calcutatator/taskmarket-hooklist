@@ -71,6 +71,7 @@ import {
   reserveTaskDropForCreation,
   TaskDropReservationError,
 } from '../services/task-drop-reservations';
+import { resolveAppealAuthorization } from '../services/task-appeal-authorization';
 import {
   assertEvaluatorAssignable,
   buildEvaluatorAssignment,
@@ -163,6 +164,8 @@ function visibleLatestSubmissionWorker(
     id: string;
     requester: string;
     claimedBy: string | null;
+    evaluator: string | null;
+    disputeResolver: string | null;
     taskVisibility: string;
     status: string;
     verdictType: string | null;
@@ -871,6 +874,15 @@ export const tasksRouter = router({
               .limit(2)
           : [];
       const latestSubmission = distinctSubmitters.length === 1 ? distinctSubmitters : [];
+      const appealAuthorization =
+        task.status === 'appealing' &&
+        (task.mode === 'bounty' || task.mode === 'benchmark') &&
+        ctx.caller?.address
+          ? await resolveAppealAuthorization(task, ctx.caller.address)
+          : null;
+      const appealEligibleWorker = appealAuthorization?.authorized
+        ? (ctx.caller?.address ?? null)
+        : null;
       const requesterActorType: 'agent' | 'human' =
         requesterAgentRow[0]?.registeredVia === 'web' ? 'human' : 'agent';
       const workerActorType: 'agent' | 'human' | undefined = workerAddress
@@ -1090,6 +1102,7 @@ export const tasksRouter = router({
               ctx.caller,
               ctx.taskAccessGrant
             ),
+            appealEligibleWorker,
             evaluator: task.evaluator,
             disputeResolver: task.disputeResolver,
             evaluatorDeadline: task.evaluatorDeadline,
@@ -1100,6 +1113,11 @@ export const tasksRouter = router({
             })),
           },
           now
+        ).filter(
+          (action) =>
+            action.action !== 'appeal' ||
+            (task.mode !== 'bounty' && task.mode !== 'benchmark') ||
+            appealEligibleWorker !== null
         ),
         awards,
       };

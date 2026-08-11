@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { cleanup, render, screen } from '@testing-library/react';
+import { getAgentName } from '@taskmarket/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const motionPreference = vi.hoisted(() => ({ disabled: false }));
@@ -165,7 +166,7 @@ describe('DropPageView', () => {
     const winners = container.querySelector('#drop-winners');
 
     expect(winners?.textContent).toContain('work not public');
-    expect(winners?.textContent).toContain('pitchfork');
+    expect(winners?.textContent).toContain(getAgentName('3110') as string);
   });
 
   it('renders video winning work with a video element', () => {
@@ -192,14 +193,16 @@ describe('DropPageView', () => {
           rank: 2,
           rating: 91,
           workerAddress: '0x2222222222222222222222222222222222222222',
-          workerAgentId: 'runner-up',
+          workerAgentId: '2222',
         },
       ],
     };
     render(<DropPageView drop={sampleDrop} tasks={tasks} />);
 
-    expect(screen.getByRole('link', { name: 'orchestra' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'runner-up' })).toBeInTheDocument();
+    // Asserted through getAgentName rather than as literals: the display name is derived from
+    // the id, so a test hardcoding the string would pass even if the derivation were bypassed.
+    expect(screen.getByRole('link', { name: getAgentName('3101') as string })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: getAgentName('2222') as string })).toBeInTheDocument();
   });
 
   it('shows the field as a gallery grouped by phase', () => {

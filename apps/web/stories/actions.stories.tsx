@@ -23,7 +23,7 @@
 
 import type { PendingAction } from '@taskmarket/shared';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { expect, within } from 'storybook/test';
 import { base, baseSepolia } from 'viem/chains';
 import { createConfig, http, useAccount, useConnect, WagmiProvider } from 'wagmi';
@@ -36,6 +36,13 @@ import { CancelButton } from '@/components/market/actions/cancel-button';
 import { ClaimButton } from '@/components/market/actions/claim-button';
 import { ConfirmDialog } from '@/components/market/actions/confirm-dialog';
 import { ConnectPrompt } from '@/components/market/actions/connect-prompt';
+import {
+  AppealButton,
+  EvaluateButton,
+  EvaluatorTimeoutButton,
+  FinalizeVerdictButton,
+  ResolveDisputeButton,
+} from '@/components/market/actions/evaluator-actions';
 import { ForfeitButton } from '@/components/market/actions/forfeit-button';
 import { PitchForm } from '@/components/market/actions/pitch-form';
 import { ProofForm } from '@/components/market/actions/proof-form';
@@ -45,7 +52,10 @@ import { RejectSubmissionButton } from '@/components/market/actions/reject-submi
 import { SelectWinnerButton } from '@/components/market/actions/select-winner-button';
 import { SelectWorkerPicker } from '@/components/market/actions/select-worker-picker';
 import { SplitAcceptanceGuide } from '@/components/market/actions/split-acceptance-guide';
-import { SubmissionPayoutAction } from '@/components/market/actions/submission-payout-action';
+import {
+  SettlementConfirmation,
+  SubmissionPayoutAction,
+} from '@/components/market/actions/submission-payout-action';
 import { SubmitArtifactsForm } from '@/components/market/actions/submit-artifacts-form';
 import { UpdateForm } from '@/components/market/actions/update-form';
 import { FundWalletButton } from '@/components/market/fund-wallet-button';
@@ -75,12 +85,13 @@ function installActionsRequestMock() {
   globalThis.fetch = async (input, init) => {
     const requestUrl =
       typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-    const procedures = new URL(
-      requestUrl,
-      globalThis.location?.origin ?? 'http://localhost'
-    ).pathname
-      .replace(/^\/trpc\//, '')
-      .split(',');
+    const url = new URL(requestUrl, globalThis.location?.origin ?? 'http://localhost');
+
+    if (url.pathname === '/api/tasks/task-1/finalize-verdict') {
+      return Response.json({ txHash: `0x${'a'.repeat(64)}` });
+    }
+
+    const procedures = url.pathname.replace(/^\/trpc\//, '').split(',');
     const responses = procedures.map(
       (procedure) => dreamsResponses[procedure as keyof typeof dreamsResponses]
     );
@@ -118,6 +129,81 @@ const connectedConfig = createConfig({
   },
 });
 
+// This story exercises several wallet-bound controls at once. A dedicated
+// config prevents another concurrently rendered story from disconnecting its
+// shared mock connector during the interaction test.
+const evaluationConfig = createConfig({
+  chains: [base, baseSepolia],
+  connectors: [mock({ accounts: [addresses.requester] })],
+  transports: {
+    [base.id]: http(),
+    [baseSepolia.id]: http(),
+  },
+});
+
+const publicEvaluatorConfig = createConfig({
+  chains: [base, baseSepolia],
+  connectors: [mock({ accounts: [addresses.requester] })],
+  transports: {
+    [base.id]: http(),
+    [baseSepolia.id]: http(),
+  },
+});
+
+const restrictedEvaluatorConfig = createConfig({
+  chains: [base, baseSepolia],
+  connectors: [mock({ accounts: [addresses.requester] })],
+  transports: {
+    [base.id]: http(),
+    [baseSepolia.id]: http(),
+  },
+});
+
+const restrictedAuthorizedEvaluatorConfig = createConfig({
+  chains: [base, baseSepolia],
+  connectors: [mock({ accounts: [addresses.requester] })],
+  transports: {
+    [base.id]: http(),
+    [baseSepolia.id]: http(),
+  },
+});
+
+const privateTaskEvaluatorConfig = createConfig({
+  chains: [base, baseSepolia],
+  connectors: [mock({ accounts: [addresses.requester] })],
+  transports: {
+    [base.id]: http(),
+    [baseSepolia.id]: http(),
+  },
+});
+
+const wrongEvaluatorConfig = createConfig({
+  chains: [base, baseSepolia],
+  connectors: [mock({ accounts: [addresses.requester] })],
+  transports: {
+    [base.id]: http(),
+    [baseSepolia.id]: http(),
+  },
+});
+
+const successfulLifecycleConfig = createConfig({
+  chains: [base, baseSepolia],
+  connectors: [mock({ accounts: [addresses.requester] })],
+  transports: {
+    [base.id]: http(),
+    [baseSepolia.id]: http(),
+  },
+});
+
+const disconnectedEvaluationConfig = createConfig({
+  chains: [base, baseSepolia],
+  connectors: [mock({ accounts: [addresses.requester] })],
+  transports: {
+    [base.id]: http(),
+    [baseSepolia.id]: http(),
+  },
+});
+
 function ConnectStoryWallet({ children }: Readonly<{ children: ReactNode }>) {
   const { isConnected } = useAccount();
   const { connect, connectors } = useConnect();
@@ -143,6 +229,25 @@ function ConnectedRequester({ children }: Readonly<{ children: ReactNode }>) {
   );
 }
 
+function ConnectedEvaluationWallet({
+  children,
+  config = evaluationConfig,
+}: Readonly<{ children: ReactNode; config?: typeof evaluationConfig }>) {
+  return (
+    <WagmiProvider config={config} reconnectOnMount={false}>
+      <ConnectStoryWallet>{children}</ConnectStoryWallet>
+    </WagmiProvider>
+  );
+}
+
+function DisconnectedEvaluationWallet({ children }: Readonly<{ children: ReactNode }>) {
+  return (
+    <WagmiProvider config={disconnectedEvaluationConfig} reconnectOnMount={false}>
+      {children}
+    </WagmiProvider>
+  );
+}
+
 function pendingAction(
   action: PendingAction['action'],
   role: PendingAction['role'],
@@ -164,6 +269,24 @@ const sharedTask = taskDetailFixture({
   pendingActions: [],
   status: 'pending_approval',
   submissionCount: 2,
+});
+const evaluateAction = pendingAction('evaluate', 'evaluator', 'taskmarket task evaluate task-1');
+const resolveDisputeAction = pendingAction(
+  'resolve_dispute',
+  'dispute_resolver',
+  'taskmarket task resolve-dispute task-1'
+);
+const finalizeVerdictAction = pendingAction(
+  'finalize_verdict',
+  'anyone',
+  'taskmarket task finalize-verdict task-1'
+);
+const publicEvaluationTask = taskDetailFixture({
+  ...sharedTask,
+  evaluator: addresses.requester,
+  evaluatorFeeBps: 500,
+  status: 'review',
+  submissionVisibility: 'public',
 });
 
 function ActionSurface({ children, title }: Readonly<{ children: ReactNode; title: string }>) {
@@ -251,6 +374,35 @@ export const RequesterActionVariants: Story = {
   },
 };
 
+function SettlementConfirmationReview() {
+  const [delayed, setDelayed] = useState(true);
+
+  return (
+    <div className="grid max-w-3xl gap-5 md:grid-cols-2">
+      <ActionSurface title="Indexing payout">
+        <SettlementConfirmation />
+      </ActionSurface>
+      <ActionSurface title="Delayed settlement">
+        <SettlementConfirmation delayed={delayed} onRetry={() => setDelayed(false)} />
+      </ActionSurface>
+    </div>
+  );
+}
+
+export const SettlementConfirmationStates: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => <SettlementConfirmationReview />,
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+
+    await expect(
+      canvas.getByText('Settlement confirmation is taking longer than expected')
+    ).toBeVisible();
+    await userEvent.click(canvas.getByRole('button', { name: 'Check again' }));
+    await expect(canvas.getAllByRole('status', { name: 'Confirming settlement' })).toHaveLength(2);
+  },
+};
+
 export const WorkerActionVariants: Story = {
   render: () => (
     <ConnectedRequester>
@@ -313,6 +465,264 @@ export const WorkerActionVariants: Story = {
       </div>
     </ConnectedRequester>
   ),
+};
+
+export const EvaluationAndDisputeActions: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <ConnectedEvaluationWallet>
+      <div className="grid max-w-6xl gap-5 md:grid-cols-2">
+        <ActionSurface title="Evaluate submitted work">
+          <EvaluateButton
+            action={pendingAction('evaluate', 'evaluator', 'taskmarket task evaluate task-1')}
+            disabled={false}
+            task={taskDetailFixture({
+              ...sharedTask,
+              evaluator: addresses.requester,
+              evaluatorFeeBps: 500,
+              status: 'review',
+            })}
+          />
+        </ActionSurface>
+        <ActionSurface title="Resolve a dispute">
+          <ResolveDisputeButton
+            action={pendingAction(
+              'resolve_dispute',
+              'dispute_resolver',
+              'taskmarket task resolve-dispute task-1'
+            )}
+            disabled
+            task={taskDetailFixture({
+              ...sharedTask,
+              disputeResolver: addresses.requester,
+              evaluatorFeeBps: 500,
+              status: 'disputed',
+            })}
+          />
+        </ActionSurface>
+        <ActionSurface title="Appeal verdict">
+          <AppealButton
+            action={pendingAction('appeal', 'worker', 'taskmarket task appeal task-1')}
+            disabled
+            task={sharedTask}
+          />
+        </ActionSurface>
+        <ActionSurface title="Evaluator timeout">
+          <EvaluatorTimeoutButton
+            action={pendingAction(
+              'evaluator_timeout',
+              'requester',
+              'taskmarket task evaluator-timeout task-1'
+            )}
+            disabled
+            task={sharedTask}
+          />
+        </ActionSurface>
+        <ActionSurface title="Finalize verdict">
+          <FinalizeVerdictButton
+            action={pendingAction(
+              'finalize_verdict',
+              'anyone',
+              'taskmarket task finalize-verdict task-1'
+            )}
+            disabled
+            task={sharedTask}
+          />
+        </ActionSurface>
+      </div>
+    </ConnectedEvaluationWallet>
+  ),
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
+    await expect(await canvas.findByLabelText('Evidence hash')).toBeVisible();
+    await userEvent.selectOptions(canvas.getAllByLabelText('Verdict')[0]!, 'partial');
+    await expect(canvas.getAllByText('Payout recipients')).toHaveLength(2);
+    await userEvent.click(canvas.getByRole('button', { name: 'Submit evaluation' }));
+    await expect(page.getByRole('heading', { name: 'Submit this evaluation?' })).toBeVisible();
+    await expect(page.getByText(/costs 0.001 USDC and is irreversible/i)).toBeVisible();
+    await userEvent.click(page.getAllByRole('button', { name: 'Submit evaluation' }).at(-1)!);
+    await expect(await canvas.findByText(/evidence hash is required/i)).toBeVisible();
+    await expect(canvas.getByRole('button', { name: 'Finalize verdict' })).toBeDisabled();
+  },
+};
+
+export const PublicEvaluatorAction: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <ConnectedEvaluationWallet config={publicEvaluatorConfig}>
+      <div className="max-w-2xl">
+        <TaskActionsPanel
+          emptyReason="No evaluator actions are available."
+          evidenceReady
+          pendingActions={[evaluateAction]}
+          requester={publicEvaluationTask.requester}
+          task={publicEvaluationTask}
+        />
+      </div>
+    </ConnectedEvaluationWallet>
+  ),
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByLabelText('Evidence hash')).toBeVisible();
+    await userEvent.selectOptions(canvas.getByLabelText('Verdict'), 'partial');
+    await expect(canvas.getByText('Payout recipients')).toBeVisible();
+  },
+};
+
+export const SuccessfulLifecycleCompletion: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <ConnectedEvaluationWallet config={successfulLifecycleConfig}>
+      <div className="max-w-2xl">
+        <TaskActionsPanel
+          emptyReason="No lifecycle actions are available."
+          pendingActions={[finalizeVerdictAction]}
+          requester={publicEvaluationTask.requester}
+          task={{ ...publicEvaluationTask, status: 'appealing' }}
+        />
+      </div>
+    </ConnectedEvaluationWallet>
+  ),
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
+    const storyWindow = canvasElement.ownerDocument.defaultView!;
+    let completionCount = 0;
+    const listener = (event: Event) => {
+      const detail = (event as CustomEvent<{ event?: string }>).detail;
+      if (detail.event === 'lifecycle_action_completed') completionCount += 1;
+    };
+    storyWindow.addEventListener('taskmarket:action-inbox', listener);
+
+    await userEvent.click(canvas.getByRole('button', { name: 'Finalize verdict' }));
+    await expect(page.getByRole('heading', { name: 'Finalize this verdict?' })).toBeVisible();
+    await userEvent.click(page.getAllByRole('button', { name: 'Finalize verdict' }).at(-1)!);
+
+    await expect(await canvas.findByText('Verdict finalized')).toBeVisible();
+    await expect(completionCount).toBe(1);
+    storyWindow.removeEventListener('taskmarket:action-inbox', listener);
+  },
+};
+
+export const RestrictedDecisionEvidenceUnavailable: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <ConnectedEvaluationWallet config={restrictedEvaluatorConfig}>
+      <div className="max-w-2xl">
+        <TaskActionsPanel
+          emptyReason="Restricted evidence is unavailable."
+          pendingActions={[evaluateAction, resolveDisputeAction]}
+          requester={publicEvaluationTask.requester}
+          task={{
+            ...publicEvaluationTask,
+            disputeResolver: addresses.requester,
+            submissionVisibility: 'never',
+          }}
+        />
+      </div>
+    </ConnectedEvaluationWallet>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText('Decision evidence unavailable')).toBeVisible();
+    await expect(canvas.getByText(/until the submitted evidence is visible/i)).toBeVisible();
+    await expect(canvas.queryByRole('button', { name: 'Submit evaluation' })).toBeNull();
+    await expect(canvas.queryByRole('button', { name: 'Resolve dispute' })).toBeNull();
+  },
+};
+
+export const RestrictedDecisionEvidenceAuthorized: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <ConnectedEvaluationWallet config={restrictedAuthorizedEvaluatorConfig}>
+      <div className="max-w-2xl">
+        <TaskActionsPanel
+          emptyReason="No evaluator actions are available."
+          evidenceReady
+          pendingActions={[evaluateAction]}
+          requester={publicEvaluationTask.requester}
+          task={{ ...publicEvaluationTask, submissionVisibility: 'never' }}
+        />
+      </div>
+    </ConnectedEvaluationWallet>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByRole('status', { name: 'Confidential evidence access' })
+    ).toHaveTextContent(/current evaluator assignment grants access to every submitted item/i);
+    await expect(canvas.getByText(/does not publish the task or submissions/i)).toBeVisible();
+    await expect(canvas.getByRole('button', { name: 'Submit evaluation' })).toBeVisible();
+  },
+};
+
+export const PrivateTaskDecisionEvidenceAuthorized: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <ConnectedEvaluationWallet config={privateTaskEvaluatorConfig}>
+      <div className="max-w-2xl">
+        <TaskActionsPanel
+          emptyReason="No evaluator actions are available."
+          evidenceReady
+          pendingActions={[evaluateAction]}
+          requester={publicEvaluationTask.requester}
+          task={{ ...publicEvaluationTask, taskVisibility: 'private' }}
+        />
+      </div>
+    </ConnectedEvaluationWallet>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByRole('status', { name: 'Confidential evidence access' })
+    ).toHaveTextContent(/current evaluator assignment grants access to every submitted item/i);
+    await expect(canvas.getByRole('button', { name: 'Submit evaluation' })).toBeVisible();
+  },
+};
+
+export const WrongEvaluatorWallet: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <ConnectedEvaluationWallet config={wrongEvaluatorConfig}>
+      <div className="max-w-2xl">
+        <TaskActionsPanel
+          emptyReason="No evaluator actions are available."
+          evidenceReady
+          pendingActions={[evaluateAction]}
+          requester={publicEvaluationTask.requester}
+          task={{ ...publicEvaluationTask, evaluator: addresses.evaluator }}
+        />
+      </div>
+    </ConnectedEvaluationWallet>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText('No actions for this wallet')).toBeVisible();
+    await expect(canvas.queryByRole('button', { name: 'Submit evaluation' })).toBeNull();
+  },
+};
+
+export const DisconnectedEvaluatorWallet: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <DisconnectedEvaluationWallet>
+      <div className="max-w-2xl">
+        <TaskActionsPanel
+          emptyReason="No evaluator actions are available."
+          evidenceReady
+          pendingActions={[evaluateAction]}
+          requester={publicEvaluationTask.requester}
+          task={publicEvaluationTask}
+        />
+      </div>
+    </DisconnectedEvaluationWallet>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText('No actions for this wallet')).toBeVisible();
+    await expect(canvas.queryByRole('button', { name: 'Submit evaluation' })).toBeNull();
+  },
 };
 
 export const AuctionAndExpiryActions: Story = {

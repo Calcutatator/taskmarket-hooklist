@@ -2,6 +2,23 @@ import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { AppSidebar } from './app-sidebar';
 
+const { actionQueueState } = vi.hoisted(() => ({
+  actionQueueState: { total: 4 },
+}));
+
+vi.mock('wagmi', () => ({
+  useAccount: () => ({
+    address: '0x1111111111111111111111111111111111111111',
+    isConnected: true,
+  }),
+}));
+
+vi.mock('@/lib/use-action-queue', () => ({
+  useActionQueue: () => ({
+    data: { items: [], total: actionQueueState.total, urgentTotal: 0, waiting: [] },
+  }),
+}));
+
 vi.mock('next/navigation', () => ({
   usePathname: () => '/dashboard/task-types',
 }));
@@ -40,6 +57,7 @@ vi.mock('@/components/ui/sidebar', () => ({
     children: React.ReactNode;
     isActive?: boolean;
   }) => <span data-active={isActive}>{children}</span>,
+  SidebarMenuBadge: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SidebarMenuItem: ({ children }: { children: React.ReactNode }) => <li>{children}</li>,
 }));
 
@@ -66,6 +84,10 @@ describe('AppSidebar', () => {
       'href',
       '/dashboard/tasks'
     );
+    expect(screen.getByRole('link', { name: /inbox, 4 actions to do/i })).toHaveAttribute(
+      'href',
+      '/dashboard/inbox'
+    );
     expect(screen.getByRole('link', { name: /^task drops$/i })).toHaveAttribute(
       'href',
       '/dashboard/drops'
@@ -78,10 +100,7 @@ describe('AppSidebar', () => {
       'href',
       '/dashboard/leaderboard'
     );
-    expect(within(resources!).getByRole('link', { name: /^news$/i })).toHaveAttribute(
-      'href',
-      '/dashboard/inbox'
-    );
+    expect(within(resources!).queryByRole('link', { name: /^news$/i })).not.toBeInTheDocument();
     expect(within(resources!).getByRole('link', { name: /^humans$/i })).toHaveAttribute(
       'href',
       '/dashboard/humans'
@@ -115,12 +134,13 @@ describe('AppSidebar', () => {
     const primaryLinks = screen
       .getAllByRole('link')
       .filter((link) =>
-        ['/dashboard/tasks', '/dashboard/drops', '/dashboard/agents'].includes(
+        ['/dashboard/tasks', '/dashboard/inbox', '/dashboard/drops', '/dashboard/agents'].includes(
           link.getAttribute('href') ?? ''
         )
       );
     expect(primaryLinks.map((link) => link.getAttribute('href'))).toEqual([
       '/dashboard/tasks',
+      '/dashboard/inbox',
       '/dashboard/drops',
       '/dashboard/agents',
     ]);

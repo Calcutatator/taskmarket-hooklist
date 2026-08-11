@@ -95,6 +95,34 @@ async function statusOf(taskId: string): Promise<string> {
   return rows[0]!.status;
 }
 
+async function taskStateOf(taskId: string): Promise<{ claimedBy: string | null; status: string }> {
+  const rows = await database
+    .select({ claimedBy: tasks.claimedBy, status: tasks.status })
+    .from(tasks)
+    .where(eq(tasks.id, taskId))
+    .limit(1);
+  return rows[0]!;
+}
+
+async function evaluatedTaskStateOf(taskId: string): Promise<{
+  appealDeadline: Date | null;
+  claimedBy: string | null;
+  expiryTime: Date;
+  status: string;
+}> {
+  const rows = await database
+    .select({
+      appealDeadline: tasks.appealDeadline,
+      claimedBy: tasks.claimedBy,
+      expiryTime: tasks.expiryTime,
+      status: tasks.status,
+    })
+    .from(tasks)
+    .where(eq(tasks.id, taskId))
+    .limit(1);
+  return rows[0]!;
+}
+
 describeWithDatabase('indexer status guard handlers', () => {
   beforeAll(async () => {
     await isolatedDatabase.start();
@@ -404,10 +432,16 @@ describeWithDatabase('indexer status guard handlers', () => {
   });
 
   it('processTaskEvaluatedEvent applies from review, no-ops once completed -- reproduces the live-observed regression', async () => {
-    const reviewTaskId = await insertTask({ status: 'review', mode: 'claim' });
+    const reviewTaskId = await insertTask({ appealWindow: 3600, status: 'review', mode: 'claim' });
     await processTaskEvaluatedEvent(
-      { args: { taskId: reviewTaskId, verdictType: 0, score: 90 }, eventName: 'TaskEvaluated' },
-      database
+      {
+        args: { taskId: reviewTaskId, verdictType: 0, score: 90 },
+        blockNumber: 123n,
+        eventName: 'TaskEvaluated',
+      },
+      database,
+      undefined,
+      fakeBlockClient
     );
     expect(await statusOf(reviewTaskId)).toBe('appealing');
 
@@ -421,6 +455,89 @@ describeWithDatabase('indexer status guard handlers', () => {
       database
     );
     expect(await statusOf(completedTaskId)).toBe('completed');
+  });
+
+  it('processTaskEvaluatedEvent restores a contest award worker from canonical chain state', async () => {
+    const taskId = await insertTask({
+      appealWindow: 3600,
+      claimedBy: null,
+      contractAddress: '0x2222222222222222222222222222222222222222',
+      expiryTime: new Date('2023-01-01T00:00:00.000Z'),
+      mode: 'bounty',
+      status: 'open',
+    });
+    const readTaskWorker = vi.fn().mockResolvedValue(WORKER);
+
+    await processTaskEvaluatedEvent(
+      {
+        args: { taskId, verdictType: 0, score: 90 },
+        blockNumber: 123n,
+        eventName: 'TaskEvaluated',
+      },
+      database,
+      readTaskWorker,
+      fakeBlockClient
+    );
+
+    expect(readTaskWorker).toHaveBeenCalledWith(
+      taskId,
+      '0x2222222222222222222222222222222222222222'
+    );
+    expect(await evaluatedTaskStateOf(taskId)).toEqual({
+      appealDeadline: new Date('2023-11-14T23:13:20.000Z'),
+      claimedBy: WORKER,
+      expiryTime: new Date('2023-11-14T23:13:20.000Z'),
+      status: 'appealing',
+    });
+  });
+
+  it('processTaskEvaluatedEvent leaves task state unchanged when appeal timing RPC recovery fails', async () => {
+    const expiryTime = new Date('2030-01-01T00:00:00.000Z');
+    const taskId = await insertTask({
+      appealWindow: 3600,
+      claimedBy: null,
+      expiryTime,
+      mode: 'bounty',
+      status: 'open',
+    });
+    const readTaskWorker = vi.fn().mockResolvedValue(WORKER);
+    const failingBlockClient = {
+      getBlock: vi.fn().mockRejectedValue(new Error('RPC unavailable')),
+    };
+
+    await expect(
+      processTaskEvaluatedEvent(
+        {
+          args: { taskId, verdictType: 0, score: 90 },
+          blockNumber: 123n,
+          eventName: 'TaskEvaluated',
+        },
+        database,
+        readTaskWorker,
+        failingBlockClient
+      )
+    ).rejects.toThrow('RPC unavailable');
+
+    expect(await evaluatedTaskStateOf(taskId)).toEqual({
+      appealDeadline: null,
+      claimedBy: null,
+      expiryTime,
+      status: 'open',
+    });
+  });
+
+  it('processTaskEvaluatedEvent does not read or restore contest ownership after status advanced', async () => {
+    const taskId = await insertTask({ claimedBy: null, mode: 'benchmark', status: 'completed' });
+    const readTaskWorker = vi.fn().mockResolvedValue(WORKER);
+
+    await processTaskEvaluatedEvent(
+      { args: { taskId, verdictType: 0, score: 90 }, eventName: 'TaskEvaluated' },
+      database,
+      readTaskWorker
+    );
+
+    expect(readTaskWorker).not.toHaveBeenCalled();
+    expect(await taskStateOf(taskId)).toEqual({ claimedBy: null, status: 'completed' });
   });
 
   it('processTaskAppealedEvent applies from appealing, no-ops once completed', async () => {

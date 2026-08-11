@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { PrivyWalletAccessButton } from '@/components/privy-account-control';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { TaskDetailPanel } from '@/components/market/tasks';
+import { CallerScopedTaskDetail } from '@/components/market/caller-scoped-task-detail';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { CLIENT_AUTH_STATE_CLEARED_EVENT } from '@/lib/clear-client-auth-state';
 import { getCachedReadAuthHeaders } from '@/lib/read-auth';
@@ -146,7 +146,7 @@ export function PrivateTaskAccessGate({
   if (task) {
     return (
       <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-        <TaskDetailPanel backHref={backHref} profileBasePath={profileBasePath} task={task} />
+        <CallerScopedTaskDetail backHref={backHref} profileBasePath={profileBasePath} task={task} />
       </div>
     );
   }

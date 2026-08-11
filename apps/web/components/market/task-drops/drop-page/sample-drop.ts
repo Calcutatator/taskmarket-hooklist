@@ -36,6 +36,8 @@ type SampleSeed = {
   rating: number | null;
   reward: string;
   title: string;
+  // A numeric identity-registry id, as production carries -- the display name is derived
+  // from it (see actorDisplayName), never stored.
   winner: string | null;
 };
 
@@ -46,7 +48,7 @@ const SEEDS: SampleSeed[] = [
     rating: 94,
     reward: '6000000',
     title: 'A two-minute score for the insect world',
-    winner: 'orchestra',
+    winner: '3101',
   },
   {
     cover: 'airace-the-titans.jpg',
@@ -54,7 +56,7 @@ const SEEDS: SampleSeed[] = [
     rating: 97,
     reward: '9000000',
     title: 'The dragonfly interception a weapons lab copied',
-    winner: 'vellum-9',
+    winner: '3102',
   },
   {
     cover: 'robots-blueprint.jpg',
@@ -62,7 +64,7 @@ const SEEDS: SampleSeed[] = [
     rating: 91,
     reward: '5000000',
     title: 'The drone that sees like a fly',
-    winner: 'cassio',
+    winner: '3103',
   },
   {
     cover: 'offplanet-roster-lineage.jpg',
@@ -70,7 +72,7 @@ const SEEDS: SampleSeed[] = [
     rating: 88,
     reward: '4000000',
     title: 'AI is watching the hives our food depends on',
-    winner: 'perigee',
+    winner: '3104',
   },
   {
     cover: 'airace-quarter-of-seoul.jpg',
@@ -78,7 +80,7 @@ const SEEDS: SampleSeed[] = [
     rating: 93,
     reward: '4000000',
     title: 'The river of insects only radar can see',
-    winner: 'nullpoint',
+    winner: '3105',
   },
   {
     cover: 'offplanet-fridge-cutaway.jpg',
@@ -94,7 +96,7 @@ const SEEDS: SampleSeed[] = [
     rating: 95,
     reward: '5000000',
     title: 'The cyborg cockroaches sent into earthquake rubble',
-    winner: 'tinbox',
+    winner: '3107',
   },
   {
     cover: 'showcase-poster-everyone.jpg',
@@ -102,7 +104,7 @@ const SEEDS: SampleSeed[] = [
     rating: 96,
     reward: '5000000',
     title: 'The leaderless bee swarm that machines copy',
-    winner: 'quorum-sense',
+    winner: '3108',
   },
   {
     cover: 'robots-hand.jpg',
@@ -110,7 +112,7 @@ const SEEDS: SampleSeed[] = [
     rating: 90,
     reward: '5000000',
     title: 'The robot bee that landed on crane-fly legs',
-    winner: 'halcyon',
+    winner: '3109',
   },
   {
     cover: 'offplanet-drinks-nothing.jpg',
@@ -118,7 +120,7 @@ const SEEDS: SampleSeed[] = [
     rating: 89,
     reward: '4000000',
     title: 'AI names the mosquito by its wingbeat',
-    winner: 'pitchfork',
+    winner: '3110',
   },
   {
     cover: 'airace-two-apollos.jpg',
@@ -126,7 +128,7 @@ const SEEDS: SampleSeed[] = [
     rating: 92,
     reward: '5000000',
     title: 'How an insect wing beats an aeroplane wing',
-    winner: 'aerofoil',
+    winner: '3111',
   },
   {
     cover: 'showcase-cutaway-mars-2050.jpg',
@@ -134,7 +136,7 @@ const SEEDS: SampleSeed[] = [
     rating: 98,
     reward: '4000000',
     title: 'The fly brain AI mapped neuron by neuron',
-    winner: 'connectome',
+    winner: '3112',
   },
 ];
 

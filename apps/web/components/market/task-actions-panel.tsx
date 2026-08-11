@@ -22,10 +22,14 @@ import {
   usePaidActionFundingPrompt,
 } from '@/components/market/fund-wallet-button';
 import { formatUsdcUnits } from '@/lib/format';
+import { emitActionInboxEvent } from '@/lib/market/action-inbox-events';
+import { taskRatingProgress } from '@/lib/market/task-badges';
+import { useInvalidateActionQueue } from '@/lib/use-action-queue';
 
 type TaskActionPanelProps = {
   claimedBy?: string | null;
   emptyReason: string;
+  evidenceReady?: boolean;
   hideWhenNoVisibleActions?: boolean;
   pendingActions: PendingAction[];
   requester: string;
@@ -35,22 +39,15 @@ type TaskActionPanelProps = {
 };
 
 const PAID_ACTIONS = new Set<PendingAction['action']>(PAID_PENDING_ACTION_NAMES);
-
-// Evaluator and dispute controls are not built yet (their components only render
-// "coming soon" copy), so we do not surface them. The components stay wired in
-// COMPONENT_BY_ACTION to keep the dispatcher exhaustive; this set just hides the
-// dead controls from users until the flows ship.
-const UNRELEASED_ACTIONS = new Set([
+const SELF_INVALIDATING_ACTIONS = new Set<PendingAction['action']>([
+  'accept',
   'appeal',
   'evaluate',
   'evaluator_timeout',
   'finalize_verdict',
+  'rate',
   'resolve_dispute',
 ]);
-
-function isReleasedAction(action: PendingAction) {
-  return !UNRELEASED_ACTIONS.has(action.action);
-}
 
 function isPaidAction(action: PendingAction) {
   return action.requiresPayment ?? PAID_ACTIONS.has(action.action);
@@ -65,6 +62,7 @@ function canRunAction(params: ActionVisibilityParams) {
 export function TaskActionsPanel({
   claimedBy,
   emptyReason,
+  evidenceReady,
   hideWhenNoVisibleActions = false,
   pendingActions,
   requester,
@@ -74,21 +72,44 @@ export function TaskActionsPanel({
 }: TaskActionPanelProps) {
   const { address } = useAccount();
   const router = useRouter();
-  const visibleActions = pendingActions.filter(
-    (action) =>
-      isReleasedAction(action) && canViewAction({ action, address, claimedBy, requester, worker })
+  const invalidateActionQueue = useInvalidateActionQueue();
+  const visibleActions = pendingActions.filter((action) =>
+    canViewAction({
+      action,
+      address,
+      claimedBy,
+      disputeResolver: task.disputeResolver,
+      evidenceReady,
+      evaluator: task.evaluator,
+      requester,
+      worker,
+    })
   );
   const hasPaidAction = visibleActions.some(isPaidAction);
+  const visibleRatingActions = visibleActions.filter((action) => action.action === 'rate');
+  const ratingProgress = visibleRatingActions.length > 0 ? taskRatingProgress(task) : null;
   const { actionFundingPrompt, recheckActionFunding } = usePaidActionFundingPrompt({
     address,
     enabled: hasPaidAction,
   });
-  const emptyTitle =
-    pendingActions.length > 0 ? 'No actions for this wallet' : 'No pending commands';
-  const emptyDescription =
-    pendingActions.length > 0
-      ? 'Connect the requester or assigned worker wallet to manage this task.'
-      : emptyReason;
+  const hasEvidenceAction = pendingActions.some(
+    (action) => action.action === 'evaluate' || action.action === 'resolve_dispute'
+  );
+  const restrictedEvidenceRole =
+    task.taskVisibility === 'private' || task.submissionVisibility !== 'public'
+      ? visibleActions.find(
+          (action) => action.action === 'evaluate' || action.action === 'resolve_dispute'
+        )?.role
+      : undefined;
+  const evidenceUnavailable = hasEvidenceAction && evidenceReady !== true;
+  const emptyTitle = evidenceUnavailable
+    ? 'Decision evidence unavailable'
+    : pendingActions.length > 0
+      ? 'No actions for this wallet'
+      : 'No pending commands';
+  const emptyDescription = evidenceUnavailable
+    ? 'Evaluation and dispute controls stay unavailable until the submitted evidence is visible on this page.'
+    : emptyReason;
 
   if (hideWhenNoVisibleActions && visibleActions.length === 0) {
     return null;
@@ -100,6 +121,40 @@ export function TaskActionsPanel({
         {title}
       </h2>
       <div className="grid gap-3">
+        {restrictedEvidenceRole ? (
+          <div
+            aria-label="Confidential evidence access"
+            className="grid gap-1 rounded-lg border border-primary/35 bg-primary/8 p-3"
+            role="status"
+          >
+            <p className="text-sm font-semibold tracking-tight text-foreground">
+              Confidential evidence access
+            </p>
+            <p className="text-xs leading-5 text-muted-foreground">
+              Your current{' '}
+              {restrictedEvidenceRole === 'dispute_resolver' ? 'dispute resolver' : 'evaluator'}{' '}
+              assignment grants access to every submitted item for this decision. Access ends if the
+              role is cleared. It does not publish the task or submissions, and it grants no task
+              actions beyond those assigned to you.
+            </p>
+          </div>
+        ) : null}
+        {ratingProgress ? (
+          <div
+            aria-label="Rating progress"
+            className="grid gap-1 rounded-lg border border-border/60 bg-background/42 p-3"
+            role="status"
+          >
+            <p className="text-sm font-semibold tracking-tight text-foreground">
+              {ratingProgress.rated} of {ratingProgress.total} ratings recorded
+            </p>
+            <p className="text-xs leading-5 text-muted-foreground">
+              {ratingProgress.remaining}{' '}
+              {ratingProgress.remaining === 1 ? 'rating remains' : 'ratings remaining'} before every
+              payout recipient has feedback.
+            </p>
+          </div>
+        ) : null}
         {actionFundingPrompt ? (
           <FundingGuard
             address={address}
@@ -121,7 +176,16 @@ export function TaskActionsPanel({
         {visibleActions.length > 0 ? (
           visibleActions.map((action) => {
             const Component = COMPONENT_BY_ACTION[action.action];
-            const canRun = canRunAction({ action, address, claimedBy, requester, worker });
+            const canRun = canRunAction({
+              action,
+              address,
+              claimedBy,
+              disputeResolver: task.disputeResolver,
+              evidenceReady,
+              evaluator: task.evaluator,
+              requester,
+              worker,
+            });
             const blockedByFunding = Boolean(actionFundingPrompt && isPaidAction(action));
 
             return (
@@ -133,7 +197,17 @@ export function TaskActionsPanel({
                   <Component
                     action={action}
                     disabled={blockedByFunding || (!canRun && Boolean(address))}
-                    onSuccess={() => router.refresh()}
+                    onSuccess={() => {
+                      emitActionInboxEvent({
+                        action: action.action,
+                        event: 'lifecycle_action_completed',
+                        taskId: task.id,
+                      });
+                      if (!SELF_INVALIDATING_ACTIONS.has(action.action)) {
+                        void invalidateActionQueue();
+                      }
+                      router.refresh();
+                    }}
                     task={task}
                   />
                 </div>

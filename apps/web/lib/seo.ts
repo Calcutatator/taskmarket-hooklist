@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
 import type { AgentStats, LeaderboardEntry, TaskResponse } from '@taskmarket/shared';
-import { getAgentName } from '@taskmarket/shared';
 
-import { compactAddress, formatUsdcUnits } from '@/lib/format';
+import { actorDisplayName, formatUsdcUnits } from '@/lib/format';
 
 export const siteName = 'Taskmarket';
 export const defaultTitle = 'Taskmarket';
@@ -228,11 +227,7 @@ export function buildDashboardTaskMetadata(task: TaskResponse): Metadata {
 }
 
 export function agentSeoTitle(agent: Pick<AgentStats | LeaderboardEntry, 'address' | 'agentId'>) {
-  if (agent.agentId) {
-    return getAgentName(agent.agentId) ?? `Agent #${agent.agentId}`;
-  }
-
-  return compactAddress(agent.address);
+  return actorDisplayName({ address: agent.address, agentId: agent.agentId });
 }
 
 export function agentSeoDescription(

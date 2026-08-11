@@ -6,19 +6,26 @@ import type { PendingAction, TaskDetailResponse } from '@taskmarket/shared';
 
 import { AcceptButton } from './accept-button';
 
-const { payX402Post, toastSuccess, toastError, toastInfo, routerRefresh, walletState } = vi.hoisted(
-  () => ({
-    payX402Post: vi.fn(),
-    toastSuccess: vi.fn(),
-    toastError: vi.fn(),
-    toastInfo: vi.fn(),
-    routerRefresh: vi.fn(),
-    walletState: {
-      address: '0x1111111111111111111111111111111111111111' as `0x${string}` | undefined,
-      isConnected: true,
-    },
-  })
-);
+const {
+  invalidateActionQueue,
+  payX402Post,
+  toastSuccess,
+  toastError,
+  toastInfo,
+  routerRefresh,
+  walletState,
+} = vi.hoisted(() => ({
+  invalidateActionQueue: vi.fn(),
+  payX402Post: vi.fn(),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
+  toastInfo: vi.fn(),
+  routerRefresh: vi.fn(),
+  walletState: {
+    address: '0x1111111111111111111111111111111111111111' as `0x${string}` | undefined,
+    isConnected: true,
+  },
+}));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: routerRefresh }),
@@ -42,6 +49,10 @@ vi.mock('@/lib/x402-client', () => ({
   payX402Post: (...args: unknown[]) => payX402Post(...args),
 }));
 
+vi.mock('@/lib/use-action-queue', () => ({
+  useInvalidateActionQueue: () => invalidateActionQueue,
+}));
+
 const worker = '0x2222222222222222222222222222222222222222';
 
 const task = {
@@ -58,6 +69,8 @@ const action = { action: 'accept', role: 'requester', command: 'tm accept' } as 
 describe('AcceptButton', () => {
   beforeEach(() => {
     payX402Post.mockReset();
+    invalidateActionQueue.mockReset();
+    invalidateActionQueue.mockResolvedValue(undefined);
     toastSuccess.mockReset();
     toastError.mockReset();
     toastInfo.mockReset();
@@ -82,6 +95,7 @@ describe('AcceptButton', () => {
     await waitFor(() => expect(payX402Post).toHaveBeenCalledTimes(1));
     expect(confirmSpy).not.toHaveBeenCalled();
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(invalidateActionQueue).toHaveBeenCalledTimes(1);
     expect(toastSuccess.mock.calls[0][0]).toBe('Payout released');
     confirmSpy.mockRestore();
   });
@@ -99,6 +113,7 @@ describe('AcceptButton', () => {
 
     await waitFor(() => expect(toastError).toHaveBeenCalledWith('boom'));
     expect(onSuccess).not.toHaveBeenCalled();
+    expect(invalidateActionQueue).not.toHaveBeenCalled();
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 

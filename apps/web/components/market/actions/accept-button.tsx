@@ -9,7 +9,9 @@ import { InFlightWriteNotice } from '@/components/market/in-flight-write-notice'
 import { Button } from '@/components/ui/button';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
-import { compactAddress, formatUsdcUnits } from '@/lib/format';
+import { actorDisplayName, formatUsdcUnits } from '@/lib/format';
+import { workerAgentIdFor } from '@/lib/market/worker-identity';
+import { useInvalidateActionQueue } from '@/lib/use-action-queue';
 import { useInFlightWrite } from '@/lib/use-in-flight-write';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
 
@@ -37,6 +39,7 @@ export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionCo
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
+  const invalidateActionQueue = useInvalidateActionQueue();
   const [step, setStep] = useState<X402Step | 'done' | 'idle'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
@@ -65,7 +68,9 @@ export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionCo
   const busy = step !== 'idle' && step !== 'done';
   const wrongRequester = !sameAddress(address, task.requester);
   const blocked = disabled || wrongRequester || busy;
-  const workerLabel = worker ? compactAddress(worker) : 'selected worker';
+  const workerLabel = worker
+    ? actorDisplayName({ address: worker, agentId: workerAgentIdFor(task, worker) })
+    : 'selected worker';
 
   async function handleAccept() {
     if (!worker) {
@@ -90,6 +95,7 @@ export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionCo
       setStep('done');
       setTxHash(result.txHash ?? null);
       onSuccess?.();
+      void invalidateActionQueue();
       const url = result.txHash ? explorerTxUrl(result.txHash) : null;
       toast.success(
         'Payout released',

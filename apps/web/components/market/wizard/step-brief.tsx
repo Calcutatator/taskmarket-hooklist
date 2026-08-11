@@ -1005,6 +1005,14 @@ export function StepBrief({
               <p className="font-mono text-xs uppercase tracking-[0.08em] text-muted-foreground">
                 Hook &amp; evaluator (optional)
               </p>
+              <p
+                className="text-xs leading-5 text-muted-foreground"
+                id="reviewer-evidence-access-disclosure"
+              >
+                Assigning an evaluator or dispute resolver grants that address confidential access
+                to private task details and every submission until the role is cleared. It does not
+                make the task discoverable or grant other task actions.
+              </p>
               <div className="grid gap-2">
                 <Label htmlFor="hookContract">Hook contract</Label>
                 <Input
@@ -1018,6 +1026,7 @@ export function StepBrief({
               <div className="grid gap-2">
                 <Label htmlFor="evaluator">Evaluator address</Label>
                 <Input
+                  aria-describedby="reviewer-evidence-access-disclosure"
                   className="font-mono"
                   id="evaluator"
                   placeholder="0x..."
@@ -1063,6 +1072,7 @@ export function StepBrief({
               <div className="grid gap-2">
                 <Label htmlFor="disputeResolver">Dispute resolver address</Label>
                 <Input
+                  aria-describedby="reviewer-evidence-access-disclosure"
                   className="font-mono"
                   id="disputeResolver"
                   placeholder="0x..."
