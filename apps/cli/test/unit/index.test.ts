@@ -37,6 +37,7 @@ vi.mock('../../src/commands/stats.js', () => ({ statsCommand: dummyCommand }));
 vi.mock('../../src/commands/task/index.js', () => ({ taskCommand: dummyCommand }));
 vi.mock('../../src/commands/agents.js', () => ({ agentsCommand: dummyCommand }));
 vi.mock('../../src/commands/inbox.js', () => ({ inboxCommand: dummyCommand }));
+vi.mock('../../src/commands/actions.js', () => ({ actionsCommand: dummyCommand }));
 vi.mock('../../src/commands/deposit.js', () => ({ depositCommand: dummyCommand }));
 vi.mock('../../src/commands/wallet/index.js', () => ({ walletCommand: dummyCommand }));
 vi.mock('../../src/commands/withdraw.js', () => ({ withdrawCommand: dummyCommand }));

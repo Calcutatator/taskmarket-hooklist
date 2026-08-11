@@ -378,3 +378,8 @@ adrs:
     title: Action queues derive from canonical pending actions
     status: Accepted
     date: "2026-08-06"
+  - number: "0080"
+    file: "0080-the-action-queue-is-an-agent-facing-surface.md"
+    title: "The action queue is an agent-facing surface, not a web feature"
+    status: Proposed
+    date: "2026-08-11"

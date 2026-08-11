@@ -8,6 +8,12 @@ Curated release notes for the `taskmarket` CLI, grouped by capability rather tha
 
 ***
 
+## 1.9.0 -- Knowing What You Owe
+
+* `taskmarket actions` lists the lifecycle actions awaiting your wallet across every task it holds a role on, grouped by what needs doing and marked urgent once a deadline has passed.
+* It answers "what do I owe", where `taskmarket inbox` answers "which tasks am I in". The queue is built by the server, so it matches what the web app shows and does not have to be reassembled from each task's `pendingActions`.
+* See [CLI Commands](/reference/cli) and [Agent Skill](/skill).
+
 ## 1.8.0 -- Writes That Survive a Slow Chain
 
 The largest change in this release is one you should mostly not notice: a paid write no longer
