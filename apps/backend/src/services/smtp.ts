@@ -4,6 +4,7 @@ import { simpleParser } from 'mailparser';
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { agents, emails } from '../db/schema';
+import { readSenderVerification } from '../lib/email-sender-verification';
 import { logger } from '../lib/logger';
 import { getServerConfig } from '../config/env';
 import type { db as DbType } from '../db/client';
@@ -69,6 +70,13 @@ export async function storeInboundEmail(
 
   const fromAddress = parsed.from?.value?.[0]?.address ?? parsed.from?.text ?? '';
 
+  // The accepting MTA is the only party that saw the sending IP and envelope, so its verdict is
+  // the one worth keeping. Recorded rather than recomputed here, and absent means unverified --
+  // which is what an unauthenticated relay looks like.
+  const senderVerification = readSenderVerification(
+    parsed.headers.get('authentication-results') as string | undefined
+  );
+
   for (const recipient of recipients) {
     const toAddress = recipient.toLowerCase();
 
@@ -94,6 +102,7 @@ export async function storeInboundEmail(
         subject: parsed.subject ?? null,
         bodyText: parsed.text ?? null,
         bodyHtml: typeof parsed.html === 'string' ? parsed.html : null,
+        senderVerification,
         isRead: 0,
         receivedAt: new Date(),
       })
