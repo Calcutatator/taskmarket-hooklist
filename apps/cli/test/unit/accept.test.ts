@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 
 vi.mock('../../src/lib/x402.js', () => ({
   x402Post: vi.fn(),
@@ -7,6 +8,9 @@ vi.mock('../../src/lib/x402.js', () => ({
 vi.mock('../../src/lib/output.js', () => ({
   printResult: vi.fn(),
   printError: vi.fn(),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 vi.mock('../../src/lib/api.js', () => ({
@@ -30,7 +34,7 @@ describe('task accept command', () => {
   });
 
   it('posts to accept endpoint with worker address', async () => {
-    vi.mocked(x402Post).mockResolvedValue({});
+    vi.mocked(x402Post).mockResolvedValue(writeOutcome({}));
 
     await acceptCmd.parseAsync(['node', 'accept', '0xtask', '--worker', '0xworker'], {
       from: 'node',
@@ -40,7 +44,7 @@ describe('task accept command', () => {
       taskId: '0xtask',
       worker: '0xworker',
     });
-    expect(printResult).toHaveBeenCalledWith({ accepted: true });
+    expect(printResult).toHaveBeenCalledWith({ accepted: true }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('propagates errors from x402Post', async () => {
@@ -52,7 +56,6 @@ describe('task accept command', () => {
   });
 
   it('exits without calling x402Post when accept is not in pendingActions', async () => {
-    const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     vi.mocked(apiGet).mockResolvedValue({
       expiryTime: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(),
       pendingActions: [],
@@ -64,12 +67,9 @@ describe('task accept command', () => {
 
     expect(x402Post).not.toHaveBeenCalled();
     expect(printError).toHaveBeenCalled();
-    expect(mockExit).toHaveBeenCalledWith(1);
-    mockExit.mockRestore();
   });
 
   it('reports expired when task has no submissions and is past expiry', async () => {
-    const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     vi.mocked(apiGet).mockResolvedValue({
       expiryTime: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
       pendingActions: [{ action: 'refund_expired', role: 'requester' }],
@@ -81,6 +81,5 @@ describe('task accept command', () => {
 
     expect(x402Post).not.toHaveBeenCalled();
     expect(printError).toHaveBeenCalledWith(expect.stringContaining('expired'));
-    mockExit.mockRestore();
   });
 });

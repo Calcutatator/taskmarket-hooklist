@@ -4,7 +4,14 @@ import { TaskActionIntent } from '@taskmarket/shared';
 
 import { CallerScopedTaskDetail } from '@/components/market/caller-scoped-task-detail';
 import { PrivateTaskAccessGate } from '@/components/market/private-task-access-gate';
-import { fetchMarketStats, fetchTask, fetchTaskModeData, type MarketStats } from '@/lib/api/server';
+import {
+  fetchMarketStats,
+  fetchTask,
+  fetchTaskEvaluationIdentities,
+  fetchTaskModeData,
+  fetchTaskSubmissions,
+  type MarketStats,
+} from '@/lib/api/server';
 import {
   buildDashboardPageMetadata,
   buildDashboardTaskMetadata,
@@ -17,6 +24,7 @@ type TaskDetailPageProps = {
     taskId: string;
   }>;
   searchParams?: Promise<{
+    artifact?: string | string[];
     focus?: string | string[];
   }>;
 };
@@ -59,8 +67,8 @@ export async function generateMetadata({ params }: TaskDetailPageProps): Promise
 }
 
 export default async function TaskDetailPage({ params, searchParams }: TaskDetailPageProps) {
-  const { taskId } = await params;
-  const focusParam = (await searchParams)?.focus;
+  const [{ taskId }, query] = await Promise.all([params, searchParams]);
+  const focusParam = query?.focus;
   const focusIntent = TaskActionIntent.safeParse(
     Array.isArray(focusParam) ? focusParam[0] : focusParam
   ).data;
@@ -80,12 +88,25 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
     );
   }
 
-  const [modeData, marketStats] = await Promise.all([fetchTaskModeData(task), loadMarketStats()]);
+  const needsSeparateSubmissionRead = task.mode !== 'bounty' && task.mode !== 'claim';
+  const [modeData, marketStats, evaluationIdentities, separateSubmissions] = await Promise.all([
+    fetchTaskModeData(task),
+    loadMarketStats(),
+    fetchTaskEvaluationIdentities(task),
+    needsSeparateSubmissionRead
+      ? fetchTaskSubmissions(task.id, { includePreviewUrls: 'none' }).catch(() => [])
+      : Promise.resolve(null),
+  ]);
+  const htmlSubmissions = separateSubmissions ?? modeData.submissions ?? [];
+  const initialArtifactId = Array.isArray(query?.artifact) ? query.artifact[0] : query?.artifact;
 
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
       <CallerScopedTaskDetail
+        evaluationIdentities={evaluationIdentities}
         focusIntent={focusIntent}
+        htmlSubmissions={htmlSubmissions}
+        initialArtifactId={initialArtifactId}
         marketStats={marketStats}
         modeData={modeData}
         task={task}

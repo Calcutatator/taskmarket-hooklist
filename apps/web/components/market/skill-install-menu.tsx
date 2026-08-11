@@ -34,13 +34,15 @@ const methodDescriptions: Record<SkillInstallMethod, string> = {
 export function SkillInstallMenu({ className }: { className?: string }) {
   const commands = skillInstallCommands();
   const [copiedMethod, setCopiedMethod] = useState<SkillInstallMethod | null>(null);
-  const copiedResetTimer = useRef<number | null>(null);
+  // The "Copied" label resets itself after a moment. The handle is kept so the timer dies with
+  // the component: an uncleared one fires against an unmounted tree, and in jsdom that lands
+  // after the environment is gone -- React's state dispatch then throws `window is not defined`,
+  // which vitest reports as an unhandled error and fails a run in which every test passed.
+  const resetTimer = useRef<number | null>(null);
 
   useEffect(
     () => () => {
-      if (copiedResetTimer.current !== null) {
-        window.clearTimeout(copiedResetTimer.current);
-      }
+      if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
     },
     []
   );
@@ -51,12 +53,15 @@ export function SkillInstallMenu({ className }: { className?: string }) {
     } catch {
       return;
     }
-    if (copiedResetTimer.current !== null) {
-      window.clearTimeout(copiedResetTimer.current);
-    }
     setCopiedMethod(method);
-    copiedResetTimer.current = window.setTimeout(() => {
-      copiedResetTimer.current = null;
+    // Copying a second command before the first has reset would otherwise leave two timers, and
+    // the earlier one would clear the newer label.
+    if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
+    // The handle is cleared as it fires, so the unmount cleanup above never calls
+    // clearTimeout on a timer that has already run -- harmless, but it makes "is a reset
+    // pending" an honest question to ask of the ref.
+    resetTimer.current = window.setTimeout(() => {
+      resetTimer.current = null;
       setCopiedMethod(null);
     }, 1600);
   }

@@ -6,8 +6,8 @@ export const appealCmd = new Command('appeal')
   .description('Appeal an evaluator verdict while in Appealing state')
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
   .action(async (taskId: string) => {
-    const result = (await x402Post(`/api/tasks/${taskId}/appeal`, { taskId })) as {
+    const { data: result, idempotencyKey } = await x402Post<{
       txHash: string;
-    };
-    printResult({ txHash: result.txHash });
+    }>(`/api/tasks/${taskId}/appeal`, { taskId });
+    printResult({ txHash: result.txHash }, { idempotencyKey });
   });

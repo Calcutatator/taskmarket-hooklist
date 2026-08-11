@@ -40,6 +40,9 @@ importers:
       '@privy-io/node':
         specifier: ^0.25.0
         version: 0.25.0(viem@2.45.3)
+      '@taskmarket/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@taskmarket/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -516,9 +519,18 @@ importers:
 
   packages/contracts:
     devDependencies:
+      '@types/node':
+        specifier: ^20.11.0
+        version: 20.19.33
       solhint:
         specifier: ^6.2.1
         version: 6.2.1(typescript@5.7.3)
+      tsx:
+        specifier: ^4.7.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.3.3
+        version: 5.7.3
 
   packages/eslint-config:
     dependencies:
@@ -546,6 +558,30 @@ importers:
 
   packages/remark-config:
     dependencies:
+      remark-frontmatter:
+        specifier: ^5.0.0
+        version: 5.0.0
+      remark-lint-list-item-spacing:
+        specifier: '*'
+        version: 5.0.1
+      remark-lint-maximum-heading-length:
+        specifier: '*'
+        version: 4.1.1
+      remark-lint-maximum-line-length:
+        specifier: '*'
+        version: 4.1.1
+      remark-lint-no-emphasis-as-heading:
+        specifier: '*'
+        version: 4.0.1
+      remark-lint-ordered-list-marker-value:
+        specifier: '*'
+        version: 4.0.1
+      remark-lint-rule-style:
+        specifier: '*'
+        version: 4.0.1
+      remark-lint-unordered-list-marker-style:
+        specifier: '*'
+        version: 4.0.1
       remark-preset-lint-consistent:
         specifier: ^6.0.0
         version: 6.0.1

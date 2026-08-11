@@ -22,6 +22,9 @@
  *  12. task accept          -- real X402 payment, requester accepts
  *  13. inbox                -- verify both requester and worker inbox views
  *  14. encrypt / decrypt    -- round-trip a file through the wallet's ECIES keys
+ *  15. idempotency reuse    -- a refused repeat, asserted on the failure envelope itself
+ *                             (status, reason, idempotencyKey, pending) -- the only step here
+ *                             that exercises what a caller sees when a paid write is refused
  *
  * Requires the CLI to be built first:
  *   pnpm --filter @lucid-agents/taskmarket build
@@ -30,6 +33,7 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-cli.ts
  */
+import { randomUUID } from 'crypto';
 import { execFile } from 'child_process';
 import { existsSync } from 'fs';
 import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
@@ -63,6 +67,26 @@ interface CliResponse {
   error?: string;
 }
 
+/**
+ * The failure envelope `renderFailure` writes to stderr, as a consumer sees it.
+ *
+ * Typed loosely on purpose: the fields under test are the ones that may be *absent*, and an
+ * interface that made them required would assert their presence rather than check it. `pending`
+ * in particular is deliberately omitted rather than defaulted to `false` when the backend sent
+ * no envelope -- an unclassified failure is not evidence that nothing is in flight, and
+ * `docs/CLI_GUIDE.md` tells script authors to treat a missing `pending` as "do not retry".
+ */
+interface CliFailure {
+  ok: false;
+  error?: string;
+  status?: number;
+  idempotencyKey?: string;
+  reason?: string;
+  intentId?: string;
+  intentStatus?: string;
+  pending?: boolean;
+}
+
 /** Runs the real built CLI binary as a subprocess, isolated to its own HOME dir. */
 async function runCli(
   homeDir: string,
@@ -89,6 +113,54 @@ async function runCli(
   } catch {
     throw new Error(`taskmarket ${args.join(' ')} did not print JSON on stdout:\n${stdout}`);
   }
+}
+
+/**
+ * Runs the CLI expecting it to FAIL, and returns the failure envelope it printed.
+ *
+ * `runCli` cannot be used for this: a failed command exits non-zero, which makes `execFile`
+ * reject, and the envelope this asserts on is written to **stderr** rather than stdout
+ * (`apps/cli/src/lib/output.ts`). So the whole point of these scenarios -- what an operator or
+ * an agent actually receives when a paid write does not go through -- is invisible to every
+ * other step in this file.
+ *
+ * Throws if the command *succeeds*, because a scenario written to provoke a refusal that gets
+ * accepted instead has not tested anything, and silently passing there is how a guard stops
+ * working without anyone noticing.
+ */
+async function runCliExpectingFailure(
+  homeDir: string,
+  args: string[],
+  extraEnv: Record<string, string> = {}
+): Promise<CliFailure> {
+  let stderr: string;
+  try {
+    const result = await execFileAsync('node', [CLI_BIN, ...args], {
+      env: { ...process.env, HOME: homeDir, TASKMARKET_API_URL: API_URL, ...extraEnv },
+      timeout: 90_000,
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    throw new Error(
+      `taskmarket ${args.join(' ')} was expected to fail but succeeded: ${result.stdout.trim()}`
+    );
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; message: string };
+    if (e.stderr === undefined) throw err;
+    stderr = e.stderr;
+  }
+  const lastLine = stderr.trim().split('\n').filter(Boolean).pop() ?? '';
+  let parsed: CliFailure;
+  try {
+    parsed = JSON.parse(lastLine) as CliFailure;
+  } catch {
+    throw new Error(
+      `taskmarket ${args.join(' ')} did not print a JSON failure envelope:\n${stderr}`
+    );
+  }
+  if (parsed.ok !== false) {
+    throw new Error(`expected ok:false from taskmarket ${args.join(' ')}, got: ${lastLine}`);
+  }
+  return parsed;
 }
 
 /** Runs the CLI and unwraps a successful {ok: true, data} response, or throws. */
@@ -143,7 +215,7 @@ async function main() {
     // the developer's real ~/.taskmarket keystore is never touched. The key
     // is passed via TASKMARKET_IMPORT_KEY (not --key) to avoid the CLI's
     // ps-aux warning.
-    log('1/14', 'wallet import (requester + worker)...');
+    log('1/15', 'wallet import (requester + worker)...');
     const reqImport = (await runCliData(requesterHome, ['wallet', 'import', '--yes'], {
       TASKMARKET_IMPORT_KEY: requesterKey,
     })) as { address: string };
@@ -160,7 +232,7 @@ async function main() {
     ok('worker keystore', workerImport.address);
 
     // 2. address
-    log('2/14', 'address (requester)...');
+    log('2/15', 'address (requester)...');
     const addrResult = (await runCliData(requesterHome, ['address'])) as { address: string };
     if (addrResult.address.toLowerCase() !== requesterAddress.toLowerCase()) {
       throw new Error(`address mismatch: got ${addrResult.address}`);
@@ -169,7 +241,7 @@ async function main() {
 
     // 3. identity register -- real X402 payment via the CLI's own x402.ts,
     // minting or confirming an ERC-8004 identity for both wallets.
-    log('3/14', 'identity register (requester + worker)...');
+    log('3/15', 'identity register (requester + worker)...');
     const reqIdentity = (await runCliData(requesterHome, ['identity', 'register'])) as {
       agentId: string;
     };
@@ -182,7 +254,7 @@ async function main() {
     ok('worker agentId', workerIdentity.agentId);
 
     // 4. identity status
-    log('4/14', 'identity status (requester)...');
+    log('4/15', 'identity status (requester)...');
     const idStatus = (await runCliData(requesterHome, ['identity', 'status'])) as {
       registered: boolean;
       agentId: string | null;
@@ -193,7 +265,7 @@ async function main() {
     ok('identity status registered', idStatus.registered);
 
     // 5. stats
-    log('5/14', 'stats (requester)...');
+    log('5/15', 'stats (requester)...');
     const stats = (await runCliData(requesterHome, ['stats'])) as {
       address: string;
       balanceUsdc: string;
@@ -204,14 +276,14 @@ async function main() {
     ok('stats balanceUsdc', stats.balanceUsdc);
 
     // 6. wallet balance
-    log('6/14', 'wallet balance (requester)...');
+    log('6/15', 'wallet balance (requester)...');
     const balance = (await runCliData(requesterHome, ['wallet', 'balance'])) as {
       balanceUsdc: string;
     };
     ok('wallet balance', balance.balanceUsdc);
 
     // 7. task create -- real X402 payment for the reward escrow
-    log('7/14', 'task create (requester)...');
+    log('7/15', 'task create (requester)...');
     const created = (await runCliData(requesterHome, [
       'task',
       'create',
@@ -230,7 +302,7 @@ async function main() {
     ok('taskId', taskId);
 
     // 8. task get
-    log('8/14', 'task get (requester)...');
+    log('8/15', 'task get (requester)...');
     const gotTask = (await runCliData(requesterHome, ['task', 'get', taskId])) as {
       id: string;
       status: string;
@@ -240,7 +312,7 @@ async function main() {
     ok('task status', gotTask.status);
 
     // 9. task list
-    log('9/14', 'task list (requester)...');
+    log('9/15', 'task list (requester)...');
     const listed = (await runCliData(requesterHome, [
       'task',
       'list',
@@ -255,7 +327,7 @@ async function main() {
     ok('task in list', true);
 
     // 10. task submit -- worker uploads a real file via presigned URL
-    log('10/14', 'task submit (worker)...');
+    log('10/15', 'task submit (worker)...');
     await writeFile(submissionFile, 'cli smoke test submission\n', 'utf8');
     const submitted = (await runCliData(workerHome, [
       'task',
@@ -267,7 +339,7 @@ async function main() {
     ok('submissionId', submitted.submissionId);
 
     // 11. task my-submissions
-    log('11/14', 'task my-submissions (worker)...');
+    log('11/15', 'task my-submissions (worker)...');
     const mySubs = (await runCliData(workerHome, ['task', 'my-submissions'])) as {
       taskId: string;
     }[];
@@ -277,7 +349,7 @@ async function main() {
     ok('submission in my-submissions', true);
 
     // 12. task accept -- real X402 payment
-    log('12/14', 'task accept (requester)...');
+    log('12/15', 'task accept (requester)...');
     const accepted = (await runCliData(requesterHome, [
       'task',
       'accept',
@@ -306,7 +378,7 @@ async function main() {
     // 13. inbox for both requester and worker -- exercises the real keystore
     // decrypt path, the real read-auth signature, and two real HTTP calls
     // (/api/agents/inbox and /api/bids/my), reused from one signature.
-    log('13/14', 'inbox (requester + worker)...');
+    log('13/15', 'inbox (requester + worker)...');
     const reqInbox = (await runCliData(requesterHome, ['inbox'])) as {
       asRequester: { id: string }[];
     };
@@ -326,7 +398,7 @@ async function main() {
     ok('task in requester + worker CLI inbox', true);
 
     // 14. encrypt / decrypt round trip through the wallet's ECIES keys
-    log('14/14', 'encrypt + decrypt round trip (requester)...');
+    log('14/15', 'encrypt + decrypt round trip (requester)...');
     await writeFile(plainFile, 'secret cli smoke payload\n', 'utf8');
     await runCliData(requesterHome, ['encrypt', plainFile, '--output', encFile]);
     await runCliData(requesterHome, ['decrypt', encFile, '--output', decFile]);
@@ -338,6 +410,91 @@ async function main() {
       throw new Error('encrypt/decrypt round trip produced different content');
     }
     ok('encrypt/decrypt roundtrip', true);
+
+    // 15. The failure envelope, on the surface that consumes it.
+    //
+    // Everything above this point is a happy path, and that was the whole coverage of the CLI:
+    // the fields an operator relies on when a paid write does *not* go through -- `status`,
+    // `idempotencyKey`, `reason`, `pending` -- were asserted nowhere, on any transport. That
+    // gap hid a real defect for two sandbox rounds: an `ApiError` thrown inside a procedure was
+    // replaced by a generic 500 with its code and envelope discarded, so `pending` never
+    // arrived and a caller obeying `docs/CLI_GUIDE.md` could not tell an in-flight write from a
+    // refused one. The unit tests covered `renderFailure` given an envelope, and the smoke
+    // covered the binary given success; nothing joined them.
+    //
+    // Reusing a key is the cheapest refusal to provoke that still exercises the whole chain --
+    // the CLI's header, the backend's classification, the envelope, and the rendering -- and it
+    // is the one an agent retrying a paid command hits first.
+    log('15/15', 'idempotency key reuse is refused, with a machine-readable envelope...');
+    // A bare UUID, not a prefixed one. The backend rejects a non-UUID key ahead of the 402
+    // challenge, so `smoke-cli-<uuid>` failed validation on the FIRST call and never reached the
+    // reuse this step exists to test -- a scenario that fails before the thing it tests, which is
+    // the failure mode the step was written to catch elsewhere.
+    const reusedKey = randomUUID();
+    const createArgs = [
+      'task',
+      'create',
+      '--description',
+      'CLI smoke test idempotency reuse',
+      '--reward',
+      '0.001',
+      '--duration',
+      '1',
+      '--mode',
+      'bounty',
+      '--tags',
+      'smoke-cli',
+    ];
+
+    const firstCreate = (await runCliData(requesterHome, createArgs, {
+      TASKMARKET_IDEMPOTENCY_KEY: reusedKey,
+    })) as { taskId: string };
+    ok('first create under a pinned key', firstCreate.taskId);
+
+    const repeat = await runCliExpectingFailure(requesterHome, createArgs, {
+      TASKMARKET_IDEMPOTENCY_KEY: reusedKey,
+    });
+
+    // The status is the assertion that would have failed while the envelope was being stripped:
+    // a 5xx is what every generic retrying client reads as "send it again", which on a paid
+    // write means paying twice.
+    if (repeat.status === undefined || repeat.status >= 500) {
+      throw new Error(
+        `expected a 4xx on a reused idempotency key, got ${String(repeat.status)}: ${JSON.stringify(repeat)}`
+      );
+    }
+    ok('repeat refused with a 4xx', repeat.status);
+
+    // `reason` is the field ADR-0049 required a caller to branch on instead of string-matching
+    // the message, so its presence is the point rather than its exact value -- the repeat may
+    // land on any of the idempotency reasons depending on how far the first write got.
+    if (repeat.reason === undefined) {
+      throw new Error(`failure envelope carried no reason: ${JSON.stringify(repeat)}`);
+    }
+    if (!repeat.reason.startsWith('idempotency_key_')) {
+      throw new Error(
+        `expected an idempotency_key_* reason on a reused key, got ${repeat.reason}: ${JSON.stringify(repeat)}`
+      );
+    }
+    ok('failure envelope reason', repeat.reason);
+
+    // The key is the handle the operator is left holding: the intent id only ever arrives in a
+    // response, and a failure is exactly the case where no response carried one.
+    if (repeat.idempotencyKey !== reusedKey) {
+      throw new Error(
+        `expected the failure to name the key it was sent under (${reusedKey}), got ${String(repeat.idempotencyKey)}`
+      );
+    }
+    ok('failure names its own idempotency key', repeat.idempotencyKey);
+
+    // A refusal on a key already spent is terminal, not in flight. `pending: true` here would
+    // tell a script to poll for a write that will never appear.
+    if (repeat.pending !== false) {
+      throw new Error(
+        `expected pending:false on a refused repeat, got ${String(repeat.pending)}: ${JSON.stringify(repeat)}`
+      );
+    }
+    ok('pending', repeat.pending);
 
     console.log('\n=== CLI smoke test passed ===');
     console.log('taskId:', taskId);

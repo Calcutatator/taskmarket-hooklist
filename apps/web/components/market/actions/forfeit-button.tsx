@@ -5,9 +5,11 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { useAccount, useSignMessage } from 'wagmi';
 
+import { InFlightWriteNotice } from '@/components/market/in-flight-write-notice';
 import { Button } from '@/components/ui/button';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
+import { useInFlightWrite } from '@/lib/use-in-flight-write';
 import { signAndPost } from '@/lib/wallet-sign-action';
 
 import { ConfirmDialog } from './confirm-dialog';
@@ -21,6 +23,23 @@ export function ForfeitButton({ disabled, onSuccess, task }: TaskActionComponent
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const inFlight = useInFlightWrite('Forfeit submitted, confirming');
+
+  // Checked before every other branch, including the disconnected one: the write is already
+  // out there, so this state must survive anything that would otherwise swap the surface.
+  // A forfeit is relayed but unpaid, so `paid` is false.
+  if (inFlight.state) {
+    return (
+      <InFlightWriteNotice
+        failure={inFlight.failure}
+        idempotencyKey={inFlight.state.idempotencyKey}
+        paid={false}
+        stalled={inFlight.stalled}
+        subject="forfeit"
+        title="Forfeit submitted, confirming"
+      />
+    );
+  }
 
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect the requester wallet to forfeit this claim." />;
@@ -29,14 +48,21 @@ export function ForfeitButton({ disabled, onSuccess, task }: TaskActionComponent
   async function handleForfeit() {
     setPending(true);
     setError(null);
-    const result = await signAndPost<{ txHash: string }>({
-      addressField: 'requesterAddress',
-      deps: { address: address!, apiUrl: getBrowserApiBaseUrl(), signMessageAsync },
-      path: `/api/tasks/${task.id}/forfeit`,
-      taskId: task.id,
-      verbForMessage: 'forfeit',
-    });
+    const outcome = await inFlight.submit((idempotencyKey) =>
+      signAndPost<{ txHash: string }>({
+        addressField: 'requesterAddress',
+        deps: { address: address!, apiUrl: getBrowserApiBaseUrl(), signMessageAsync },
+        idempotencyKey,
+        path: `/api/tasks/${task.id}/forfeit`,
+        taskId: task.id,
+        verbForMessage: 'forfeit',
+      })
+    );
     setPending(false);
+    // Neither success nor failure, so it must not reach the error path below, which leaves
+    // the forfeit button live.
+    if (outcome.handled) return;
+    const result = outcome.result;
     if (result.ok) {
       setDone(true);
       const resolvedTxHash = result.data.txHash ?? result.txHash ?? null;
@@ -49,7 +75,9 @@ export function ForfeitButton({ disabled, onSuccess, task }: TaskActionComponent
           ? { action: { label: 'View on explorer', onClick: () => window.open(url, '_blank') } }
           : undefined
       );
-    } else if (!result.rejected) {
+      return;
+    }
+    if (!result.rejected) {
       setError(result.error);
       toast.error(result.error);
     }

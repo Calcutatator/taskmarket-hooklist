@@ -7,15 +7,21 @@ import {
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import { proposals, tasks, agents } from '../db/schema';
-import { eq, and, ne } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { contractSelectWorker, contractSubmitPitch } from '../services/contract';
 import { TRPCError } from '@trpc/server';
 import { buildPitchHash } from '../lib/canonical-hashes';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
-import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
+import { settledPaymentReference } from '../middleware/x402';
+import { runRelayedIntent } from '../services/relayed-intent-request';
+import type {
+  PitchesSelectIntentPayload,
+  PitchesSubmitIntentPayload,
+} from '../services/intents/pitches-intents';
 import { fetchPrivateViewabilityContext, resolveTaskViewability } from '../lib/task-visibility';
 import type { Context } from '../context';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 
 /**
  * Phase 3 (ADR-0030) parity fix (F3): `submit` must enforce the same private-task
@@ -60,6 +66,7 @@ export const pitchesRouter = router({
   submit: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/pitches',
         tags: ['Tasks'],
@@ -140,38 +147,37 @@ export const pitchesRouter = router({
         input.pitchText
       );
 
+      // Random is safe only while this write is paid. ADR-0061 refuses a repeated key whose
+      // payload differs, and a fresh id per attempt is such a difference -- but the
+      // pre-settlement check in x402Middleware turns a repeated key away before the handler
+      // runs, so the comparison never sees one here. If this route is ever metered free,
+      // derive the id from `ctx.idempotencyKey` the way `claims.claim` does, in the same
+      // change, or honest retries start being refused.
       const pitchId = randomUUID();
 
-      // Anchor on chain before inserting the off-chain row: if the contract call
-      // reverts, we don't leave a phantom DB row pointing at no tx hash.
-      let submitTxHash: `0x${string}`;
-      try {
-        submitTxHash = await contractSubmitPitch(
-          input.taskId as `0x${string}`,
-          input.workerAddress as `0x${string}`,
+      await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'pitches.submit',
+        payer,
+        payment: settledPaymentReference(ctx.res),
+        payload: {
+          contractAddress: task.contractAddress,
+          estimatedDuration: input.estimatedDuration || null,
           pitchHash,
-          task.contractAddress
-        );
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'pitch_submit',
-          error,
-        });
-      }
-
-      await ctx.db.insert(proposals).values({
-        id: pitchId,
-        taskId: input.taskId,
-        workerAddress: input.workerAddress,
-        proposalText: input.pitchText,
-        estimatedDuration: input.estimatedDuration || null,
-        signature: input.signature,
-        status: 'pending',
-        pitchHash,
-        submitTxHash,
+          pitchId,
+          pitchText: input.pitchText,
+          signature: input.signature,
+          taskId: input.taskId,
+          workerAddress: input.workerAddress,
+        } satisfies PitchesSubmitIntentPayload,
+        send: () =>
+          contractSubmitPitch(
+            input.taskId as `0x${string}`,
+            input.workerAddress as `0x${string}`,
+            pitchHash,
+            task.contractAddress
+          ),
       });
 
       return { success: true, pitchId };
@@ -240,6 +246,7 @@ export const pitchesRouter = router({
   select: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/pitches/select',
         tags: ['Tasks'],
@@ -317,46 +324,30 @@ export const pitchesRouter = router({
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Payment required' });
       }
 
-      try {
-        await contractSelectWorker(
-          input.taskId as `0x${string}`,
-          task.requester as `0x${string}`,
-          input.workerAddress as `0x${string}`,
-          task.contractAddress
-        );
-      } catch (error) {
-        // ctx.res.locals.payer is always set here: it's set unconditionally by the
-        // x402 middleware once payment settles (middleware/x402.ts), and this catch
-        // only has anything to refund when a payment actually settled.
-        //
-        // `return`: the proposal/task status updates below must never run for a
-        // worker selection that was never placed on-chain.
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: ctx.res.locals.payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'pitch_select',
-          error,
-        });
-      }
-
-      await ctx.db
-        .update(proposals)
-        .set({ status: 'selected' })
-        .where(eq(proposals.id, input.pitchId));
-
-      await ctx.db
-        .update(proposals)
-        .set({ status: 'rejected' })
-        .where(and(eq(proposals.taskId, input.taskId), ne(proposals.id, input.pitchId)));
-
-      await ctx.db
-        .update(tasks)
-        .set({
-          status: 'worker_selected',
-          claimedBy: input.workerAddress,
-        })
-        .where(eq(tasks.id, input.taskId));
+      await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'pitches.select',
+        payer,
+        payment: settledPaymentReference(ctx.res),
+        // `requester` is recorded separately from `payer` on purpose: this route accepts
+        // payment from anyone and authorises the selection by the requester's signature, so
+        // the two addresses genuinely differ and a rebroadcast must relay as the requester.
+        payload: {
+          contractAddress: task.contractAddress,
+          pitchId: input.pitchId,
+          requester: task.requester,
+          taskId: input.taskId,
+          workerAddress: input.workerAddress,
+        } satisfies PitchesSelectIntentPayload,
+        send: () =>
+          contractSelectWorker(
+            input.taskId as `0x${string}`,
+            task.requester as `0x${string}`,
+            input.workerAddress as `0x${string}`,
+            task.contractAddress
+          ),
+      });
 
       return { success: true };
     }),

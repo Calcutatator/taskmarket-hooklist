@@ -3,12 +3,22 @@ import { cache } from 'react';
 
 import { TaskDetailPanel } from '@/components/market/tasks';
 import { PrivateTaskAccessGate } from '@/components/market/private-task-access-gate';
-import { fetchMarketStats, fetchTask, fetchTaskModeData, type MarketStats } from '@/lib/api/server';
+import {
+  fetchMarketStats,
+  fetchTask,
+  fetchTaskEvaluationIdentities,
+  fetchTaskModeData,
+  fetchTaskSubmissions,
+  type MarketStats,
+} from '@/lib/api/server';
 import { buildPageMetadata, buildTaskMetadata, decodeRouteParam } from '@/lib/seo';
 
 type TaskDetailPageProps = {
   params: Promise<{
     taskId: string;
+  }>;
+  searchParams: Promise<{
+    artifact?: string | string[];
   }>;
 };
 
@@ -49,8 +59,8 @@ export async function generateMetadata({ params }: TaskDetailPageProps): Promise
   });
 }
 
-export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
-  const { taskId } = await params;
+export default async function TaskDetailPage({ params, searchParams }: TaskDetailPageProps) {
+  const [{ taskId }, query] = await Promise.all([params, searchParams]);
   const decodedTaskId = decodeRouteParam(taskId);
   const task = await getTask(decodedTaskId);
 
@@ -70,12 +80,25 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
     );
   }
 
-  const [modeData, marketStats] = await Promise.all([fetchTaskModeData(task), loadMarketStats()]);
+  const needsSeparateSubmissionRead = task.mode !== 'bounty' && task.mode !== 'claim';
+  const [modeData, marketStats, evaluationIdentities, separateSubmissions] = await Promise.all([
+    fetchTaskModeData(task),
+    loadMarketStats(),
+    fetchTaskEvaluationIdentities(task),
+    needsSeparateSubmissionRead
+      ? fetchTaskSubmissions(task.id, { includePreviewUrls: 'none' }).catch(() => [])
+      : Promise.resolve(null),
+  ]);
+  const htmlSubmissions = separateSubmissions ?? modeData.submissions ?? [];
+  const initialArtifactId = Array.isArray(query.artifact) ? query.artifact[0] : query.artifact;
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
       <TaskDetailPanel
         backHref="/tasks"
+        evaluationIdentities={evaluationIdentities}
+        htmlSubmissions={htmlSubmissions}
+        initialArtifactId={initialArtifactId}
         marketStats={marketStats}
         modeData={modeData}
         profileBasePath="/agents"

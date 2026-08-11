@@ -58,6 +58,13 @@ vi.mock('@/lib/api/client', () => ({
 
 vi.mock('@/lib/use-read-auth-signature', () => ({
   useReadAuthSignature: () => false,
+  // Every paid action's `useInFlightWrite` asks for one, so the whole module must be stubbed.
+  useReadAuthSignatureState: () => ({
+    error: null,
+    ready: false,
+    requestSignature: () => {},
+    status: 'idle',
+  }),
 }));
 
 vi.mock('sonner', () => ({

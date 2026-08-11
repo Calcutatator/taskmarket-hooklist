@@ -15,6 +15,7 @@ export const setWithdrawalAddressCommand = new Command('set-withdrawal-address')
   .action(async (address: string) => {
     if (!isValidAddress(address)) {
       printError('Invalid Ethereum address: must be 0x followed by 40 hex characters');
+      return;
     }
 
     let keystore: Awaited<ReturnType<typeof loadKeystore>>;
@@ -22,17 +23,21 @@ export const setWithdrawalAddressCommand = new Command('set-withdrawal-address')
       keystore = await loadKeystore();
     } catch {
       printError('No keystore found. Run `taskmarket init` first.');
+      return;
     }
 
     const walletAddress = keystore.walletAddress;
     const message = buildSetWithdrawalAddressMessage(address);
     const signature = await signMessage(message, keystore);
 
-    const result = (await apiPost('/api/wallet/set-withdrawal-address', {
-      walletAddress,
-      withdrawalAddress: address,
-      signature,
-    })) as { withdrawalAddress: string };
+    const { data: result, idempotencyKey } = await apiPost<{ withdrawalAddress: string }>(
+      '/api/wallet/set-withdrawal-address',
+      {
+        walletAddress,
+        withdrawalAddress: address,
+        signature,
+      }
+    );
 
-    printResult({ withdrawalAddress: result.withdrawalAddress });
+    printResult({ withdrawalAddress: result.withdrawalAddress }, { idempotencyKey });
   });

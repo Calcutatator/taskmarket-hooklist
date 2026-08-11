@@ -39,27 +39,25 @@ contract CoreFacet {
     ///         Task ID is contract-generated:
     ///           keccak256(abi.encode(block.chainid, address(this), requester, nonce))
     ///         The USDC reward MUST be transferred to this contract by the forwarder before calling.
-    /// @param reward          USDC reward (6 decimals); for Auction = max price
-    /// @param duration        Task lifetime in seconds
-    /// @param mode            4-byte mode selector (use BOUNTY/CLAIM/PITCH/BENCHMARK/AUCTION)
-    /// @param pitchDeadline   Seconds from now for pitch window (Pitch mode only, 0 otherwise)
-    /// @param bidDeadline     Seconds from now for bid window (Auction mode only, 0 otherwise)
-    /// @param auctionSubtype  Auction subtype selector (bytes4(0) for non-auction tasks)
+    /// @param config          Reward (6-decimal USDC; for Auction = max price), duration, mode,
+    ///                        and the mode-specific pitch/bid deadlines and auction subtype.
     /// @param stakeConfig     Requester's stake requirement (Rev014); informational only -- not
     ///                        currently enforced by claimTask
     /// @param hookConfig      Hook contracts + hookData packed into one calldata pointer (Rev008).
     /// @param content         Content hash, URI, and tags (packed to reduce stack depth).
+    /// @param evaluatorConfig Evaluator terms, applied in this same transaction. Pass the zero
+    ///                        struct for a task with no evaluator. Configuring an evaluator here
+    ///                        rather than via a following `assignEvaluator` call is the only way
+    ///                        to do it without a race: the task is Open, and so claimable, the
+    ///                        instant this transaction mines, and `assignEvaluator` reverts
+    ///                        `TaskNotOpen` once a worker has claimed.
     // solhint-disable-next-line code-complexity
     function createTask(
-        uint256 reward,
-        uint256 duration,
-        bytes4 mode,
-        uint256 pitchDeadline,
-        uint256 bidDeadline,
-        bytes4 auctionSubtype,
+        ITMPCore.TaskConfig calldata config,
         ITMPCore.StakeConfig calldata stakeConfig,
         ITMPCore.HookConfig calldata hookConfig,
-        ITMPCore.TaskContent calldata content
+        ITMPCore.TaskContent calldata content,
+        ITMPCore.TaskEvaluatorConfig calldata evaluatorConfig
     ) external returns (bytes32 taskId) {
         AppStorage storage s = LibAppStorage.appStorage();
         LibTaskMarket._requireForwarder(s);
@@ -68,14 +66,16 @@ contract CoreFacet {
 
         address requester = LibTaskMarket._effectiveSender(s);
         if (requester == address(0)) revert ITMPCore.InvalidRequester();
-        if (reward == 0) revert ITMPCore.RewardMustBeGreaterThanZero();
-        if (duration == 0) revert ITMPCore.DurationMustBeGreaterThanZero();
-        if (!(mode == BOUNTY || mode == CLAIM || mode == PITCH || mode == BENCHMARK || mode == AUCTION)) {
+        if (config.reward == 0) revert ITMPCore.RewardMustBeGreaterThanZero();
+        if (config.duration == 0) revert ITMPCore.DurationMustBeGreaterThanZero();
+        if (!(config.mode == BOUNTY || config.mode == CLAIM || config.mode == PITCH || config.mode == BENCHMARK
+                    || config.mode == AUCTION)) {
             revert ITMPCore.InvalidMode();
         }
-        if (mode == AUCTION) {
-            if (!(auctionSubtype == AUCTION_DUTCH || auctionSubtype == AUCTION_ENGLISH
-                        || auctionSubtype == AUCTION_REVERSE_DUTCH || auctionSubtype == AUCTION_REVERSE_ENGLISH)) revert ITMPCore.InvalidAuctionSubtype();
+        if (config.mode == AUCTION) {
+            if (!(config.auctionSubtype == AUCTION_DUTCH || config.auctionSubtype == AUCTION_ENGLISH
+                        || config.auctionSubtype == AUCTION_REVERSE_DUTCH
+                        || config.auctionSubtype == AUCTION_REVERSE_ENGLISH)) revert ITMPCore.InvalidAuctionSubtype();
         }
         if (stakeConfig.bps > 10000) revert ITMPCore.StakeBpsTooHigh();
 
@@ -84,10 +84,10 @@ contract CoreFacet {
         ITMPCore.Task storage t = s.tasks[taskId];
         t.id = taskId;
         t.requester = requester;
-        t.reward = reward;
-        t.expiryTime = block.timestamp + duration;
+        t.reward = config.reward;
+        t.expiryTime = block.timestamp + config.duration;
         t.status = ITMPCore.TaskStatus.Open;
-        t.mode = mode;
+        t.mode = config.mode;
         t.feeBps = s.defaultFeeBps;
         t.stakeRequired = stakeConfig.required;
         t.stakeBps = stakeConfig.bps;
@@ -97,26 +97,36 @@ contract CoreFacet {
         meta.contentHash = content.contentHash;
         meta.contentURI = content.contentURI;
 
-        if (mode == PITCH) {
-            if (pitchDeadline == 0) revert ITMPCore.PitchDeadlineMustBeGreaterThanZero();
-            s.taskPitchConfigs[taskId].pitchDeadline = block.timestamp + pitchDeadline;
+        if (config.mode == PITCH) {
+            if (config.pitchDeadline == 0) revert ITMPCore.PitchDeadlineMustBeGreaterThanZero();
+            s.taskPitchConfigs[taskId].pitchDeadline = block.timestamp + config.pitchDeadline;
         }
-        if (mode == AUCTION) {
-            if (bidDeadline == 0) revert ITMPCore.BidDeadlineMustBeGreaterThanZero();
+        if (config.mode == AUCTION) {
+            if (config.bidDeadline == 0) revert ITMPCore.BidDeadlineMustBeGreaterThanZero();
             ITMPCore.TaskAuctionConfig storage ac = s.taskAuctionConfigs[taskId];
-            ac.bidDeadline = block.timestamp + bidDeadline;
-            ac.maxPrice = reward;
-            ac.auctionSubtype = auctionSubtype;
+            ac.bidDeadline = block.timestamp + config.bidDeadline;
+            ac.maxPrice = config.reward;
+            ac.auctionSubtype = config.auctionSubtype;
         }
 
         if (content.tags.length > 0) {
             s.taskTags[taskId] = content.tags;
         }
 
+        // Applied before the hooks so a checkFund hook observes a fully configured task rather
+        // than one that only becomes evaluator-gated a moment later.
+        _applyCreationEvaluatorConfig(taskId, requester, evaluatorConfig, s);
+
         _buildAndCheckHooks(taskId, hookConfig, s);
 
         emit ITMPCore.TaskCreated(
-            taskId, requester, reward, mode, block.timestamp + duration, stakeConfig.required, stakeConfig.bps
+            taskId,
+            requester,
+            config.reward,
+            config.mode,
+            block.timestamp + config.duration,
+            stakeConfig.required,
+            stakeConfig.bps
         );
         LibTaskMarket._nonReentrantAfter(s);
     }
@@ -440,6 +450,16 @@ contract CoreFacet {
         uint256 originalBidDeadline = s.taskAuctionConfigs[taskId].bidDeadline;
         uint256 originalPitchDeadline = s.taskPitchConfigs[taskId].pitchDeadline;
 
+        // A reward that is named but unchanged must revert, not no-op. The USDC for a reward
+        // increase is pulled by the forwarder BEFORE this call runs, and the Diamond has no way
+        // to hand it back -- so a silent no-op here keeps money that corresponds to no liability,
+        // and a duplicate relay of the same increase (a retry with a fresh receipt nonce, which
+        // the forwarder's replay guard does not and cannot catch) charges the requester twice for
+        // one increase. Reverting is the only mechanism available on this side of the forwarder
+        // boundary that unwinds the transfer, because the whole transaction unwinds with it.
+        // Callers leave a field unchanged by passing 0, so this rejects nothing legitimate.
+        if (newReward != 0 && newReward == task.reward) revert ITMPCore.NoRewardChange();
+
         uint256 refund = 0;
         if (newReward != 0 && newReward != task.reward) {
             if (newReward < task.reward) {
@@ -499,6 +519,12 @@ contract CoreFacet {
         if (block.timestamp <= task.expiryTime) revert ITMPCore.TaskNotYetExpired();
         if (task.status == ITMPCore.TaskStatus.Accepted) revert ITMPCore.TaskAlreadyAccepted();
         if (task.status == ITMPCore.TaskStatus.Cancelled) revert ITMPCore.TaskIsCancelled();
+        // Expired is a status this function sets itself, so it must be as terminal here as
+        // Accepted and Cancelled are. Without this the call is repeatable: it is permissionless
+        // by design (ADR-0026) and every guard above still passes on a second call, so each
+        // repeat pays the reward again out of the single pooled escrow balance shared by all
+        // tasks -- draining unrelated, fully funded tasks.
+        if (task.status == ITMPCore.TaskStatus.Expired) revert ITMPCore.TaskAlreadyRefunded();
         // Bounty/Benchmark: if active submissions exist the requester must explicitly accept.
         // refundExpired is blocked so workers are guaranteed their work will be evaluated.
         // Active submission count drops to zero when all submissions have been rejected.
@@ -512,6 +538,32 @@ contract CoreFacet {
             _refundExpiredNormal(taskId, task, s, requesterAgentId);
         }
         LibTaskMarket._nonReentrantAfter(s);
+    }
+
+    /// @dev Creation-side wrapper around the shared evaluator-config body. Kept in its own frame
+    ///      so the struct copy and stake-pull locals do not add to createTask's already-deep
+    ///      stack. A zero `evaluator` means the task has no evaluator, which is the common case.
+    function _applyCreationEvaluatorConfig(
+        bytes32 taskId,
+        address requester,
+        ITMPCore.TaskEvaluatorConfig memory evaluatorConfig,
+        AppStorage storage s
+    ) private {
+        if (evaluatorConfig.evaluator != address(0)) {
+            LibTaskMarket._applyEvaluatorConfig(taskId, requester, evaluatorConfig, s);
+            return;
+        }
+        // Evaluator terms with no evaluator to apply them to would be silently dropped, leaving
+        // the requester believing the task is evaluator-gated when it is not -- and believing it
+        // for the whole life of the task, since nothing ever reports the discarded fields.
+        // A malformed request is worth a revert here; a misconfigured escrow is not recoverable.
+        if (
+            evaluatorConfig.evaluatorStake != 0 || evaluatorConfig.evaluatorFeeBps != 0
+                || evaluatorConfig.evaluationWindow != 0 || evaluatorConfig.appealWindow != 0
+                || evaluatorConfig.disputeResolver != address(0)
+        ) {
+            revert ITMPCore.InvalidEvaluator();
+        }
     }
 
     function _buildAndCheckHooks(bytes32 taskId, ITMPCore.HookConfig calldata hookConfig, AppStorage storage s)
@@ -548,6 +600,12 @@ contract CoreFacet {
             task.status = ITMPCore.TaskStatus.Expired;
             uint256 refundAmount = task.reward;
             address requesterAddr = task.requester;
+            // Extinguish the recorded liability in the same statement group that decides to pay
+            // it out, before any transfer (checks-effects-interactions). The status check above
+            // is what actually blocks a repeat today; this is what keeps the books honest if a
+            // future status is ever allowed to reach this path, so the escrow pool can never be
+            // asked to satisfy the same obligation twice.
+            task.reward = 0;
 
             // An evaluator can be assigned to an auction task while it's still Open. Since
             // the task never reaches Review without a deliverable, evaluate() never runs and
@@ -627,6 +685,10 @@ contract CoreFacet {
 
         task.status = ITMPCore.TaskStatus.Expired;
         uint256 refundAmount = task.reward - evalFeeAlreadyPaid;
+        // See _refundAuctionClaimed: the outstanding reward liability is settled in full here
+        // (the evaluator fee portion having already been paid out by evaluate()), so it is
+        // zeroed alongside the status rather than left standing for a later read to act on.
+        task.reward = 0;
 
         address timedOutEvaluator = evalCfg.evaluator;
         uint256 evaluatorForfeited = evalCfg.evaluatorStake;

@@ -24,13 +24,13 @@ export const replyCommand = new Command('reply')
     const rawSubject = original.subject ?? '';
     const subject = rawSubject.startsWith('Re: ') ? rawSubject : `Re: ${rawSubject}`;
 
-    const result = (await apiPost('/api/emails/send', {
+    const { data: result, idempotencyKey } = await apiPost<{ sent: boolean }>('/api/emails/send', {
       deviceId: keystore.deviceId,
       apiToken: keystore.apiToken,
       to,
       subject,
       bodyText: opts.body,
-    })) as { sent: boolean };
+    });
 
-    printResult({ sent: result.sent });
+    printResult({ sent: result.sent }, { idempotencyKey });
   });

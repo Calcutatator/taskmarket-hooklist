@@ -8,12 +8,18 @@ import {
 import { z } from 'zod';
 import { claims, tasks } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { randomUUID } from 'crypto';
+import { derivedIdempotencyKey } from '../services/relayed-intents';
 import { contractClaimTask, contractForfeitAndReopen } from '../services/contract';
+import { runRelayedIntent } from '../services/relayed-intent-request';
+import type {
+  ClaimsClaimIntentPayload,
+  ClaimsForfeitIntentPayload,
+} from '../services/intents/claims-intents';
 import { verifySignedAddressOrThrow } from '../lib/agents';
 import { TRPCError } from '@trpc/server';
 import { fetchPrivateViewabilityContext } from '../lib/task-visibility';
 import type { Context } from '../context';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 
 /**
  * Phase 3 (ADR-0030) parity fix (F6): `claim` must enforce the same private-task
@@ -61,6 +67,7 @@ export const claimsRouter = router({
   claim: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/claim',
         tags: ['Tasks'],
@@ -106,32 +113,39 @@ export const claimsRouter = router({
       // identity is already cryptographically verified before we branch on it.
       await assertCanParticipateInPrivateTask(ctx.db, task, input.workerAddress);
 
-      const stakeTxHash = await contractClaimTask(
-        input.taskId as `0x${string}`,
-        input.workerAddress as `0x${string}`,
-        0n,
-        task.contractAddress
-      );
+      // Minted before the intent is recorded so the id in the payload is the id returned to
+      // the caller, whether the completion runs here or from a reconciler pass later.
+      //
+      // Derived from the caller's own key rather than random, because the payload is now
+      // compared against the stored one to tell a retry from a different write (ADR-0061): a
+      // fresh id on every attempt would make an honest retry of this free write look like a
+      // change of arguments and get it refused. It also fixes what a retry returned -- a
+      // random id would hand the caller an id the completion never wrote.
+      const claimId = derivedIdempotencyKey(`${ctx.idempotencyKey}:claims.claim:claimId`);
 
-      const claimId = randomUUID();
-
-      await ctx.db.insert(claims).values({
-        id: claimId,
-        taskId: input.taskId,
-        workerAddress: input.workerAddress,
-        stakeAmount: '0',
-        stakeTxHash,
-        status: 'active',
+      // Free, but still an intent (ADR-0045). Nothing is refundable here; what the intent
+      // buys is that a receipt landing after this request has gone still produces the claim
+      // row and the claimed task, instead of leaving the chain holding a claim the database
+      // has never heard of.
+      await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'claims.claim',
+        payer: input.workerAddress,
+        payload: {
+          claimId,
+          contractAddress: task.contractAddress,
+          taskId: input.taskId,
+          workerAddress: input.workerAddress,
+        } satisfies ClaimsClaimIntentPayload,
+        send: () =>
+          contractClaimTask(
+            input.taskId as `0x${string}`,
+            input.workerAddress as `0x${string}`,
+            0n,
+            task.contractAddress
+          ),
       });
-
-      await ctx.db
-        .update(tasks)
-        .set({
-          status: 'claimed',
-          claimedBy: input.workerAddress,
-          claimedAt: new Date(),
-        })
-        .where(eq(tasks.id, input.taskId));
 
       return { success: true, claimId };
     }),
@@ -139,6 +153,7 @@ export const claimsRouter = router({
   forfeit: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/forfeit',
         tags: ['Tasks'],
@@ -189,18 +204,26 @@ export const claimsRouter = router({
           }),
       });
 
-      const txHash = await contractForfeitAndReopen(
-        input.taskId as `0x${string}`,
-        input.requesterAddress as `0x${string}`,
-        task.contractAddress
-      );
-
-      await ctx.db.transaction(async (tx) => {
-        await tx.update(claims).set({ status: 'forfeited' }).where(eq(claims.taskId, input.taskId));
-        await tx
-          .update(tasks)
-          .set({ status: 'open', claimedBy: null, claimedAt: null })
-          .where(eq(tasks.id, input.taskId));
+      // Free, but still an intent: reopening the task and retiring its claim is post-receipt
+      // database work, and without a durable record it is lost whenever the receipt outlives
+      // the request -- leaving a task the chain has reopened but the database still shows as
+      // claimed, unclaimable by anyone (ADR-0045).
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'claims.forfeit',
+        payer: input.requesterAddress,
+        payload: {
+          contractAddress: task.contractAddress,
+          requesterAddress: input.requesterAddress,
+          taskId: input.taskId,
+        } satisfies ClaimsForfeitIntentPayload,
+        send: () =>
+          contractForfeitAndReopen(
+            input.taskId as `0x${string}`,
+            input.requesterAddress as `0x${string}`,
+            task.contractAddress
+          ),
       });
 
       return { txHash };

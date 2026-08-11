@@ -2,7 +2,7 @@
 
 import { CheckIcon, CopyIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -26,10 +26,23 @@ export function CopyButton({
 }) {
   const [copied, setCopied] = useState(false);
 
+  // Cleared on unmount: an uncleared reset timer fires against an unmounted tree, and in jsdom
+  // that lands after the environment is gone, so React's state dispatch throws
+  // `window is not defined` and vitest fails a run in which every test passed.
+  const copiedTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    },
+    []
+  );
+
   async function copyText() {
     await navigator.clipboard.writeText(text);
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
+    if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    copiedTimer.current = window.setTimeout(() => setCopied(false), 1600);
   }
 
   return (

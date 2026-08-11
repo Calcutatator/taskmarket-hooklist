@@ -2,16 +2,26 @@ import type { TaskDetailResponse } from '@taskmarket/shared';
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { fetchMarketStats, fetchTask, fetchTaskModeData } = vi.hoisted(() => ({
+const {
+  fetchMarketStats,
+  fetchTask,
+  fetchTaskEvaluationIdentities,
+  fetchTaskModeData,
+  fetchTaskSubmissions,
+} = vi.hoisted(() => ({
   fetchMarketStats: vi.fn(),
   fetchTask: vi.fn(),
+  fetchTaskEvaluationIdentities: vi.fn(),
   fetchTaskModeData: vi.fn(),
+  fetchTaskSubmissions: vi.fn(),
 }));
 
 vi.mock('@/lib/api/server', () => ({
   fetchMarketStats,
   fetchTask,
+  fetchTaskEvaluationIdentities,
   fetchTaskModeData,
+  fetchTaskSubmissions,
 }));
 
 vi.mock('@/components/market/caller-scoped-task-detail', () => ({
@@ -46,6 +56,8 @@ describe('dashboard task detail route', () => {
     fetchTask.mockResolvedValue(task);
     fetchTaskModeData.mockResolvedValue({ submissions: [] });
     fetchMarketStats.mockResolvedValue(null);
+    fetchTaskEvaluationIdentities.mockResolvedValue(null);
+    fetchTaskSubmissions.mockResolvedValue([]);
   });
 
   it('keeps the server fetch and delegates caller hydration to the focused client leaf', async () => {

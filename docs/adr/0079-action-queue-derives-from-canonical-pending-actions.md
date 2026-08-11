@@ -1,4 +1,4 @@
-# 0065 — Action queues derive from canonical pending actions
+# 0079 — Action queues derive from canonical pending actions
 
 > **Decision (Y-statement):** In the context of guiding every task participant to their next
 > lifecycle obligation, facing fragmented task-detail controls and ambiguous notification counts,

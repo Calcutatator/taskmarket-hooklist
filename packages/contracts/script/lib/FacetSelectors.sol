@@ -13,14 +13,29 @@ import { RegistryFacet } from "../../src/facets/RegistryFacet.sol";
 
 /// @title FacetSelectors — single source of truth for each facet's current (steady-state)
 ///        selector set.
-/// @dev DiamondDeploy.s.sol (fresh deploy), DiamondFullUpgrade.s.sol's steady-state
-///      Replace path, and DiamondTestHelper.sol (test fixtures) all call these functions
+/// @dev DiamondDeploy.s.sol (fresh deploy), the RevNNNUpgrade step scripts' steady-state
+///      Replace cuts, and DiamondTestHelper.sol (test fixtures) all call these functions
 ///      instead of maintaining independent copies, so a selector added to a facet only ever
 ///      needs to be added here once. Historical migration-delta selector lists (selectors that
-///      existed only on an old revision, or only get Added/Removed as part of a specific
-///      upgrade path) have no fresh-deploy equivalent and stay local to
-///      DiamondFullUpgrade.s.sol.
+///      existed only on an old revision, or only get Added/Removed as part of one specific
+///      step) have no fresh-deploy equivalent and stay local to the step script or the test
+///      that names them.
 library FacetSelectors {
+    /// @dev The pre-rev018 nine-parameter `createTask`. Rev018 kept it routed beside the
+    ///      evaluator-aware overload so off-chain callers could migrate after the facet cut rather
+    ///      than in lockstep with it; rev019 removed the shim behind it, so it is no longer part
+    ///      of any steady-state selector set and is not in `coreFacetSelectors()`.
+    /// @dev It survives as a constant because the historical upgrade paths still have to name it:
+    ///      Rev014Upgrade Adds it, Rev018Upgrade Replaces it, and Rev019Upgrade Removes it. A
+    ///      selector no facet serves has no `.selector` expression to derive it from, so the
+    ///      signature hash is written out -- the same idiom the other historical selectors named
+    ///      by a step script or a step test use.
+    bytes4 internal constant LEGACY_CREATE_TASK = bytes4(
+        keccak256(
+            "createTask(uint256,uint256,bytes4,uint256,uint256,bytes4,(bool,uint16),(address[],bytes),(bytes32,string,bytes32[]))"
+        )
+    );
+
     function cutFacetSelectors() internal pure returns (bytes4[] memory s) {
         s = new bytes4[](1);
         s[0] = DiamondCutFacet.diamondCut.selector;
@@ -38,7 +53,7 @@ library FacetSelectors {
     function adminFacetSelectors() internal pure returns (bytes4[] memory s) {
         // initialize is NOT included -- it is called once via the Diamond constructor's
         // _init delegatecall, never added as a routable selector.
-        s = new bytes4[](17);
+        s = new bytes4[](19);
         s[0] = AdminFacet.paused.selector;
         s[1] = AdminFacet.pause.selector;
         s[2] = AdminFacet.unpause.selector;
@@ -56,6 +71,10 @@ library FacetSelectors {
         s[14] = AdminFacet.getDefaultHooks.selector;
         s[15] = AdminFacet.diamondVersion.selector;
         s[16] = AdminFacet.setDiamondVersion.selector;
+        // rev017: the appeal-window floor is admin-settable state, so both its getter and its
+        // setter must route through the Diamond.
+        s[17] = AdminFacet.minAppealWindowSecs.selector;
+        s[18] = AdminFacet.setMinAppealWindowSecs.selector;
     }
 
     function coreFacetSelectors() internal pure returns (bytes4[] memory s) {

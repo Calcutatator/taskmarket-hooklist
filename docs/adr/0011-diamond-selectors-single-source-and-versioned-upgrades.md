@@ -19,6 +19,7 @@
 - **Reviewers:** Beau Williams — self-attested; no independent reviewer recorded
 - **Deciders:** Beau Williams
 - **Supersedes / Superseded-by:** —
+- **Amends / Amended-by:** Amended-by ADR-0062
 - **Realized by:** packages/contracts/script/lib/FacetSelectors.sol@56f16b9469e06fe47614ced4a8f69bf21fd74bf5
 
 ## Context

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 import type { Command } from 'commander';
 
 const TASK = '0xtask0000000000000000000000000000000001';
@@ -10,17 +11,24 @@ describe('task resolve-dispute command', () => {
   let mockX402Post: ReturnType<typeof vi.fn>;
   let mockPrintResult: ReturnType<typeof vi.fn>;
   let mockPrintError: ReturnType<typeof vi.fn>;
+  let mockRenderFailure: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     mockX402Post = vi.fn();
     mockPrintResult = vi.fn();
     mockPrintError = vi.fn();
+    // Typed `never` in production: it writes the envelope and exits. A double that returned
+    // would let the command carry on past a failure it has already reported.
+    mockRenderFailure = vi.fn(() => {
+      throw new Error('renderFailure');
+    });
 
     vi.resetModules();
     vi.doMock('../../src/lib/x402.js', () => ({ x402Post: mockX402Post }));
     vi.doMock('../../src/lib/output.js', () => ({
       printResult: mockPrintResult,
       printError: mockPrintError,
+      renderFailure: mockRenderFailure,
     }));
 
     const mod = await import('../../src/commands/task/resolve-dispute.js');
@@ -28,7 +36,7 @@ describe('task resolve-dispute command', () => {
   });
 
   it('posts approve verdict with award and prints txHash', async () => {
-    mockX402Post.mockResolvedValue({ txHash: '0xresolvetx' });
+    mockX402Post.mockResolvedValue(writeOutcome({ txHash: '0xresolvetx' }));
 
     await resolveDisputeCmd.parseAsync(
       ['node', 'resolve-dispute', TASK, '--verdict', 'approve', '--award', `${WORKER}:5:1`],
@@ -40,11 +48,11 @@ describe('task resolve-dispute command', () => {
       verdict: 'approve',
       awards: [{ worker: WORKER, amount: '5000000', rank: 1 }],
     });
-    expect(mockPrintResult).toHaveBeenCalledWith({ txHash: '0xresolvetx' });
+    expect(mockPrintResult).toHaveBeenCalledWith({ txHash: '0xresolvetx' }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('posts partial verdict with multiple awards', async () => {
-    mockX402Post.mockResolvedValue({ txHash: '0xresolvetx' });
+    mockX402Post.mockResolvedValue(writeOutcome({ txHash: '0xresolvetx' }));
 
     await resolveDisputeCmd.parseAsync(
       [
@@ -84,31 +92,43 @@ describe('task resolve-dispute command', () => {
   });
 
   it('rejects malformed award entry', async () => {
-    await resolveDisputeCmd.parseAsync(
-      ['node', 'resolve-dispute', TASK, '--verdict', 'approve', '--award', 'badentry'],
-      { from: 'node' }
-    );
+    await expect(
+      resolveDisputeCmd.parseAsync(
+        ['node', 'resolve-dispute', TASK, '--verdict', 'approve', '--award', 'badentry'],
+        { from: 'node' }
+      )
+    ).rejects.toThrow('renderFailure');
 
-    expect(mockPrintError).toHaveBeenCalledWith(expect.stringContaining('Invalid --award value'));
+    expect(mockRenderFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('Invalid --award value') })
+    );
     expect(mockX402Post).not.toHaveBeenCalled();
   });
 
   it('rejects invalid worker address in award', async () => {
-    await resolveDisputeCmd.parseAsync(
-      ['node', 'resolve-dispute', TASK, '--verdict', 'approve', '--award', 'notanaddr:5:1'],
-      { from: 'node' }
-    );
+    await expect(
+      resolveDisputeCmd.parseAsync(
+        ['node', 'resolve-dispute', TASK, '--verdict', 'approve', '--award', 'notanaddr:5:1'],
+        { from: 'node' }
+      )
+    ).rejects.toThrow('renderFailure');
 
-    expect(mockPrintError).toHaveBeenCalledWith(expect.stringContaining('Invalid worker address'));
+    expect(mockRenderFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('Invalid worker address') })
+    );
   });
 
   it('rejects non-integer rank', async () => {
-    await resolveDisputeCmd.parseAsync(
-      ['node', 'resolve-dispute', TASK, '--verdict', 'approve', '--award', `${WORKER}:5:0`],
-      { from: 'node' }
-    );
+    await expect(
+      resolveDisputeCmd.parseAsync(
+        ['node', 'resolve-dispute', TASK, '--verdict', 'approve', '--award', `${WORKER}:5:0`],
+        { from: 'node' }
+      )
+    ).rejects.toThrow('renderFailure');
 
-    expect(mockPrintError).toHaveBeenCalledWith(expect.stringContaining('Invalid rank'));
+    expect(mockRenderFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('Invalid rank') })
+    );
   });
 
   it('propagates errors from x402Post', async () => {

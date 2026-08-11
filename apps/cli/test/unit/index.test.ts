@@ -53,19 +53,18 @@ async function flushMicrotasks() {
 }
 
 describe('CLI top-level error envelope', () => {
-  let exitSpy: ReturnType<typeof vi.spyOn>;
   let stderrSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.resetModules();
     mockParseAsync.mockReset();
-    exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    process.exitCode = undefined;
     stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
   });
 
   afterEach(() => {
-    exitSpy.mockRestore();
     stderrSpy.mockRestore();
+    process.exitCode = undefined;
   });
 
   it('writes { ok: false, error, status: 429 } and exits 1 for an ApiError with .status = 429', async () => {
@@ -84,7 +83,7 @@ describe('CLI top-level error envelope', () => {
       error: 'too many submissions',
       status: 429,
     });
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(process.exitCode).toBe(1);
   });
 
   it('writes { ok: false, error } with no status key at all for a plain Error', async () => {
@@ -98,6 +97,6 @@ describe('CLI top-level error envelope', () => {
     const parsed = JSON.parse(written) as Record<string, unknown>;
     expect(parsed).toEqual({ ok: false, error: 'generic failure' });
     expect('status' in parsed).toBe(false);
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(process.exitCode).toBe(1);
   });
 });

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 
 vi.mock('../../src/lib/keystore.js', () => ({
   loadKeystore: vi.fn(),
@@ -17,13 +18,16 @@ vi.mock('../../src/lib/output.js', () => ({
   printError: vi.fn((message: string) => {
     throw new Error(message);
   }),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 import { forfeitCmd } from '../../src/commands/task/forfeit.js';
 import { loadKeystore } from '../../src/lib/keystore.js';
 import { signMessage } from '../../src/lib/signer.js';
 import { apiPost } from '../../src/lib/api.js';
-import { printResult, printError } from '../../src/lib/output.js';
+import { printResult, renderFailure } from '../../src/lib/output.js';
 
 const keystore = {
   encryptedKey: 'abc',
@@ -41,7 +45,7 @@ describe('task forfeit command', () => {
   });
 
   it('signs taskmarket:forfeit:<taskId> and posts the wallet-signed body', async () => {
-    vi.mocked(apiPost).mockResolvedValue({ txHash: '0xtxhash' });
+    vi.mocked(apiPost).mockResolvedValue(writeOutcome({ txHash: '0xtxhash' }));
 
     await forfeitCmd.parseAsync(['node', 'forfeit', '0xtask'], { from: 'node' });
 
@@ -51,16 +55,18 @@ describe('task forfeit command', () => {
       requesterAddress: keystore.walletAddress,
       signature: '0xsig',
     });
-    expect(printResult).toHaveBeenCalledWith({ txHash: '0xtxhash' });
+    expect(printResult).toHaveBeenCalledWith({ txHash: '0xtxhash' }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
-  it('surfaces API errors via printError', async () => {
-    vi.mocked(apiPost).mockRejectedValueOnce(new Error('Task is not currently claimed'));
+  it('surfaces API errors through renderFailure, with the error itself', async () => {
+    const failure = new Error('Task is not currently claimed');
+    vi.mocked(apiPost).mockRejectedValueOnce(failure);
 
     await expect(
       forfeitCmd.parseAsync(['node', 'forfeit', '0xtask'], { from: 'node' })
     ).rejects.toThrow('Task is not currently claimed');
 
-    expect(printError).toHaveBeenCalledWith('Task is not currently claimed');
+    // The error, not its message: passing the message is what dropped the ADR-0058 envelope.
+    expect(renderFailure).toHaveBeenCalledWith(failure);
   });
 });

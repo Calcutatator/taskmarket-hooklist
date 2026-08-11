@@ -25,15 +25,11 @@ interface ITMPDiamond {
     // solhint-enable func-name-mixedcase
 
     function createTask(
-        uint256 reward,
-        uint256 durationSecs,
-        bytes4 mode,
-        uint256 pitchDeadlineSecs,
-        uint256 bidDeadlineSecs,
-        bytes4 auctionSubtype,
+        ITMPCore.TaskConfig calldata config,
         ITMPCore.StakeConfig calldata stakeConfig,
         ITMPCore.HookConfig calldata hookConfig,
-        ITMPCore.TaskContent calldata content
+        ITMPCore.TaskContent calldata content,
+        ITMPCore.TaskEvaluatorConfig calldata evaluatorConfig
     ) external returns (bytes32);
 
     function claimTask(bytes32 taskId, uint256 stakeAmount) external;
@@ -164,6 +160,9 @@ interface ITMPDiamond {
     function setReputationRegistry(address registry) external;
     function setDefaultHooks(address[] calldata hooks) external;
     function getDefaultHooks() external view returns (address[] memory);
+    // Rev017: admin-settable floor on assignEvaluator's appealWindowSecs.
+    function minAppealWindowSecs() external view returns (uint32);
+    function setMinAppealWindowSecs(uint32 newMinimum) external;
     function getTaskHooks(bytes32 taskId) external view returns (address[] memory);
 
     // -------------------------------------------------------------------------

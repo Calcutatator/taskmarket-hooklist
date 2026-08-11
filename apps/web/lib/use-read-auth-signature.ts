@@ -8,6 +8,7 @@ import {
 import {
   getCachedReadAuthAddress,
   getOrCreateCachedReadAuthHeaders,
+  hasCachedReadAuthHeaders,
   removeReadAuthConsumer,
   updateReadAuthConsumerAddress,
 } from './read-auth';
@@ -82,8 +83,16 @@ export function useReadAuthSignatureState(
       return;
     }
 
+    // A signature for this wallet is already held, so there is nothing to prove again. The
+    // read-auth message carries no nonce, so one signature covers the whole session -- and a
+    // second consumer mounting later (an in-flight write starting to poll, say) must not put a
+    // wallet prompt in front of someone who already signed. Ahead of the autoStart branch
+    // below, which would otherwise clear the very cache this reads.
+    //
+    // `hasCachedReadAuthHeaders` rather than comparing `getCachedReadAuthAddress()`: the two
+    // answer the same question here, and this one states it.
     const currentNormalizedAddress = address.toLowerCase();
-    if (getCachedReadAuthAddress() === currentNormalizedAddress) {
+    if (hasCachedReadAuthHeaders(address)) {
       pendingRef.current = null;
       setReadyFor(currentNormalizedAddress);
       setError(null);

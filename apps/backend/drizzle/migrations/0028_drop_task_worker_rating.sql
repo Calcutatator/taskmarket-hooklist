@@ -3,9 +3,14 @@
 -- and bids.selectWinner did not write claimedBy). Must run before the DROP
 -- COLUMN below or this assignment signal is lost for any task mid-flight in a
 -- deployed environment at migration time.
-UPDATE "tasks"
-SET "claimed_by" = "worker"
-WHERE "claimed_by" IS NULL AND "worker" IS NOT NULL;
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'tasks' AND column_name = 'worker'
+  ) THEN
+    EXECUTE 'UPDATE "tasks" SET "claimed_by" = "worker" WHERE "claimed_by" IS NULL AND "worker" IS NOT NULL';
+  END IF;
+END $$;
 
 -- Belt-and-suspenders on top of ADR-0003's fail-fast boot guarantee: every
 -- status='completed' task under the currently-active contract must already

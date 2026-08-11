@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 
 vi.mock('fs', () => ({
   writeFileSync: vi.fn(),
@@ -16,6 +17,9 @@ vi.mock('../../src/lib/output.js', () => ({
   printResult: vi.fn(),
   printError: vi.fn((message: string) => {
     throw new Error(message);
+  }),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
   }),
 }));
 
@@ -50,7 +54,7 @@ describe('task download command', () => {
     vi.clearAllMocks();
     vi.unstubAllGlobals();
     vi.mocked(loadKeystore).mockResolvedValue(keystore as never);
-    vi.mocked(apiPost).mockResolvedValue({ presignedUrl: 'https://example.com/file' } as never);
+    vi.mocked(apiPost).mockResolvedValue(writeOutcome({ presignedUrl: 'https://example.com/file' } as never));
   });
 
   it('strips embedded ANSI/VT100 escape sequences before writing to stdout', async () => {

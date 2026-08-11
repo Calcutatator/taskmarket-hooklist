@@ -1,0 +1,11 @@
+-- Record which of a row's transactions was the clearing self-transfer (ADR-0066).
+--
+-- Escalation stops at the configured cap. When it gets there, the reconciler sends one
+-- zero-value self-transfer at the stuck nonce, priced above the cap by the minimum bump, to
+-- free the nonce; the intent then settles as failed through the existing mined-replacement
+-- rule. Two things need this column. It is the durable record that makes "exactly one" true
+-- across restarts -- without it every later pass would send another transfer, each above the
+-- cap, which is the unbounded climb this decision exists to end. And it is what lets an
+-- operator reading the outbox tell a clearing transfer from the work it replaced, which
+-- replaced_tx_hash alone cannot say, since every replacement sets that.
+ALTER TABLE "server_wallet_transactions" ADD COLUMN IF NOT EXISTS "clearing_tx_hash" text;

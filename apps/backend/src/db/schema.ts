@@ -711,9 +711,15 @@ export const orphanedPayments = pgTable(
     paymentTxHash: text('payment_tx_hash').notNull().unique(),
     context: text('context').notNull(),
     failureReason: text('failure_reason'),
-    // 'pending' | 'refunding' | 'refunded' | 'failed' -- 'refunding' is a transient
-    // claim state a row briefly holds between attemptRefund's compare-and-swap and the
-    // refund transfer settling; see services/orphaned-payments.ts.
+    // 'pending' | 'refunding' | 'refunded' | 'failed'.
+    //
+    // 'refunding' is the claim state a row holds between attemptRefund's compare-and-swap and
+    // the refund transfer settling. It is transient because something moves it on, not because
+    // time does: `settlePendingOrphanedRefunds` joins the row's refund hash to the outbox and
+    // writes 'refunded' or 'failed' from what the chain said about that transfer (ADR-0069).
+    // It was documented as transient while nothing selected it at all, which made it terminal
+    // in practice -- every refund whose receipt was slow parked here permanently.
+    // See services/orphaned-payments.ts.
     refundStatus: text('refund_status').notNull().default('pending'),
     refundTxHash: text('refund_tx_hash'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -851,6 +857,43 @@ export const serverWalletTransactions = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     broadcastAt: timestamp('broadcast_at', { withTimezone: true }),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    // Implements: ADR-0051
+    // Gas actually used, per attempt. Escalation multiplies the fee being *replaced*, so each
+    // replacement has to know what the previous one paid -- reading the oracle again in its
+    // place is precisely the defect ADR-0051 exists to remove. The original fee is kept
+    // separately because the cap is expressed as a multiple of it, and it must not move as
+    // attempts escalate. Numeric rather than bigint: wei exceeds a 64-bit integer.
+    originalMaxFeePerGas: numeric('original_max_fee_per_gas', { precision: 78, scale: 0 }),
+    originalMaxPriorityFeePerGas: numeric('original_max_priority_fee_per_gas', {
+      precision: 78,
+      scale: 0,
+    }),
+    lastMaxFeePerGas: numeric('last_max_fee_per_gas', { precision: 78, scale: 0 }),
+    lastMaxPriorityFeePerGas: numeric('last_max_priority_fee_per_gas', {
+      precision: 78,
+      scale: 0,
+    }),
+    // Implements: ADR-0045
+    // The hash `tx_hash` superseded, set when the reconciler broadcasts a replacement. A
+    // non-null value is the durable statement that the row's current transaction is a no-op
+    // self-transfer rather than the work, so a receipt against it is evidence the work did
+    // *not* happen. Held only in process memory before, which meant a restart between
+    // broadcasting a replacement and reading its receipt lost the distinction and left the
+    // intent unsettled -- and deploys happen far more often than the window is long.
+    //
+    // A hash rather than a boolean: it composes with the fee history above as another
+    // per-attempt fact about the same row, it names the transaction that was given up on for
+    // an operator reading the table, and it is what the settlement reason already reports.
+    replacedTxHash: text('replaced_tx_hash'),
+    // Implements: ADR-0066
+    // The hash of the clearing self-transfer, set when escalation reaches the cap and the
+    // reconciler frees the nonce rather than bidding higher. Two jobs, both durable. It is what
+    // makes "exactly one clearing transfer per stuck nonce" survive a restart -- a later pass
+    // reading a non-null value sends nothing and waits for this transfer's receipt, instead of
+    // emitting another transaction above the cap. And it is what distinguishes that transfer
+    // from the work in the outbox itself: `replaced_tx_hash` is set by every replacement and so
+    // cannot say which one was the deliberate, above-cap cancel.
+    clearingTxHash: text('clearing_tx_hash'),
   },
   (table) => ({
     walletStatusIdx: index('idx_server_wallet_transactions_wallet_status').on(
@@ -870,10 +913,159 @@ export const serverWalletTransactions = pgTable(
   })
 );
 
+// Implements: ADR-0045
+// Durable record of a relayed write. Created before any payment-consuming or chain-mutating
+// step, so the work survives the request that started it: if the receipt arrives after the
+// caller has gone, the reconciler still has everything needed to finish the job.
+//
+// Status meanings:
+//   recorded  -- intent persisted, chain call not yet broadcast. A crash here means nothing
+//                happened on chain; the payment (if any) is refundable.
+//   broadcast -- linked to a server_wallet_transactions row and live on chain. Only confirmed
+//                on-chain evidence may move it out of this state -- never a timeout.
+//   completed -- the transaction succeeded and the completion handler has run.
+//   failed    -- the chain confirmed the work did not happen (reverted receipt, or the
+//                reconciler's replacement mined instead), so any payment is refundable.
+export const relayedIntents = pgTable(
+  'relayed_intents',
+  {
+    id: text('id').primaryKey(),
+    // Operation kind, e.g. 'tasks.create'. Resolved against the completion-handler registry;
+    // a kind with no registered handler is a startup error, not a runtime surprise.
+    operation: text('operation').notNull(),
+    // The chain this intent's write belongs to (ADR-0078). The outbox row beneath it has always
+    // carried one; without it here, `idempotency_key` and `payment_tx_hash` were unique globally,
+    // so one backend serving two chains would read another chain's operation as yours.
+    chainId: integer('chain_id').notNull(),
+    status: text('status').notNull().default('recorded'),
+    // The address the relay acted for -- who *initiated* this write, not evidence that anything
+    // was paid. Since payment became one indivisible reference (ADR-0057) it is the presence of
+    // `payment_tx_hash` and `payment_amount` that makes an intent refundable; this column is
+    // populated on every path, free or paid. It holds the settled x402 payer where the route is
+    // paid, the signature-verified actor where the route authenticates by signature, and null
+    // only on a permissionless call whose caller did not identify themselves.
+    //
+    // The name is kept deliberately rather than renamed to `initiator`: settlement reads this
+    // column as the address a refund is transferred to, and a money path reading a field called
+    // `initiator` to decide where to send money is the more dangerous of the two misnamings.
+    // The two facts are the same address on every path, because whoever pays is whoever started
+    // the write. Visibility on `intents.get` is scoped to it (ADR-0059).
+    payer: text('payer'),
+    // Whether this write is one somebody has to pay for -- a property of the *route*, fixed
+    // when the intent is created, and not a report on whether money has arrived (ADR-0067).
+    //
+    // This column exists because the absence of a payment reference used to carry exactly one
+    // meaning ("a free relayed write") and now carries two. Since a paid intent is created as
+    // a reservation just before its payment settles, an intent with no `payment_tx_hash` is
+    // either a free write, correct and terminal, or a paid write whose payment has not landed.
+    // Those are opposite conclusions for every sweep that looks at them: the first is nothing
+    // owed, the second is a payer who may be out of pocket. Read this column, never the
+    // absence of the two below, to tell them apart.
+    paymentRequired: boolean('payment_required').notNull().default(false),
+    // The settled payment (ADR-0057). Present only once the facilitator has confirmed the
+    // transfer, attached as one unit with `payment_amount` and `payer`. Presence here -- with
+    // `payment_required` above -- is what makes an intent refundable.
+    paymentTxHash: text('payment_tx_hash'),
+    paymentAmount: numeric('payment_amount', { precision: 78, scale: 0 }),
+    // The EIP-3009 authorization this reservation was about to have settled, written *before*
+    // the facilitator is asked to settle it (ADR-0067).
+    //
+    // Not a payment. It records an attempt, and it must never be read as evidence that money
+    // moved: a facilitator can reject an authorization, and a client can sign one and walk
+    // away. What it buys is that expiring a reservation stops being an inference from absence.
+    // The sweep asks the token contract a precise question about this exact (payer, nonce)
+    // pair -- EIP-3009 `authorizationState` -- instead of searching for a payment by amount and
+    // payer and hoping. Nothing may refund, credit or broadcast on the strength of these three.
+    paymentAuthNonce: text('payment_auth_nonce'),
+    paymentAuthPayer: text('payment_auth_payer'),
+    paymentAuthAmount: numeric('payment_auth_amount', { precision: 78, scale: 0 }),
+    // When a reservation stops being one. Set on creation, cleared the moment the intent is
+    // filled in by its handler. It bounds the one case a request cannot clean up after itself:
+    // a process that died between claiming the key and hearing back from the facilitator
+    // (ADR-0068).
+    reservedExpiresAt: timestamp('reserved_expires_at', { withTimezone: true }),
+    // The client's own key for this logical operation (ADR-0052), mandatory on every relayed
+    // write. Client-originated because the intent id cannot be the recovery handle: it is
+    // minted here and reaches the caller only in the response. Opaque to the backend --
+    // stored verbatim, matched by equality, never parsed.
+    idempotencyKey: text('idempotency_key').notNull(),
+    // Everything the completion handler needs, already validated by the router's input schema.
+    payload: jsonb('payload').notNull(),
+    // Set once a nonce is allocated. Null while the intent is still 'recorded'.
+    serverWalletTransactionId: text('server_wallet_transaction_id'),
+    txHash: text('tx_hash'),
+    completionAttempts: integer('completion_attempts').notNull().default(0),
+    // Broadcast attempts are counted separately from completion attempts: an intent can be
+    // broadcast once and completed several times, so one counter cannot bound both. A
+    // belt-and-braces guard against hot-looping; the real bound is relayValidBefore.
+    broadcastAttempts: integer('broadcast_attempts').notNull().default(0),
+    // The relay envelope, fixed at record time and replayed verbatim. Recomputing either on a
+    // rebroadcast would give every attempt a fresh window, so the deadline would never arrive.
+    relayValidBefore: numeric('relay_valid_before', { precision: 20, scale: 0 }),
+    relayReceiptNonce: text('relay_receipt_nonce'),
+    // The `consumedReceipts` key `TaskMarketForwarder.relay` sets when this intent's call
+    // succeeds: keccak256(chainId, pgtrSender, paymentAmount, receiptNonce, validBefore,
+    // taskMarket, selector). Written at nonce allocation, before anything is sent (ADR-0071).
+    //
+    // It exists because it is the only durable handle on "did *this* intent's call land" that
+    // survives a send which never returned a hash. The receipt nonce inside it is minted once
+    // per intent and replayed verbatim, so nothing but this intent's own relay can set the bit,
+    // and the bit is set only when the call succeeded. Recomputing it in a sweep is not
+    // possible -- `pgtrSender`, `paymentAmount` and the selector live only inside the broadcast
+    // path -- so it is persisted at the one moment all seven inputs are in hand.
+    //
+    // Null on every row written before this column existed, and on the three operations that do
+    // not relay (`wallet.withdrawDreams`, `identity.register`, and `wallet.withdraw`, which is
+    // answered by EIP-3009 `authorizationState` instead). A null is never read as "not
+    // consumed": it means there is no question to ask, so the intent stays non-terminal.
+    relayReceiptHash: text('relay_receipt_hash'),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => ({
+    statusIdx: index('idx_relayed_intents_status').on(table.status),
+    txIdx: index('idx_relayed_intents_server_wallet_tx').on(table.serverWalletTransactionId),
+    payerIdx: index('idx_relayed_intents_payer').on(table.payer),
+    // One settled payment funds at most one intent. A backstop rather than the idempotency
+    // mechanism (ADR-0052): the key below handles the well-behaved retry, and this catches a
+    // client that generates a fresh key while reusing a payment it has already spent.
+    paymentUnique: uniqueIndex('idx_relayed_intents_chain_payment_tx').on(
+      table.chainId,
+      table.paymentTxHash
+    ),
+    // Globally unique, not (payer, key): evaluations.finalizeVerdict is permissionless and
+    // has no payer, and a NULL payer in a composite unique constraint silently stops guarding.
+    idempotencyKeyUnique: uniqueIndex('idx_relayed_intents_chain_idempotency_key').on(
+      table.chainId,
+      table.idempotencyKey
+    ),
+    // Reservations are found by expiry, and only ever the expired ones, so the sweep must not
+    // read the whole table to find them.
+    reservedExpiryIdx: index('idx_relayed_intents_reserved_expires_at').on(table.reservedExpiresAt),
+    // The stranded sweep (ADR-0071) wants only rows with a linked outbox row and no hash, which
+    // is a vanishingly small slice of this table. Partial on `tx_hash IS NULL` for that reason.
+    strandedIdx: index('idx_relayed_intents_stranded')
+      .on(table.status, table.serverWalletTransactionId)
+      .where(sql`${table.txHash} IS NULL`),
+    // 'reserved' is the pre-payment state (ADR-0067), and its exclusion from every query that
+    // hands an intent to the chain is what makes a reservation structurally non-broadcastable:
+    // `claimIntentForBroadcast`, `listUnbroadcastIntents` and `listAbandonedIntents` all
+    // require 'recorded'. A reservation becomes 'recorded' only when its handler fills it in.
+    statusCheck: check(
+      'relayed_intents_status_check',
+      sql`${table.status} IN ('reserved', 'recorded', 'broadcast', 'completed', 'failed')`
+    ),
+  })
+);
+
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type ServerWalletNonce = typeof serverWalletNonces.$inferSelect;
 export type NewServerWalletNonce = typeof serverWalletNonces.$inferInsert;
+export type RelayedIntent = typeof relayedIntents.$inferSelect;
+export type NewRelayedIntent = typeof relayedIntents.$inferInsert;
 export type ServerWalletTransaction = typeof serverWalletTransactions.$inferSelect;
 export type NewServerWalletTransaction = typeof serverWalletTransactions.$inferInsert;
 export type TaskAward = typeof taskAwards.$inferSelect;

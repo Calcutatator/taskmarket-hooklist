@@ -30,6 +30,18 @@ export function setCachedReadAuthHeaders(address: string, headers: Record<string
   cachedReadAuth = { address: address.toLowerCase(), headers };
 }
 
+/**
+ * Whether a signed proof for this wallet is already held.
+ *
+ * The read-auth message is `taskmarket:read:<address>` and carries no nonce, so a signature
+ * does not expire and is not bound to one request. That makes the cache reusable for the whole
+ * session: a second consumer mounting later should read what the first one signed rather than
+ * putting a wallet prompt in front of the user again. Consumers ask before signing.
+ */
+export function hasCachedReadAuthHeaders(address: string): boolean {
+  return cachedReadAuth?.address === address.toLowerCase();
+}
+
 export function clearCachedReadAuthHeaders(): void {
   sessionGeneration += 1;
   pendingReadAuth = null;

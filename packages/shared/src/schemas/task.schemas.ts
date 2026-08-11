@@ -127,7 +127,10 @@ export const TaskCreateSchema = z
     taskVisibility: TaskVisibility.optional().default('public'),
     submissionVisibility: SubmissionVisibility.optional().default('public'),
     stakeRequired: z.boolean().optional().default(false),
-    stakeBps: z.number().min(0).max(10000).optional().default(0),
+    // Integral: this is client-supplied and lands in a `uint16` on chain, where a fraction is
+    // not representable at all. Without `.int()` a 12.5 was accepted here and silently became
+    // something else by the time it reached the contract (ADR-0069).
+    stakeBps: z.number().int().min(0).max(10000).optional().default(0),
     pitchDeadline: z.number().positive().optional(),
     bidDeadline: z.number().positive().optional(),
     maxPrice: PositiveUsdcBaseUnitsSchema.optional(),
@@ -145,7 +148,8 @@ export const TaskCreateSchema = z
       )
       .optional(),
     evaluator: z.string().optional(),
-    evaluatorFeeBps: z.number().min(0).max(10000).optional(),
+    // Integral for the same reason as `stakeBps` above: client-supplied, `uint16` on chain.
+    evaluatorFeeBps: z.number().int().min(0).max(10000).optional(),
     evaluationWindowHours: z.number().positive().optional(),
     appealWindowHours: z.number().positive().optional(),
     disputeResolver: z.string().optional(),
@@ -281,7 +285,9 @@ export const TaskResponseSchema = z.object({
   // never the hash itself, and never returned for a non-private task.
   hasAccessPassword: z.boolean().optional(),
   stakeRequired: z.boolean(),
-  stakeBps: z.number(),
+  // Same shape the request side already enforces (ADR-0069): a `uint16` fraction of the escrow,
+  // so the response cannot describe a stake the contract could not have held.
+  stakeBps: z.number().int().min(0).max(10000),
   pitchDeadline: z.string().nullable(),
   bidDeadline: z.string().nullable(),
   maxPrice: z.string().nullable(),
@@ -289,7 +295,10 @@ export const TaskResponseSchema = z.object({
   metricTarget: z.string().nullable(),
   claimedBy: z.string().nullable(),
   claimedAt: z.string().nullable(),
-  platformFeeBps: z.number(),
+  // Required, never optional: this is the multiplier every net-reward figure a client shows is
+  // derived from, and the column behind it has been `NOT NULL` since the first migration. A
+  // reader that had to supply its own value on absence would be guessing at money.
+  platformFeeBps: z.number().int().min(0).max(10000),
   submissionCount: z.number().optional().default(0),
   awardCount: z.number().int().nonnegative().optional(),
   // Read-time projection of the rank-1 task_awards row -- not a separately
@@ -318,7 +327,9 @@ export const TaskResponseSchema = z.object({
   hookContract: z.string().nullable().optional(),
   evaluator: z.string().nullable().optional(),
   evaluatorStake: z.string().nullable().optional(),
-  evaluatorFeeBps: z.number().nullable().optional(),
+  // Genuinely absent when no evaluator is configured -- unlike `platformFeeBps`, null here means
+  // "no evaluator fee", which is the same thing as zero, so a reader coalescing to 0 is right.
+  evaluatorFeeBps: z.number().int().min(0).max(10000).nullable().optional(),
   evaluationWindow: z.number().nullable().optional(),
   appealWindow: z.number().nullable().optional(),
   disputeResolver: z.string().nullable().optional(),
@@ -456,7 +467,11 @@ export const TaskDetailResponseSchema = TaskResponseSchema.extend({
   pendingActions: PendingActionSchema.array(),
   awards: TaskAwardSchema.array().optional(),
   dreamsPerUsdc: z.string().optional(),
-  bonusBps: z.number().optional(),
+  // Optional as a set, not individually: the router emits `dreamsPerUsdc`, `bonusBps` and every
+  // `estimated*` field together or not at all, depending on whether the task carries the DREAMS
+  // hook. No client multiplies this by a split of its own -- the worker/requester estimates are
+  // computed server-side -- so the absent case needs no fallback multiplier anywhere.
+  bonusBps: z.number().int().min(0).max(10000).optional(),
   estimatedUsdBonusValue: z.string().optional(),
   estimatedWorkerUsdBonusValue: z.string().optional(),
   estimatedRequesterUsdBonusValue: z.string().optional(),
@@ -471,6 +486,25 @@ export const CancelTaskInputSchema = z.object({
 export const RejectSubmissionInputSchema = z.object({
   taskId: z.string(),
   worker: z.string(),
+});
+
+/**
+ * Implements: ADR-0047 -- evaluator assignment is its own root intent, so it has its own input.
+ *
+ * The window fields are expressed in hours here and in seconds on the contract, matching the
+ * units TaskCreateSchema already accepts for the same five values. A requester who configures
+ * an evaluator at creation and one who assigns afterwards should not have to convert
+ * differently for what the contract stores identically.
+ */
+export const AssignEvaluatorInputSchema = z.object({
+  taskId: z.string(),
+  evaluator: z.string(),
+  // Integral: same field, same `uint16`, and the two request-side schemas must not disagree
+  // about what a caller may send.
+  evaluatorFeeBps: z.number().int().min(0).max(10000).optional(),
+  evaluationWindowHours: z.number().positive().optional(),
+  appealWindowHours: z.number().positive().optional(),
+  disputeResolver: z.string().optional(),
 });
 
 export const RefundExpiredInputSchema = z.object({

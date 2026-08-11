@@ -11,7 +11,9 @@ const {
   fetchActivityFeed,
   fetchMarketStats,
   fetchTask,
+  fetchTaskEvaluationIdentities,
   fetchTaskModeData,
+  fetchTaskSubmissions,
   invalidateActionQueue,
   queueState,
   refresh,
@@ -21,7 +23,9 @@ const {
   fetchActivityFeed: vi.fn(async () => ({ items: [], nextCursor: null })),
   fetchMarketStats: vi.fn(async () => null),
   fetchTask: vi.fn(),
+  fetchTaskEvaluationIdentities: vi.fn(async () => null),
   fetchTaskModeData: vi.fn(async () => ({ submissions: [] })),
+  fetchTaskSubmissions: vi.fn(async () => []),
   invalidateActionQueue: vi.fn(async () => undefined),
   queueState: {
     callerScopedReady: true,
@@ -55,7 +59,9 @@ vi.mock('@/lib/api/server', () => ({
   fetchActivityFeed,
   fetchMarketStats,
   fetchTask,
+  fetchTaskEvaluationIdentities,
   fetchTaskModeData,
+  fetchTaskSubmissions,
 }));
 
 vi.mock('@/lib/api/client', () => ({

@@ -23,6 +23,9 @@ vi.mock('../../src/lib/output.js', () => ({
   printError: vi.fn(() => {
     throw new Error('printError called');
   }),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 import { mySubmissionsCmd } from '../../src/commands/task/my-submissions.js';
@@ -94,7 +97,7 @@ describe('task my-submissions command', () => {
 
     await expect(
       mySubmissionsCmd.parseAsync(['node', 'my-submissions'], { from: 'node' })
-    ).rejects.toThrow('printError called');
+    ).rejects.toThrow('No address provided and no keystore found');
     expect(apiGet).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 import { EventEmitter } from 'events';
 
 const FILE_BYTES = Buffer.from('one file');
@@ -87,6 +88,9 @@ vi.mock('../../src/lib/output.js', () => ({
   printError: vi.fn((message: string) => {
     throw new Error(message);
   }),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 import { writeFileSync } from 'fs';
@@ -123,11 +127,11 @@ describe('task artifact commands', () => {
   });
 
   it('requests upload URL then calls submitFromKeys for a single file', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({
+    vi.mocked(apiPost).mockResolvedValueOnce(writeOutcome({
       uploadUrl: 'http://localhost/upload',
       artifactKey: 'submissions/0xtask/pending/key-one.png',
-    });
-    vi.mocked(x402Post).mockResolvedValueOnce({ submissionId: 'submission-1' });
+    }));
+    vi.mocked(x402Post).mockResolvedValueOnce(writeOutcome({ submissionId: 'submission-1' }));
 
     await submitCmd.parseAsync(['node', 'submit', '0xtask', '--file', 'one.png'], {
       from: 'node',
@@ -160,20 +164,22 @@ describe('task artifact commands', () => {
       signature: '0xsig',
     });
 
-    expect(printResult).toHaveBeenCalledWith({ submissionId: 'submission-1' });
+    expect(printResult).toHaveBeenCalledWith({ submissionId: 'submission-1' }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('uploads multiple files and passes all artifact keys', async () => {
     vi.mocked(apiPost)
-      .mockResolvedValueOnce({
+      .mockResolvedValueOnce(writeOutcome({
         uploadUrl: 'http://localhost/upload1',
         artifactKey: 'key/logo.png',
-      })
-      .mockResolvedValueOnce({
-        uploadUrl: 'http://localhost/upload2',
-        artifactKey: 'key/logo.svg',
-      });
-    vi.mocked(x402Post).mockResolvedValueOnce({ submissionId: 'submission-2' });
+      }))
+      .mockResolvedValueOnce(
+        writeOutcome({
+          uploadUrl: 'http://localhost/upload2',
+          artifactKey: 'key/logo.svg',
+        })
+      );
+    vi.mocked(x402Post).mockResolvedValueOnce(writeOutcome({ submissionId: 'submission-2' }));
 
     await submitCmd.parseAsync(
       ['node', 'submit', '0xtask', '--file', 'logo.png', '--file', 'logo.svg'],
@@ -188,7 +194,7 @@ describe('task artifact commands', () => {
     expect(submitCall?.[0]).toBe('/api/tasks/0xtask/submissions/from-keys');
     const body = submitCall?.[1] as { artifacts: unknown[] };
     expect(body.artifacts).toHaveLength(2);
-    expect(printResult).toHaveBeenCalledWith({ submissionId: 'submission-2' });
+    expect(printResult).toHaveBeenCalledWith({ submissionId: 'submission-2' }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('signs a second, content-bound message for the final submission distinct from the unbound upload-request signature', async () => {
@@ -197,11 +203,11 @@ describe('task artifact commands', () => {
     // returns the same '0xsig' regardless of input, which would mask issue #323's
     // fix (the finalize call must sign a *different*, content-bound message).
     vi.mocked(signMessage).mockImplementation(async (message: string) => `0xsig-for:${message}`);
-    vi.mocked(apiPost).mockResolvedValueOnce({
+    vi.mocked(apiPost).mockResolvedValueOnce(writeOutcome({
       uploadUrl: 'http://localhost/upload',
       artifactKey: 'submissions/0xtask/pending/key-one.png',
-    });
-    vi.mocked(x402Post).mockResolvedValueOnce({ submissionId: 'submission-3' });
+    }));
+    vi.mocked(x402Post).mockResolvedValueOnce(writeOutcome({ submissionId: 'submission-3' }));
 
     await submitCmd.parseAsync(['node', 'submit', '0xtask', '--file', 'one.png'], {
       from: 'node',
@@ -232,7 +238,7 @@ describe('task artifact commands', () => {
   });
 
   it('passes artifact IDs to the authenticated download endpoint', async () => {
-    vi.mocked(apiPost).mockResolvedValue({ presignedUrl: 'https://example.com/logo.png' });
+    vi.mocked(apiPost).mockResolvedValue(writeOutcome({ presignedUrl: 'https://example.com/logo.png' }));
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({

@@ -143,6 +143,64 @@ const envSchema = z
     BACKEND_URL: z.string().url().default('http://localhost:3000'),
     WEB_APP_URL: z.string().url().default('http://localhost:3001'),
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(1),
+    // Implements: ADR-0051 -- replacement gas escalation policy. The defaults are Base's:
+    // CHAIN_ID defaults to 8453, where a 21,000-gas self-transfer is cheap even at 10x its
+    // original fee, so an aggressive posture costs almost nothing and a stalled shared nonce
+    // costs every paid write on the platform. An Ethereum mainnet deployment should lower
+    // REPLACEMENT_GAS_MAX_MULTIPLE and probably set REPLACEMENT_GAS_MAX_FEE_WEI.
+    //
+    // There is deliberately no cross-field boot check here. The cap scales the original
+    // transaction's fee while the opening bid scales the live oracle, so the two have no
+    // shared base and a boot-time comparison would pass on every sensible configuration while
+    // implying a guarantee it never made. That check is made per transaction instead, in
+    // lib/replacement-gas.ts.
+    //
+    // Opening bid as a percentage of the live oracle. 200 reproduces the previous flat 2x.
+    REPLACEMENT_GAS_FIRST_BUMP_PCT: z.coerce.number().int().min(110).default(200),
+    // Each attempt as a percentage of the previous attempt's fee. min(125) is load-bearing:
+    // providers reject a replacement that does not raise the fee by roughly 10%, and 25%
+    // clears that with room for bigint rounding and for a stricter provider.
+    REPLACEMENT_GAS_ESCALATION_PCT: z.coerce.number().int().min(125).default(150),
+    // Ceiling, as a multiple of the original transaction's fee.
+    REPLACEMENT_GAS_MAX_MULTIPLE: z.coerce.number().int().min(2).default(10),
+    // Optional absolute per-gas ceiling. Unset by default because a wei value means nothing
+    // without knowing the chain.
+    //
+    // Governs EVERY send, not only replacements (ADR-0076), despite the name -- on the
+    // replacement path it applies after `REPLACEMENT_GAS_MAX_MULTIPLE`, and on a first send after
+    // `GAS_MULTIPLIER`. The name is kept because renaming a configured environment variable
+    // breaks every deployment that sets it, which is a real cost paid for an accurate name.
+    //
+    // It is absolute rather than a multiple of the fee oracle deliberately: the failure it
+    // bounds is the oracle itself climbing, and a ceiling derived from a runaway signal runs
+    // away with it.
+    //
+    // Parsed as a decimal string into bigint, not through z.coerce.number(). ADR-0051's own
+    // table specified `int`, following the surrounding pattern, and that is wrong for this one
+    // field: a per-gas ceiling in wei is exactly the quantity that exceeds Number.MAX_SAFE_INTEGER
+    // (2^53-1, about 9.007e15 wei -- roughly 9,007 gwei). Above that, IEEE-754 silently rounds,
+    // so an operator setting a ceiling during a fee spike could get a different number than they
+    // typed with no error anywhere. Fine at Base's fee levels and wrong on a chain where it
+    // matters, which is precisely when someone reaches for this field.
+    //
+    // Rejecting anything that is not digits also rules out the forms Number would have accepted
+    // and quietly mangled -- exponent notation, hex, a decimal point, leading whitespace.
+    //
+    // Empty and whitespace-only are normalised to absent before any of that runs. `.optional()`
+    // only covers a variable that is not in the environment at all, but leaving a key blank in
+    // a `.env` file is the ordinary way an operator says "unset", and it arrives as `''` -- so
+    // without this the digits-only rule rejects it and the process exits at boot over a field
+    // nobody meant to configure. Only the empty case is forgiven: every non-empty value still
+    // has to be digits, which is what keeps the correction above load-bearing.
+    REPLACEMENT_GAS_MAX_FEE_WEI: z.preprocess(
+      (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+      z
+        .string()
+        .regex(/^\d+$/, 'REPLACEMENT_GAS_MAX_FEE_WEI must be a whole number of wei, digits only')
+        .transform((value) => BigInt(value))
+        .refine((value) => value > 0n, 'REPLACEMENT_GAS_MAX_FEE_WEI must be greater than zero')
+        .optional()
+    ),
     ERC8004_IDENTITY_REGISTRY: z.string().default('0x8004A169FB4a3325136EB29fA0ceB6D2e539a432'),
     ERC8004_REPUTATION_REGISTRY: z.string().default('0x8004BAa17C55a88189AE136b182e5fdA19dE9b63'),
     ERC8004_SEED_BLOCK: z.coerce.number().default(0),
@@ -166,6 +224,16 @@ const envSchema = z
       .regex(/^0x[a-fA-F0-9]{40}$/)
       .optional(),
     DREAMS_HOOK_SEED_BLOCK: z.coerce.number().default(0),
+    DREAMS_VAULT_ADDRESS: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/)
+      .optional(),
+    DREAMS_VAULT_SEED_BLOCK: z.coerce.number().default(0),
+    DREAMS_EPOCH_BUDGET_ADDRESS: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/)
+      .optional(),
+    DREAMS_EPOCH_BUDGET_SEED_BLOCK: z.coerce.number().default(0),
     LEGAL_ENFORCEMENT_ENABLED: strictBooleanFromEnv.default(false),
     PRIVY_APP_ID: z.string().optional(),
     PRIVY_APP_SECRET: z.string().optional(),

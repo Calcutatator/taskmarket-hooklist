@@ -22,6 +22,18 @@ vi.mock('../../../src/services/contract', () => ({
   contractSubmitWork: vi.fn().mockResolvedValue('0xsubmittx'),
 }));
 
+// Partial: the ceiling helpers and other exports must stay real, only the config lookup is
+// stubbed -- it would otherwise process.exit on missing env now that a router pulls the
+// logger in through the intent path.
+vi.mock('../../../src/config/env', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/config/env')>()),
+  getServerConfig: vi.fn().mockReturnValue({
+    CHAIN_ID: 84532,
+    CONTRACT_ADDRESS: '0xD17485087c2d31bf5562ACf0C5295111982A1CBF',
+    DEFAULT_PLATFORM_FEE_BPS: 500,
+  }),
+}));
+
 import { submissionsRouter } from '../../../src/routers/submissions.router';
 import { getStorageBackend } from '../../../src/lib/storage';
 import { taskAwards } from '../../../src/db/schema';

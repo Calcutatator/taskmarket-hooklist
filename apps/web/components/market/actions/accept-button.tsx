@@ -5,11 +5,13 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
+import { InFlightWriteNotice } from '@/components/market/in-flight-write-notice';
 import { Button } from '@/components/ui/button';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
 import { compactAddress, formatUsdcUnits } from '@/lib/format';
 import { useInvalidateActionQueue } from '@/lib/use-action-queue';
+import { useInFlightWrite } from '@/lib/use-in-flight-write';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
 
 import { ConfirmDialog } from './confirm-dialog';
@@ -40,6 +42,22 @@ export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionCo
   const [step, setStep] = useState<X402Step | 'done' | 'idle'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const inFlight = useInFlightWrite('Payout release submitted, confirming');
+
+  // Checked before every other branch, including the disconnected one: the write is already
+  // out there, so the state has to survive a wallet disconnect or a status change that would
+  // otherwise swap this surface for a control or a prompt.
+  if (inFlight.state) {
+    return (
+      <InFlightWriteNotice
+        failure={inFlight.failure}
+        idempotencyKey={inFlight.state.idempotencyKey}
+        stalled={inFlight.stalled}
+        subject="payout release"
+        title="Payout release submitted, confirming"
+      />
+    );
+  }
 
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect the requester wallet to release payout." />;
@@ -57,12 +75,19 @@ export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionCo
       return;
     }
     setError(null);
-    const result = await payX402Post<{ txHash?: string }>(
-      `/api/tasks/${task.id}/accept`,
-      { taskId: task.id, worker },
-      { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
-      setStep
+    const outcome = await inFlight.submit((idempotencyKey) =>
+      payX402Post<{ txHash?: string }>(
+        `/api/tasks/${task.id}/accept`,
+        { taskId: task.id, worker },
+        { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
+        setStep,
+        idempotencyKey
+      )
     );
+    // In flight is neither success nor failure, so it must not reach the error path below:
+    // that path leaves the button live, and pressing it again is a second payment.
+    if (outcome.handled) return;
+    const result = outcome.result;
     if (result.ok) {
       setStep('done');
       setTxHash(result.txHash ?? null);

@@ -146,6 +146,13 @@ CREATE INDEX IF NOT EXISTS "idx_submissions_worker" ON "submissions" USING btree
 CREATE INDEX IF NOT EXISTS "idx_tasks_status" ON "tasks" USING btree ("status");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_tasks_expiry" ON "tasks" USING btree ("expiry_time");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_tasks_requester" ON "tasks" USING btree ("requester");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "idx_tasks_worker" ON "tasks" USING btree ("worker");--> statement-breakpoint
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'tasks' AND column_name = 'worker'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS "idx_tasks_worker" ON "tasks" USING btree ("worker");
+  END IF;
+END $$;--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_tasks_mode" ON "tasks" USING btree ("mode");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_tasks_claimed_by" ON "tasks" USING btree ("claimed_by");

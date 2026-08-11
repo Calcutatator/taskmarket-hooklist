@@ -13,7 +13,13 @@ import { computeClockPrice } from '../lib/auction';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
 import { fetchPrivateViewabilityContext, resolveTaskViewability } from '../lib/task-visibility';
 import { TRPCError } from '@trpc/server';
-import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
+import { settledPaymentReference } from '../middleware/x402';
+import { runRelayedIntent } from '../services/relayed-intent-request';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
+import type {
+  BidsAuctionAcceptIntentPayload,
+  BidsSubmitIntentPayload,
+} from '../services/intents/bids-intents';
 import type { Context } from '../context';
 
 // ADR-0042 makes assigned evaluators/resolvers evidence viewers only. Private-auction
@@ -48,6 +54,7 @@ export const bidsRouter = router({
   submit: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/bids',
         tags: ['Tasks'],
@@ -146,51 +153,49 @@ export const bidsRouter = router({
         }
       }
 
-      try {
-        await contractSubmitBid(
-          input.taskId as `0x${string}`,
-          workerAddress as `0x${string}`,
-          BigInt(input.price),
-          task.contractAddress
-        );
-      } catch (error) {
-        // `return`: the DB upsert below must never run for a bid that was never
-        // placed on-chain -- an explicit return guarantees that regardless of
-        // handlePostPaymentFailure's runtime behavior.
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: workerAddress as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'bid_submit',
-          error,
-        });
-      }
+      // The bid id is generated here rather than in the completion so the response can name
+      // it without a second read, but the row that actually persists wins: a re-bid or the
+      // indexer's own write of the same BidSubmitted event may already hold this
+      // (task, worker) pair, and the unique constraint means there is only ever one row.
+      //
+      // Random is safe here only because this is a paid write. ADR-0061 compares the stored
+      // payload against the incoming one and refuses a mismatch, and a fresh id per attempt is
+      // a mismatch -- but a repeated key never reaches that comparison on a paid route, because
+      // the pre-settlement check in x402Middleware refuses it before the handler runs. Meter
+      // this route free the way RFC-0006 metered submissions and that shield is gone: derive
+      // the id from `ctx.idempotencyKey` (see `claims.claim`) in the same change, or every
+      // honest retry of a bid starts being refused as a different write.
+      const bidId = randomUUID();
 
-      // Upsert: if worker already has a bid on this task, replace it (English and Reverse
-      // English) -- the bids_task_worker_unique constraint enforces one bid per worker
-      // per task. A single atomic upsert instead of a separate select-then-branch: the
-      // indexer's processBidSubmittedEvent (services/indexer.ts) reconciles the same
-      // on-chain BidSubmitted event with its own select-then-insert, and can win the race
-      // against this handler's write -- a plain insert here would then hit the same
-      // unique constraint and throw. onConflictDoUpdate resolves that the same way a
-      // genuine re-bid already does (price/createdAt updated on the existing row), and
-      // .returning() picks up whichever row's id actually persisted rather than trusting
-      // a locally-generated one that may never have been written.
-      const [bidRow] = await ctx.db
-        .insert(bids)
-        .values({
-          id: randomUUID(),
+      await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'bids.submit',
+        payer: workerAddress,
+        payment: settledPaymentReference(ctx.res),
+        payload: {
+          bidId,
+          contractAddress: task.contractAddress,
+          price: input.price,
           taskId: input.taskId,
           workerAddress,
-          price: input.price,
-        })
-        .onConflictDoUpdate({
-          target: [bids.taskId, bids.workerAddress],
-          set: { price: input.price, createdAt: new Date() },
-        })
-        .returning({ id: bids.id });
+        } satisfies BidsSubmitIntentPayload,
+        send: () =>
+          contractSubmitBid(
+            input.taskId as `0x${string}`,
+            workerAddress as `0x${string}`,
+            BigInt(input.price),
+            task.contractAddress
+          ),
+      });
 
-      return { success: true, bidId: bidRow.id };
+      const [bidRow] = await ctx.db
+        .select({ id: bids.id })
+        .from(bids)
+        .where(and(eq(bids.taskId, input.taskId), eq(bids.workerAddress, workerAddress)))
+        .limit(1);
+
+      return { success: true, bidId: bidRow?.id ?? bidId };
     }),
 
   listByTask: optionalAuthProcedure
@@ -378,6 +383,7 @@ export const bidsRouter = router({
   auctionAccept: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/bids/accept',
         tags: ['Tasks'],
@@ -458,50 +464,35 @@ export const bidsRouter = router({
         }
       }
 
-      // Call contract first — if it reverts, DB is untouched and the task stays open
-      try {
-        await contractAcceptAuction(
-          input.taskId as `0x${string}`,
-          workerAddress as `0x${string}`,
-          clockPrice,
-          task.contractAddress
-        );
-      } catch (error) {
-        // `return`: the task-claim update and bid insert below must never run for an
-        // auction accept that was never placed on-chain.
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: workerAddress as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'auction_accept',
-          error,
-        });
-      }
-
-      // Conditional DB update: only succeeds if task is still 'open' (race guard)
-      const updated = await ctx.db
-        .update(tasks)
-        .set({
-          status: 'claimed',
-          claimedBy: workerAddress,
-          claimedAt: now,
-        })
-        .where(and(eq(tasks.id, input.taskId), eq(tasks.status, 'open')))
-        .returning();
-
-      if (!updated || updated.length === 0) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Auction already claimed by another worker',
-        });
-      }
-
-      // Record the bid in DB
-      await ctx.db.insert(bids).values({
-        id: randomUUID(),
-        taskId: input.taskId,
-        workerAddress,
-        price: clockPrice.toString(),
+      await runRelayedIntent({
+        db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
+        operation: 'bids.auctionAccept',
+        payer: workerAddress,
+        payment: settledPaymentReference(ctx.res),
+        // The clock price is recorded as quoted, and a rebroadcast replays it rather than
+        // re-reading the clock -- what the worker accepted is what lands (ADR-0050 point 7).
+        //
+        // All three of `acceptedAt`, `bidId` and `price` differ between two attempts, so this
+        // payload is the least reproducible of any relayed write. It is safe for the reason
+        // `bids.submit` above is safe and no other: paid, so a repeated key is refused by the
+        // pre-settlement check before ADR-0061's comparison can see it. This route cannot
+        // become free without reworking all three fields first.
+        payload: {
+          acceptedAt: now.toISOString(),
+          bidId: randomUUID(),
+          contractAddress: task.contractAddress,
+          price: clockPrice.toString(),
+          taskId: input.taskId,
+          workerAddress,
+        } satisfies BidsAuctionAcceptIntentPayload,
+        send: () =>
+          contractAcceptAuction(
+            input.taskId as `0x${string}`,
+            workerAddress as `0x${string}`,
+            clockPrice,
+            task.contractAddress
+          ),
       });
 
       return {

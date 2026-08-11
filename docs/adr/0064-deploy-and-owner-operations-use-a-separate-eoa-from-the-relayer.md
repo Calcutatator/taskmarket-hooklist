@@ -8,13 +8,13 @@
 > nonce-contended relayer cannot take the protocol or its DREAMS reserve, accepting a migration
 > whose middle section is irreversible and must be completed in one ordered pass.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-05
-- **Embodiment:** Not started
-- **Last audited:** `[unaudited]`
+- **Embodiment:** Inactive
+- **Last audited:** 2026-08-10
 - **Author:** Claude Code (drafted for review)
-- **Reviewers:** (pending — no reviewer recorded yet)
-- **Deciders:** (pending — required before Status may become Accepted)
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
 - **Amends / Amended-by:** —
@@ -132,6 +132,34 @@ execution, and no step of it has been executed.
 - The forwarder's `authorizedRelayer` is immutable; changing the relayer address at any future
   point requires a forwarder redeploy, independent of this decision.
 - A multisig owner remains the intended destination and is a separate decision.
+
+## Realization (2026-08-10)
+
+The migration has been executed on Base mainnet and Base Sepolia. Verified by reading the chain
+on 2026-08-10:
+
+| Role | Contract | Address | |
+| --- | --- | --- | --- |
+| `owner()` | Diamond | `0xA66cC4F36a1955B80DEC0f175F176ADbCa28b582` | migrated |
+| `pendingOwner()` | Diamond | `0x0000…0000` | transfer completed, not half-done |
+| `owner()` | RewardVault | `0xA66cC4F36a1955B80DEC0f175F176ADbCa28b582` | migrated |
+| `owner()` | EpochBudget | `0xA66cC4F36a1955B80DEC0f175F176ADbCa28b582` | migrated |
+| `owner()` | TaskTokenRewardHook | `0xA66cC4F36a1955B80DEC0f175F176ADbCa28b582` | migrated |
+| `backend()` | TaskTokenRewardHook | `0x3C0820e2dabD5FEAe1fd03B78079DEe15c7F83D8` | correctly unchanged |
+
+All four owner-side roles moved off the relayer. `hook.backend()` remained on the relayer, which
+is non-negotiable rule 6 of the runbook — moving it would break DREAMS withdrawals for every
+user. `renounceOwnership()` was never called on any contract. The Base Sepolia diamond reports
+the same owner.
+
+**On the `Embodiment` field.** This decision is realized operationally — as on-chain state and
+sent transactions — not as source code, so no spec, code, or test back-pointer of the kind
+`adr-audit` walks for can ever resolve against it. `Inactive` is recorded because the audit
+trusts that value once declared rather than computing it, which keeps a correctly-completed
+decision from being reported as permanent drift. It should not be read as "nothing was built":
+the table above is the realization, and this ADR is fully embodied. The vocabulary in
+`docs/adr/README.md` has no state for an operationally-realized decision, which is a gap worth
+closing separately.
 
 ## References
 

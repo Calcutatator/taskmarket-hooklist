@@ -3,6 +3,10 @@
  * window, assigns an evaluator, worker claims and submits, requester accepts
  * (→ review), waits for evaluation window to expire, then triggers evaluator timeout.
  *
+ * The evaluator here never signs anything (the whole point of this test is that it
+ * never acts), but EvaluatorFacet.assignEvaluator still rejects evaluator == requester
+ * (self-assignment guard), so a distinct EVALUATOR_PRIVATE_KEY address is required.
+ *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     EVALUATOR_PRIVATE_KEY=0x... WORKER_B_PRIVATE_KEY=0x... \
@@ -27,6 +31,17 @@ import {
 
 function contentHash(payload: string): string {
   return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
+
+const evaluatorKey = process.env.EVALUATOR_PRIVATE_KEY as `0x${string}` | undefined;
+if (!evaluatorKey) {
+  console.error(
+    'Missing EVALUATOR_PRIVATE_KEY.\n' +
+      'assignEvaluator now rejects evaluator == requester (self-assignment guard) -- set\n' +
+      'EVALUATOR_PRIVATE_KEY to a distinct account. Any freshly generated key works, same\n' +
+      'as WORKER_B_PRIVATE_KEY -- this test never signs with it.'
+  );
+  process.exit(1);
 }
 
 async function main() {

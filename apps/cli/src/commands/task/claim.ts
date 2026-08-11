@@ -13,10 +13,13 @@ export const claimCmd = new Command('claim')
     const message = buildClaimMessage(taskId);
     const signature = await signMessage(message, keystore);
 
-    const result = (await apiPost(`/api/tasks/${taskId}/claim`, {
-      workerAddress: keystore.walletAddress,
-      signature,
-    })) as { claimId: string };
+    const { data: result, idempotencyKey } = await apiPost<{ claimId: string }>(
+      `/api/tasks/${taskId}/claim`,
+      {
+        workerAddress: keystore.walletAddress,
+        signature,
+      }
+    );
 
-    printResult({ claimId: result.claimId });
+    printResult({ claimId: result.claimId }, { idempotencyKey });
   });

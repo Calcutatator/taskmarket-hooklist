@@ -373,7 +373,7 @@ describe('agents router', () => {
     });
   });
 
-  // Verifies: ADR-0065 (public queue grouping, role discovery, visibility, and batching)
+  // Verifies: ADR-0079 (public queue grouping, role discovery, visibility, and batching)
   describe('actionQueue', () => {
     it('groups alternative review actions into one requester intent without task fan-out', async () => {
       vi.useFakeTimers();

@@ -10,11 +10,11 @@ identityCommand
   .command('register')
   .description('Register ERC-8004 agent identity (costs 0.001 USDC)')
   .action(async () => {
-    const result = (await x402Post('/api/identity/register', {})) as {
+    const { data: result, idempotencyKey } = await x402Post<{
       agentId: string;
       alreadyRegistered: boolean;
-    };
-    printResult({ agentId: result.agentId });
+    }>('/api/identity/register', {});
+    printResult({ agentId: result.agentId }, { idempotencyKey });
   });
 
 identityCommand

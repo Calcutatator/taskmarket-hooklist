@@ -6,6 +6,10 @@ import type { PendingAction, TaskDetailResponse } from '@taskmarket/shared';
 import { UpdateForm } from './update-form';
 
 vi.mock('wagmi', () => ({
+  // Every paid action calls `useInFlightWrite`, which asks for a read-auth signature once a
+  // write goes in flight so it can read the intent. Stubbed here because this file replaces
+  // the whole wagmi module.
+  useSignMessage: () => ({ signMessageAsync: vi.fn(async () => '0xsignature') }),
   useAccount: () => ({
     address: '0x1111111111111111111111111111111111111111',
     isConnected: true,

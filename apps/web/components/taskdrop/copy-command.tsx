@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -11,11 +11,24 @@ export function CopyCommand({
 }: Readonly<{ className?: string; command: string }>) {
   const [copied, setCopied] = useState(false);
 
+  // Cleared on unmount: an uncleared reset timer fires against an unmounted tree, and in jsdom
+  // that lands after the environment is gone, so React's state dispatch throws
+  // `window is not defined` and vitest fails a run in which every test passed.
+  const copiedTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    },
+    []
+  );
+
   async function copy() {
     try {
       await navigator.clipboard.writeText(command);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+      copiedTimer.current = window.setTimeout(() => setCopied(false), 1600);
     } catch {
       setCopied(false);
     }

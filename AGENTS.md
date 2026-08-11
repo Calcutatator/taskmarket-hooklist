@@ -161,6 +161,23 @@ Smoke tests live in `apps/backend/src/scripts/smoke-*.ts` and run against a live
 
 **If you're a cloud agent (Claude Code cloud, Codex cloud), run `./scripts/cloud-env-setup.sh` yourself as your first action, before doing anything else -- do not assume a vendor's own setup mechanism already brought the stack up for you.** This is a deliberate, documented boundary in at least one vendor (Codex): its "Setup script" runs in a separate bash session from the one the agent actually works in, with no way for background processes (Postgres, Anvil, the backend, the facilitator) to survive across that boundary -- it is not a bug or something to work around, it exists because setup gets full network trust and the agent phase deliberately does not. The script is idempotent (safe to run again -- it detects what's genuinely still up versus what needs (re)starting), and it is exactly as fast the second time since the one-time work (toolchain, submodules) gets skipped; only the actually-ephemeral pieces (Anvil has no persisted chain state, so contracts always redeploy fresh) redo their work. If a `make` target still fails with `ECONNREFUSED 127.0.0.1:3000` (or similar) after that, re-run the script once more and retry before concluding anything is actually broken.
 
+### Targets with extra requirements
+
+Every smoke runs under plain `make smoke <name>` against the stack `scripts/cloud-env-setup.sh`
+provisions. Two have specifics worth knowing before reading their output:
+
+- **`make smoke rate-limit`** needs no special backend environment. It reads the effective
+  submission limits from `GET /api/health` and derives its work from them, rather than assuming
+  a `HARD_SUBMISSION_CEILING` override the backend was never started with. Zones the running
+  configuration puts out of reach are skipped by name, with the remedy, and listed again in the
+  summary -- a pass with a skip listed has checked less than a pass without one. The sandbox's
+  own `SUBMISSION_FREE_ALLOWANCE=1000` leaves the paid zone (Tier 1) unreachable; to check it,
+  start the backend with an allowance below its ceiling, e.g.
+  `SUBMISSION_FREE_ALLOWANCE=2 HARD_SUBMISSION_CEILING=5`.
+- **`make smoke refund-expired`** reads the Diamond's pooled USDC balance to prove a repeat
+  refund moved no money (ADR-0054), so `CONTRACT_ADDRESS` and `USDC_TOKEN_ADDRESS` must point at
+  the deployed stack. The generated `.env` sets both.
+
 ### When to write a smoke test
 
 Write or update a smoke test whenever you:
@@ -183,8 +200,35 @@ Cover every meaningful branch, not just the happy path:
 - `REQUESTER_PRIVATE_KEY` — task creator / requester
 - `WORKER_PRIVATE_KEY` — primary worker
 - `WORKER_B_PRIVATE_KEY` — second worker (required for ranked-payout, optional for competitive auction). Any freshly generated key works — the backend's `SERVER_PRIVATE_KEY` relays and pays gas for every on-chain call via the forwarder, so worker/requester keys only ever sign off-chain EIP-712 messages and never need ETH or USDC of their own.
-- `EVALUATOR_PRIVATE_KEY` — external evaluator (optional; requester can act as evaluator if not set)
+- `EVALUATOR_PRIVATE_KEY` — external evaluator, and the dispute resolver on the same address. Required by `make smoke evaluator`: `EvaluatorFacet.assignEvaluator` rejects an evaluator or dispute resolver equal to the requester (`EvaluatorCannotBeRequester` / `DisputeResolverCannotBeRequester`), so the requester cannot stand in for it. Nothing requires the dispute resolver to differ from the evaluator, only from the requester. **A freshly generated key is not sufficient on a network where the smoke pays for real:** `evaluate` is x402-gated and the evaluator is the payer, so the account needs a USDC balance of its own. It still needs no ETH — the forwarder pays gas.
 - `DEV_PRIVATE_KEY` — fallback if specific keys not set
+- `UPGRADE_OWNER_KEY` / `FORGE_DEV_PRIVATE_KEY` — the diamond owner's key. Needed only by smoke tests that mutate protocol configuration (see below). Unlike every other key here, this one sends transactions directly and must hold ETH for gas, because owner-only functions check `msg.sender` and have no forwarder path.
+
+### Verifying a diamond cut on a shared network
+
+After applying a revision to testnet or mainnet, verify it by **reading the chain**:
+
+```
+cast call $DIAMOND "diamondVersion()(uint256)" --rpc-url $RPC
+cast call $DIAMOND "facetAddress(bytes4)(address)" $SELECTOR --rpc-url $RPC
+```
+
+That answers whether the cut landed, costs nothing, and changes nothing.
+
+**Do not use `make smoke upgrade` for this.** It proves the upgrade *mechanism* by removing a live
+selector and adding it back, so mid-run the diamond is missing `getTask`. On a disposable Anvil
+that is free; on a shared network it is a real outage window. It has already stranded the selector
+on Base Sepolia once -- an RPC read lagged behind the REMOVE, the assertion threw, and the restore
+never ran. The restore is now in a `finally` and the reads retry, but the exposure is what the test
+does, not a defect in it. Run it against a chain you are willing to break.
+
+### Smoke tests that mutate protocol configuration
+
+`smoke-evaluator.ts`, `smoke-concurrent-tasks.ts` and `smoke-nonce.ts` spend most of their runtime waiting out a task's appeal window, and rev017 enforces a protocol-wide floor on that window (300s by default). Rather than have every run wait five minutes, each lowers the floor via `AdminFacet.setMinAppealWindowSecs` for the duration of the run and restores it in a `finally` — including when the run throws — asserting afterwards that the value actually went back.
+
+This means those three tests need `UPGRADE_OWNER_KEY` (or `FORGE_DEV_PRIVATE_KEY`) set to the diamond owner. `scripts/cloud-env-setup.sh` already exports it locally and in the sandbox, so this is only a consideration when pointing a smoke run at a chain you did not provision. Without the key the run **skips loudly and exits non-zero** rather than silently verifying nothing; set `SMOKE_APPEAL_WINDOW_SLOW=1` to run against the real floor instead, which tests strictly more but takes minutes per appeal window.
+
+On a disposable Anvil chain this is free. On a shared testnet, a run killed hard enough to skip its `finally` leaves the floor lowered until someone puts it back — the restore failure message says so explicitly.
 
 ### Verifying contract facts before writing
 
@@ -204,10 +248,40 @@ Before writing assertions about contract behavior, read the relevant facet sourc
 After any change to contract source files (`packages/contracts/src/`), always regenerate the gas snapshot before committing:
 
 ```
-cd packages/contracts && forge snapshot
+make contract snapshot
 ```
 
-CI runs `forge snapshot --check` and fails if the snapshot is stale. This is a frequent source of CI failures — do not skip it.
+CI runs `make contract snapshot-check` and fails if the snapshot is stale. This is a frequent source of CI failures — do not skip it.
+
+**Use the make target, not a bare `forge snapshot`.** The contract suite cannot run in parallel: the
+`RevNNN` upgrade step scripts read their target diamond from `FORGE_DIAMOND_ADDRESS_*`, and
+`vm.setEnv` writes one process-wide environment shared by every concurrently-executing suite, so
+parallel suites retarget each other mid-sequence. The make targets pass `-j 1` for this reason.
+
+The consequence for snapshots specifically is worse than a flaky test run. A bare parallel
+`forge snapshot` has been observed to report spurious failures **and write a snapshot derived from
+that partly-failed run** — so the corrupted file gets committed and the real gas numbers are lost
+with no error anywhere. The same applies to `forge test`: use `make contract test`.
+
+Note that `foundry.toml`'s `threads` key and the `FOUNDRY_THREADS` environment variable are both
+ignored by the test runner; only the CLI flag takes effect. That is why the serialisation lives in
+the make targets rather than in configuration.
+
+## `packages/contracts` Is Publicly Mirrored: Never Reference ADRs There
+
+`packages/contracts/` is mirrored to a public `taskmarket-contracts` repository. `docs/adr/` is
+not mirrored and stays internal. So **nothing inside `packages/contracts/` may cite an ADR by
+number** — not Solidity comments, not NatSpec, not test comments, not the revision docs under
+`packages/contracts/docs/`. An `ADR-NNNN` citation there is a dangling reference for every reader
+of the mirror, pointing at a document they cannot open.
+
+Use this codebase's revision numbering instead — `rev007`, `rev011`, `rev020` — which is
+meaningful on both sides of the mirror. Where a contract change needs recorded rationale, write it
+into the matching `packages/contracts/docs/specs/erc8195/revNNN-*.md`, stating the reasoning
+directly rather than deferring to an ADR by number. ADR cross-references stay inside `docs/adr/`.
+
+The reverse direction is fine and encouraged: an ADR may name contract files, revisions, and
+selectors freely, since ADR readers can see the whole repository.
 
 ## Database Migrations
 
@@ -248,17 +322,47 @@ Write every migration statement so that re-running it against a database where i
 - `ALTER TABLE "x" ADD COLUMN "y" ...` → `ALTER TABLE "x" ADD COLUMN IF NOT EXISTS "y" ...`
 - `CREATE INDEX "x"` / `CREATE UNIQUE INDEX "x"` → add `IF NOT EXISTS`
 - `DROP TABLE|INDEX|COLUMN "x"` → add `IF EXISTS`
-- `ALTER TABLE "x" ADD CONSTRAINT "y" ...` has no portable `IF NOT EXISTS` form in this Postgres version — wrap it instead:
+- `ALTER TABLE "x" ADD CONSTRAINT "y" ...` has no portable `IF NOT EXISTS` form in this Postgres version — wrap it instead, catching **both** exceptions:
   ```sql
   DO $$ BEGIN
     ALTER TABLE "bids" ADD CONSTRAINT "bids_task_worker_unique" UNIQUE ("task_id", "worker_address");
-  EXCEPTION WHEN duplicate_object THEN NULL;
+  EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
   END $$;
   ```
+  `duplicate_object` alone is not enough, and this exact statement is why: a `UNIQUE` or `PRIMARY KEY` constraint also creates an index behind it, so a repeat raises `duplicate_table` for the index name rather than `duplicate_object` for the constraint. Migration `0009` followed the `duplicate_object`-only form this section used to show, and still failed on re-apply.
+- `ALTER TABLE "x" RENAME COLUMN "a" TO "b"` has no guarded form at all. Run it only while the old name is still there:
+  ```sql
+  DO $$ BEGIN
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'tasks' AND column_name = 'proposal_deadline'
+    ) THEN
+      ALTER TABLE "tasks" RENAME COLUMN "proposal_deadline" TO "pitch_deadline";
+    END IF;
+  END $$;
+  ```
+- **A statement that reads a column some later migration drops** is the case no guard on the statement itself can fix, and the easiest to miss — it reviews well, applies cleanly, and only fails much later when something re-runs it. A backfill like `UPDATE tasks SET claimed_by = worker` keeps working until a later migration drops `worker`. Guard on the column, and keep the statement unparsed until then:
+  ```sql
+  DO $$ BEGIN
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'tasks' AND column_name = 'worker'
+    ) THEN
+      EXECUTE 'UPDATE "tasks" SET "claimed_by" = "worker" WHERE "claimed_by" IS NULL';
+    END IF;
+  END $$;
+  ```
+  `EXECUTE` is load-bearing: plpgsql parses a static statement when it reaches it, so a plain `UPDATE` naming a dropped column still throws even inside the `IF`.
 
 `pnpm db:generate` (`drizzle-kit generate`) never adds any of these guards itself — add them by hand after generating, before committing.
 
-This matters because the migrator's gating logic (above) only ever compares a migration's `"when"` against the database's last-applied timestamp — an already-applied migration is skipped purely because its `"when"` is old, not because the migrator remembers having run that specific file. If a `"when"` value for an already-applied migration is ever mistakenly retimed forward (the exact class of mistake the `task_drop_id` incident was, one step removed), a non-idempotent statement re-running will throw (`relation`/`column`/`constraint already exists`) and crash-loop the backend on every subsequent boot, since `server.ts` calls `process.exit(1)` on migration failure. Idempotency guards turn that failure mode into a no-op instead of an outage. `migrations-journal.test.ts` (above) also fails CI if any migration file introduces an unguarded statement, so this is enforced automatically, not just documented here.
+This matters because the migrator's gating logic (above) only ever compares a migration's `"when"` against the database's last-applied timestamp — an already-applied migration is skipped purely because its `"when"` is old, not because the migrator remembers having run that specific file. If a `"when"` value for an already-applied migration is ever mistakenly retimed forward (the exact class of mistake the `task_drop_id` incident was, one step removed), a non-idempotent statement re-running will throw (`relation`/`column`/`constraint already exists`) and crash-loop the backend on every subsequent boot, since `server.ts` calls `process.exit(1)` on migration failure. Idempotency guards turn that failure mode into a no-op instead of an outage.
+
+`apps/backend/test/integration/migration-idempotency.test.ts` enforces this: it applies every migration to a throwaway database, then re-applies every one of them against the final schema. Note the second half — a migration is re-run against *today's* schema, not the schema of its own moment, which is what a retimed `"when"` would actually do to it.
+
+It needs `DATABASE_URL` and skips silently without one, so a local run that does not set it proves nothing. CI provides one.
+
+`migrations-journal.test.ts` (above) covers only what can be checked without a database — sequential `idx`, strictly increasing `"when"`, `.sql`-file/journal-entry parity. It does **not** check idempotency, and this section previously claimed it did. Seven migrations were non-idempotent by the time anyone ran the check.
 
 ## Changesets
 

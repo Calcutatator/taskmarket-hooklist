@@ -10,20 +10,20 @@ Split acceptance is intended for bounty and benchmark tasks. It lets the request
 
 ## Rules
 
-- Each winner is passed as `<worker>:<share>` or `<worker>:<share>:<submissionId>`.
-- Shares are basis points and must sum to `10000`.
-- Multiple winners are allowed.
-- Worker addresses must be distinct. The contract rejects duplicate award recipients.
-- Each accepted entry emits a payout event.
-- When `submissionId` is omitted, the contract auto-resolves the worker's latest onchain
+* Each winner is passed as `<worker>:<share>` or `<worker>:<share>:<submissionId>`.
+* Shares are basis points and must sum to `10000`.
+* Multiple winners are allowed.
+* Worker addresses must be distinct. The contract rejects duplicate award recipients.
+* Each accepted entry emits a payout event.
+* When `submissionId` is omitted, the contract auto-resolves the worker's latest onchain
   submission hash (the most recent `submitWork` call for that worker on that task).
-- When `submissionId` is provided, the backend looks up the deliverable hash in the database,
+* When `submissionId` is provided, the backend looks up the deliverable hash in the database,
   then passes it to the contract which verifies the hash was committed onchain before paying out.
   Use this to pin a specific version when a worker has submitted more than once.
-- `workers[0]` becomes the primary award (`rank: 1`, `isPrimary: true` in `awards`; also surfaced
+* `workers[0]` becomes the primary award (`rank: 1`, `isPrimary: true` in `awards`; also surfaced
   as the top-level `primaryAward` field), and the resolved deliverable becomes the task
   deliverable.
-- Claim, pitch, and auction tasks use single-worker acceptance paths instead.
+* Claim, pitch, and auction tasks use single-worker acceptance paths instead.
 
 ## Distinct Winners
 

@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createMockCtx, makeChain } from '../helpers';
+import { createIntentCtx, createMockCtx, makeChain } from '../helpers';
 
 vi.mock('../../../src/lib/storage', () => ({
   getStorageBackend: vi.fn().mockReturnValue({
@@ -24,12 +24,34 @@ vi.mock('../../../src/services/contract', () => ({
   contractSubmitWork: vi.fn().mockResolvedValue('0xsubmittx'),
 }));
 
+// Partial: the ceiling helpers and other exports must stay real, only the config lookup is
+// stubbed -- it would otherwise process.exit on missing env now that a router pulls the
+// logger in through the intent path.
+vi.mock('../../../src/config/env', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/config/env')>()),
+  getServerConfig: vi.fn().mockReturnValue({
+    CHAIN_ID: 84532,
+    CONTRACT_ADDRESS: '0xD17485087c2d31bf5562ACf0C5295111982A1CBF',
+    DEFAULT_PLATFORM_FEE_BPS: 500,
+  }),
+}));
+
 import { submissionsRouter } from '../../../src/routers/submissions.router';
 import { recoverMessageAddress } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { buildSubmitMessage } from '@taskmarket/shared';
+import {
+  ArtifactCreateSchema,
+  ArtifactKeyInputSchema,
+  buildSubmitMessage,
+} from '@taskmarket/shared';
+import { envelopeForError } from '../../../src/lib/api-error';
 import { getStorageBackend } from '../../../src/lib/storage';
 import { contractSubmitWork } from '../../../src/services/contract';
+import {
+  artifacts as artifactsTable,
+  submissions as submissionsTable,
+  tasks as tasksTable,
+} from '../../../src/db/schema';
 
 const WORKER = '0xWorker0000000000000000000000000000000001';
 const REQUESTER = '0xRequester00000000000000000000000000000001';
@@ -88,9 +110,159 @@ describe('submissions router', () => {
     vi.clearAllMocks();
   });
 
+  describe('submit - durable intent (ADR-0045)', () => {
+    // Verifies: ADR-0045
+    it('records a free intent before the chain call and completes it after', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = createIntentCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
+
+      const result = await submissionsRouter.createCaller(ctx).submit(baseSubmitInput);
+
+      expect(ctx.intents).toHaveLength(1);
+      const intent = ctx.intents[0]!;
+      expect(intent.operation).toBe('submissions.submit');
+      // No payment reference: nothing about this write is refundable, and settlement must
+      // never think otherwise.
+      expect(intent.paymentTxHash).toBeNull();
+      expect(intent.paymentAmount).toBeNull();
+      // The payload carries everything the completion needs, so a reconciler pass finishing
+      // this hours later writes the same submission the request would have.
+      const payload = intent.payload as {
+        artifacts: unknown[];
+        deliverableHash: string;
+        submissionId: string;
+      };
+      expect(payload.submissionId).toBe(result.submissionId);
+      expect(payload.artifacts).toHaveLength(1);
+      expect(payload.deliverableHash).toMatch(/^0x[a-fA-F0-9]{64}$/);
+      expect(intent.status).toBe('completed');
+      expect(intent.txHash).toBe('0xsubmittx');
+    });
+
+    // Verifies: ADR-0045
+    it('writes no submission row when the chain call never lands', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      vi.mocked(contractSubmitWork).mockRejectedValueOnce(new Error('TaskNotOpen'));
+      const ctx = createIntentCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
+
+      await expect(submissionsRouter.createCaller(ctx).submit(baseSubmitInput)).rejects.toThrow(
+        'TaskNotOpen'
+      );
+
+      // The intent stays non-terminal -- only the chain writes a terminal state -- and no
+      // submission exists for work the chain never accepted.
+      expect(ctx.intents[0]!.status).toBe('recorded');
+      expect(ctx.insertChain(submissionsTable).values).not.toHaveBeenCalled();
+    });
+
+    // Verifies: ADR-0045
+    it('reports the ceiling in the error when recording the submission fails', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = createIntentCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
+      ctx.insertChain(submissionsTable).values.mockImplementationOnce(() => {
+        throw new Error('hard submission ceiling reached');
+      });
+
+      // The work is on chain, so this is not a failure to be refunded or retried by the
+      // caller. The message has to say which of those it is, and name the ceiling, or a
+      // worker at their limit is told only that something went wrong.
+      await expect(submissionsRouter.createCaller(ctx).submit(baseSubmitInput)).rejects.toThrow(
+        /committed on chain.*submission limit/s
+      );
+      // Left at `broadcast`, not `completed` and not `failed`: the transaction is on chain,
+      // so the intent stays claimable and a later pass retries the recording.
+      expect(ctx.intents[0]!.status).toBe('broadcast');
+    });
+  });
+
+  /**
+   * An artifact id is seeded from the artifact's `displayOrder`, so two artifacts sharing one
+   * would be minted the same id -- and the payload carries the rows, so a rebroadcast would
+   * replay the collision rather than notice it. The reason that cannot happen is that
+   * `displayOrder` is never an input: both submit paths assign it from the position of the
+   * artifact in the request array, and neither `ArtifactCreateSchema` nor `ArtifactKeyInputSchema`
+   * has the field for a caller to set. Positions in one array are distinct by construction.
+   *
+   * The other half of the property is stability. ADR-0060 requires a payload to replay to the
+   * same call, and these ids are inside it: minting fresh ones per attempt would make an honest
+   * retry look like a different write and record a second set of artifact rows. Both halves are
+   * pinned here because they are pinned by the same choice -- deriving the id from the request's
+   * own key and a positional index rather than from anything random or supplied.
+   */
+  describe('artifact ids', () => {
+    const threeArtifacts = {
+      ...baseSubmitInput,
+      artifacts: [
+        { ...baseSubmitInput.artifacts[0]!, fileName: 'a.txt' },
+        { ...baseSubmitInput.artifacts[0]!, fileName: 'b.txt' },
+        { ...baseSubmitInput.artifacts[0]!, fileName: 'c.txt' },
+      ],
+    };
+
+    type ArtifactRow = { id: string; displayOrder: number; fileName: string };
+
+    async function submittedArtifacts(
+      idempotencyKey?: `${string}-${string}-${string}-${string}-${string}`
+    ): Promise<ArtifactRow[]> {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = createIntentCtx();
+      if (idempotencyKey) ctx.idempotencyKey = idempotencyKey;
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
+
+      await submissionsRouter.createCaller(ctx).submit(threeArtifacts);
+
+      return (ctx.intents[0]!.payload as { artifacts: ArtifactRow[] }).artifacts;
+    }
+
+    // Verifies: ADR-0060
+    it('cannot collide, because displayOrder is the array position and not an input', async () => {
+      const artifacts = await submittedArtifacts();
+
+      expect(artifacts.map((artifact) => artifact.displayOrder)).toEqual([0, 1, 2]);
+      expect(new Set(artifacts.map((artifact) => artifact.id)).size).toBe(3);
+    });
+
+    // Verifies: ADR-0060
+    it('is fixed by the request, so a caller cannot force two artifacts to share one', () => {
+      // Parsed rather than asserted about the type: the schema strips what it does not declare,
+      // so a caller sending `displayOrder` gets it dropped before the router ever sees it. This
+      // is what stops a client from reintroducing the collision the router's own indexing rules
+      // out.
+      const parsed = ArtifactCreateSchema.parse({
+        ...baseSubmitInput.artifacts[0]!,
+        displayOrder: 7,
+      });
+      expect(parsed).not.toHaveProperty('displayOrder');
+
+      const parsedFromKey = ArtifactKeyInputSchema.parse({
+        artifactKey: 'submissions/x/pending/a.txt',
+        fileName: 'a.txt',
+        mimeType: 'text/plain',
+        role: 'attachment' as const,
+        sizeBytes: 1,
+        sha256Hash: 'a'.repeat(64),
+        keccak256Hash: `0x${'b'.repeat(64)}`,
+        displayOrder: 7,
+      });
+      expect(parsedFromKey).not.toHaveProperty('displayOrder');
+    });
+
+    // Verifies: ADR-0060
+    it('is the same for the same request, so a replay records no second set of rows', async () => {
+      const key = '00000000-0000-0000-0000-0000000000aa' as const;
+      const first = await submittedArtifacts(key);
+      const second = await submittedArtifacts(key);
+
+      expect(second.map((artifact) => artifact.id)).toEqual(first.map((artifact) => artifact.id));
+    });
+  });
+
   describe('submit', () => {
     it('throws when task is not found', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([]));
       const caller = submissionsRouter.createCaller(ctx);
       await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Task not found');
@@ -98,18 +270,18 @@ describe('submissions router', () => {
 
     it('submits to open bounty task and keeps it open', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
-      const submissionInsert = makeChain();
-      const artifactInsert = makeChain();
-      ctx.db.insert.mockReturnValueOnce(submissionInsert).mockReturnValueOnce(artifactInsert);
+      const submissionInsert = ctx.insertChain(submissionsTable);
+      const artifactInsert = ctx.insertChain(artifactsTable);
 
       const caller = submissionsRouter.createCaller(ctx);
       const result = await caller.submit(baseSubmitInput);
 
       expect(result.success).toBe(true);
       expect(typeof result.submissionId).toBe('string');
-      expect(ctx.db.insert).toHaveBeenCalledTimes(2);
+      expect(ctx.insertChain(submissionsTable).values).toHaveBeenCalledOnce();
+      expect(ctx.insertChain(artifactsTable).values).toHaveBeenCalledOnce();
       expect(submissionInsert.values).toHaveBeenCalledWith(
         expect.objectContaining({
           fileUrl: 'file://test/submissions/task1/file',
@@ -133,7 +305,7 @@ describe('submissions router', () => {
       ]);
       // Bounty is an open contest: the task stays `open` and keeps accepting
       // submissions, so submitting must NOT flip the task status.
-      expect(ctx.db.update).not.toHaveBeenCalled();
+      expect(ctx.updateChain(tasksTable).set).not.toHaveBeenCalled();
     });
 
     it('submits multiple artifacts and anchors one manifest hash on chain', async () => {
@@ -142,11 +314,10 @@ describe('submissions router', () => {
       vi.mocked(storage.upload)
         .mockResolvedValueOnce('file://test/submissions/task1/logo.png')
         .mockResolvedValueOnce('file://test/submissions/task1/source.svg');
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
-      const submissionInsert = makeChain();
-      const artifactInsert = makeChain();
-      ctx.db.insert.mockReturnValueOnce(submissionInsert).mockReturnValueOnce(artifactInsert);
+      const submissionInsert = ctx.insertChain(submissionsTable);
+      const artifactInsert = ctx.insertChain(artifactsTable);
 
       const caller = submissionsRouter.createCaller(ctx);
       const result = await caller.submit({
@@ -204,7 +375,7 @@ describe('submissions router', () => {
 
     it('persists submission rows inside one transaction without flipping task status', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
       const tx: any = {
         select: vi.fn().mockReturnValue(makeChain([])),
@@ -223,13 +394,15 @@ describe('submissions router', () => {
       expect(tx.insert).toHaveBeenCalledTimes(2);
       // Bounty stays `open` as an open contest, so submitting flips no status.
       expect(tx.update).not.toHaveBeenCalled();
-      expect(ctx.db.insert).not.toHaveBeenCalled();
-      expect(ctx.db.update).not.toHaveBeenCalled();
+      // Verifies: ADR-0045 -- the submission and artifact rows are written by the completion
+      // handler, inside its own transaction, and never outside one.
+      expect(ctx.insertChain(submissionsTable).values).not.toHaveBeenCalled();
+      expect(ctx.updateChain(tasksTable).set).not.toHaveBeenCalled();
     });
 
     it('submits to open benchmark task and keeps it open', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ mode: 'benchmark', status: 'open' })])
       );
@@ -239,12 +412,12 @@ describe('submissions router', () => {
 
       expect(result.success).toBe(true);
       // Benchmark is an open contest like bounty: submitting must NOT flip status.
-      expect(ctx.db.update).not.toHaveBeenCalled();
+      expect(ctx.updateChain(tasksTable).set).not.toHaveBeenCalled();
     });
 
     it('accepts an additional submission to an open bounty without changing status', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
 
       const caller = submissionsRouter.createCaller(ctx);
@@ -252,14 +425,15 @@ describe('submissions router', () => {
 
       expect(result.success).toBe(true);
       expect(typeof result.submissionId).toBe('string');
-      expect(ctx.db.insert).toHaveBeenCalledTimes(2);
+      expect(ctx.insertChain(submissionsTable).values).toHaveBeenCalledOnce();
+      expect(ctx.insertChain(artifactsTable).values).toHaveBeenCalledOnce();
       // Open contest stays open across submissions, so no task status update.
-      expect(ctx.db.update).not.toHaveBeenCalled();
+      expect(ctx.updateChain(tasksTable).set).not.toHaveBeenCalled();
     });
 
     it('submits to claimed claim task by correct worker', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: WORKER })])
       );
@@ -269,11 +443,11 @@ describe('submissions router', () => {
 
       expect(result.success).toBe(true);
       // claim task flips to pending_approval after submission so requester can accept
-      expect(ctx.db.update).toHaveBeenCalledOnce();
+      expect(ctx.updateChain(tasksTable).set).toHaveBeenCalledWith({ status: 'pending_approval' });
     });
 
     it('throws when claim task is not claimed', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'claim', status: 'open' })]));
 
       const caller = submissionsRouter.createCaller(ctx);
@@ -285,7 +459,7 @@ describe('submissions router', () => {
       // oracle fix) -- a valid signature over WORKER must still be rejected when
       // WORKER isn't the task's assigned worker, same as before the reorder.
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: '0xOtherWorker' })])
       );
@@ -296,7 +470,7 @@ describe('submissions router', () => {
 
     it('submits to pitch task by selected worker', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ mode: 'pitch', status: 'worker_selected', claimedBy: WORKER })])
       );
@@ -306,7 +480,7 @@ describe('submissions router', () => {
 
       expect(result.success).toBe(true);
       // pitch task flips to pending_approval after submission so requester can accept
-      expect(ctx.db.update).toHaveBeenCalledOnce();
+      expect(ctx.updateChain(tasksTable).set).toHaveBeenCalledWith({ status: 'pending_approval' });
     });
 
     it('throws when pitch task worker is different (valid signature, still rejected)', async () => {
@@ -314,7 +488,7 @@ describe('submissions router', () => {
       // before the claimedBy comparison now, but a valid signature over a
       // non-selected worker is still rejected.
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           makeTask({ mode: 'pitch', status: 'worker_selected', claimedBy: '0xOtherWorker' }),
@@ -328,7 +502,7 @@ describe('submissions router', () => {
     });
 
     it('throws when pitch task worker is not yet selected', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'pitch', status: 'open' })]));
 
       const caller = submissionsRouter.createCaller(ctx);
@@ -337,7 +511,7 @@ describe('submissions router', () => {
 
     it('throws BAD_REQUEST when signature is invalid', async () => {
       vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
 
       const caller = submissionsRouter.createCaller(ctx);
@@ -348,7 +522,7 @@ describe('submissions router', () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
         '0x0000000000000000000000000000000000000001' as `0x${string}`
       );
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
 
       const caller = submissionsRouter.createCaller(ctx);
@@ -370,7 +544,7 @@ describe('submissions router', () => {
 
       it('rejects an unsigned candidate address with a signature error, not a claimedBy-mismatch error (claim mode)', async () => {
         vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(
           makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: OTHER_WORKER })])
         );
@@ -381,7 +555,7 @@ describe('submissions router', () => {
 
       it('rejects an unsigned candidate address with a signature error, not a claimedBy-mismatch error (pitch mode)', async () => {
         vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(
           makeChain([
             makeTask({ mode: 'pitch', status: 'worker_selected', claimedBy: OTHER_WORKER }),
@@ -394,7 +568,7 @@ describe('submissions router', () => {
 
       it('rejects an unsigned candidate address with a signature error, not a claimedBy-mismatch error (auction mode)', async () => {
         vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(
           makeChain([makeTask({ mode: 'auction', status: 'claimed', claimedBy: OTHER_WORKER })])
         );
@@ -405,7 +579,7 @@ describe('submissions router', () => {
 
       it('submits successfully for the winning bidder on an auction task once selected', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(
           makeChain([makeTask({ mode: 'auction', status: 'claimed', claimedBy: WORKER })])
         );
@@ -415,12 +589,14 @@ describe('submissions router', () => {
 
         expect(result.success).toBe(true);
         // auction task flips to pending_approval after submission so requester can accept
-        expect(ctx.db.update).toHaveBeenCalledOnce();
+        expect(ctx.updateChain(tasksTable).set).toHaveBeenCalledWith({
+          status: 'pending_approval',
+        });
       });
 
       it('rejects a valid-signature caller who is not the winning bidder on an auction task', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(
           makeChain([makeTask({ mode: 'auction', status: 'claimed', claimedBy: OTHER_WORKER })])
         );
@@ -438,7 +614,7 @@ describe('submissions router', () => {
 
       it('rejects an outsider submitting to a private bounty task', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(OUTSIDER as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select
           .mockReturnValueOnce(
             makeChain([makeTask({ mode: 'bounty', status: 'open', taskVisibility: 'private' })])
@@ -456,7 +632,7 @@ describe('submissions router', () => {
         // A valid password-derived taskAccessGrant proves view access, not
         // submission standing -- must not be accepted as a substitute here.
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(OUTSIDER as `0x${string}`);
-        const ctx = createMockCtx(undefined, undefined, { taskId: TASK_ID });
+        const ctx = createIntentCtx(undefined, undefined, { taskId: TASK_ID });
         ctx.db.select
           .mockReturnValueOnce(
             makeChain([makeTask({ mode: 'benchmark', status: 'open', taskVisibility: 'private' })])
@@ -472,7 +648,7 @@ describe('submissions router', () => {
 
       it('allows the pre-assigned claimedBy worker to submit to a private bounty task', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(
           makeChain([
             makeTask({
@@ -492,7 +668,7 @@ describe('submissions router', () => {
 
       it('allows an allowlisted viewer to submit to a private benchmark task', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(ALLOWED_VIEWER as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select
           .mockReturnValueOnce(
             makeChain([makeTask({ mode: 'benchmark', status: 'open', taskVisibility: 'private' })])
@@ -514,7 +690,7 @@ describe('submissions router', () => {
   describe('requestUploadUrl', () => {
     it('records which worker the issued artifactKey belongs to', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([{ status: 'open', mode: 'bounty', expiryTime: null }])
       );
@@ -562,7 +738,7 @@ describe('submissions router', () => {
 
       it('rejects an outsider submitting to a private bounty task', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(OUTSIDER as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select
           .mockReturnValueOnce(
             makeChain([makeTask({ mode: 'bounty', status: 'open', taskVisibility: 'private' })])
@@ -580,7 +756,7 @@ describe('submissions router', () => {
         // A valid password-derived taskAccessGrant proves view access, not
         // submission standing -- must not be accepted as a substitute here.
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(OUTSIDER as `0x${string}`);
-        const ctx = createMockCtx(undefined, undefined, { taskId: TASK_ID });
+        const ctx = createIntentCtx(undefined, undefined, { taskId: TASK_ID });
         ctx.db.select
           .mockReturnValueOnce(
             makeChain([makeTask({ mode: 'benchmark', status: 'open', taskVisibility: 'private' })])
@@ -596,7 +772,7 @@ describe('submissions router', () => {
 
       it('allows the pre-assigned claimedBy worker to submit to a private bounty task', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select
           .mockReturnValueOnce(
             makeChain([
@@ -618,7 +794,7 @@ describe('submissions router', () => {
 
       it('allows an allowlisted viewer to submit to a private benchmark task', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(ALLOWED_VIEWER as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select
           .mockReturnValueOnce(
             makeChain([makeTask({ mode: 'benchmark', status: 'open', taskVisibility: 'private' })])
@@ -647,7 +823,7 @@ describe('submissions router', () => {
 
       it('rejects an unsigned candidate address with a signature error, not a claimedBy-mismatch error (claim mode)', async () => {
         vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(
           makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: OTHER_WORKER })])
         );
@@ -658,7 +834,7 @@ describe('submissions router', () => {
 
       it('rejects an unsigned candidate address with a signature error, not a claimedBy-mismatch error (pitch mode)', async () => {
         vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(
           makeChain([
             makeTask({ mode: 'pitch', status: 'worker_selected', claimedBy: OTHER_WORKER }),
@@ -671,7 +847,7 @@ describe('submissions router', () => {
 
       it('rejects an unsigned candidate address with a signature error, not a claimedBy-mismatch error (auction mode)', async () => {
         vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(
           makeChain([makeTask({ mode: 'auction', status: 'claimed', claimedBy: OTHER_WORKER })])
         );
@@ -682,7 +858,7 @@ describe('submissions router', () => {
 
       it('submits successfully for the pre-assigned worker on a claim task', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select
           .mockReturnValueOnce(
             makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: WORKER })])
@@ -697,7 +873,7 @@ describe('submissions router', () => {
 
       it('rejects a valid-signature caller who is not the assigned worker on a claim task', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(
           makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: OTHER_WORKER })])
         );
@@ -714,7 +890,7 @@ describe('submissions router', () => {
 
       it('rejects an artifact key that was never issued via requestUploadUrl', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select
           .mockReturnValueOnce(
             makeChain([makeTask({ mode: 'bounty', status: 'open', claimedBy: null })])
@@ -731,7 +907,7 @@ describe('submissions router', () => {
         // Worker A's own key, presented by worker B -- the task-id prefix matches
         // (both requested a key for the same task), but the key was never theirs.
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(OTHER_WORKER as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select
           .mockReturnValueOnce(
             makeChain([makeTask({ mode: 'bounty', status: 'open', claimedBy: null })])
@@ -746,7 +922,7 @@ describe('submissions router', () => {
 
       it('allows the key when it was issued to the presenting worker', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select
           .mockReturnValueOnce(
             makeChain([makeTask({ mode: 'bounty', status: 'open', claimedBy: null })])
@@ -801,7 +977,7 @@ describe('submissions router', () => {
           message: buildSubmitMessage(TASK_ID),
         });
 
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(
           makeChain([makeTask({ mode: 'bounty', status: 'open' })])
         );
@@ -831,7 +1007,7 @@ describe('submissions router', () => {
           message: buildSubmitMessage(TASK_ID, [contentHash]),
         });
 
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(
           makeChain([makeTask({ mode: 'bounty', status: 'open' })])
         );
@@ -863,7 +1039,7 @@ describe('submissions router', () => {
           message: buildSubmitMessage(TASK_ID),
         });
 
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select.mockReturnValueOnce(
           makeChain([makeTask({ mode: 'bounty', status: 'open' })])
         );
@@ -887,7 +1063,7 @@ describe('submissions router', () => {
           message: buildSubmitMessage(TASK_ID, [artifactKey]),
         });
 
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select
           .mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]))
           // pendingUploadKeys: the key must be recorded as issued to this worker,
@@ -943,7 +1119,7 @@ describe('submissions router', () => {
 
     it('returns the selected artifact URL for a worker device', async () => {
       const storage = getStorageBackend();
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([deviceRow]))
         .mockReturnValueOnce(makeChain([submissionRow]))
@@ -966,7 +1142,7 @@ describe('submissions router', () => {
     });
 
     it('requires an artifact ID for device preview of multi-artifact submissions', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([deviceRow]))
         .mockReturnValueOnce(makeChain([submissionRow]))
@@ -1016,7 +1192,7 @@ describe('submissions router', () => {
     };
 
     it('lists submissions with artifact metadata and no preview URLs', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask()]))
         .mockReturnValueOnce(makeChain([submissionRow]))
@@ -1040,7 +1216,7 @@ describe('submissions router', () => {
 
     it('includes media preview URLs on request while batching worker agent lookup', async () => {
       const storage = getStorageBackend();
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       const secondSubmissionRow = {
         ...submissionRow,
         id: '00000000-0000-0000-0000-000000000002',
@@ -1131,7 +1307,7 @@ describe('submissions router', () => {
 
     describe('interactive HTML preview eligibility', () => {
       function mockSingleArtifactListing(htmlArtifactRow: Record<string, any>) {
-        const ctx = createMockCtx();
+        const ctx = createIntentCtx();
         ctx.db.select
           .mockReturnValueOnce(makeChain([makeTask()]))
           .mockReturnValueOnce(makeChain([submissionRow]))
@@ -1267,7 +1443,7 @@ describe('submissions router', () => {
     });
 
     it('returns presigned URL when task is completed', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([submissionRow]))
         .mockReturnValueOnce(makeChain([{ ...makeTask(), status: 'completed' }]));
@@ -1283,7 +1459,7 @@ describe('submissions router', () => {
 
     it('returns the selected artifact URL when a completed submission has multiple artifacts', async () => {
       const storage = getStorageBackend();
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([submissionRow]))
         .mockReturnValueOnce(makeChain([{ ...makeTask(), status: 'completed' }]))
@@ -1303,7 +1479,7 @@ describe('submissions router', () => {
     });
 
     it('requires an artifact ID to download completed multi-artifact submissions', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([submissionRow]))
         .mockReturnValueOnce(makeChain([{ ...makeTask(), status: 'completed' }]))
@@ -1321,7 +1497,7 @@ describe('submissions router', () => {
     });
 
     it('throws when submission is not found', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = submissionsRouter.createCaller(ctx);
@@ -1331,7 +1507,7 @@ describe('submissions router', () => {
     });
 
     it('throws when task is not completed', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([submissionRow]))
         .mockReturnValueOnce(makeChain([makeTask({ status: 'open' })]));
@@ -1343,7 +1519,7 @@ describe('submissions router', () => {
     });
 
     it('rejects downloading a never-mode submission for an unauthenticated caller', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([submissionRow]))
         .mockReturnValueOnce(
@@ -1357,7 +1533,7 @@ describe('submissions router', () => {
     });
 
     it('allows the submitting worker to download their own never-mode submission', async () => {
-      const ctx = createMockCtx(undefined, { address: WORKER });
+      const ctx = createIntentCtx(undefined, { address: WORKER });
       ctx.db.select
         .mockReturnValueOnce(makeChain([submissionRow]))
         .mockReturnValueOnce(
@@ -1374,7 +1550,7 @@ describe('submissions router', () => {
     });
 
     it('allows an anonymous caller to download a reveal_all submission once completed', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([submissionRow]))
         .mockReturnValueOnce(
@@ -1391,7 +1567,7 @@ describe('submissions router', () => {
     });
 
     it('allows an anonymous caller to download a winner_only submission that is the task_awards winner', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([submissionRow]))
         .mockReturnValueOnce(
@@ -1409,7 +1585,7 @@ describe('submissions router', () => {
     });
 
     it('rejects an anonymous caller downloading a winner_only submission that is NOT a task_awards winner', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([submissionRow]))
         .mockReturnValueOnce(
@@ -1442,7 +1618,7 @@ describe('submissions router', () => {
     };
 
     it('never mode hides every submission from an unauthenticated caller while active', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(
           makeChain([makeTask({ submissionVisibility: 'never', status: 'open' })])
@@ -1456,7 +1632,7 @@ describe('submissions router', () => {
     });
 
     it('never mode still lets the requester see every submission while active', async () => {
-      const ctx = createMockCtx(undefined, { address: REQUESTER });
+      const ctx = createIntentCtx(undefined, { address: REQUESTER });
       ctx.db.select
         .mockReturnValueOnce(
           makeChain([makeTask({ submissionVisibility: 'never', status: 'open' })])
@@ -1524,7 +1700,7 @@ describe('submissions router', () => {
     });
 
     it('winner_only reveals only the task_awards-linked winner once the task ends', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(
           makeChain([makeTask({ submissionVisibility: 'winner_only', status: 'completed' })])
@@ -1551,7 +1727,7 @@ describe('submissions router', () => {
         id: '00000000-0000-0000-0000-000000000003',
         workerAddress: '0xWorker0000000000000000000000000000000003',
       };
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(
           makeChain([makeTask({ submissionVisibility: 'winner_only', status: 'completed' })])
@@ -1576,7 +1752,7 @@ describe('submissions router', () => {
     });
 
     it('returns an empty array for an unknown taskId without checking visibility', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = submissionsRouter.createCaller(ctx);
@@ -1605,7 +1781,7 @@ describe('submissions router', () => {
     };
 
     it('returns a preview URL for any caller', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([artifactRow]))
         .mockReturnValueOnce(makeChain([makeTask()]));
@@ -1618,7 +1794,7 @@ describe('submissions router', () => {
     });
 
     it('rejects artifact preview requests with mismatched task IDs', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([{ ...artifactRow, taskId: '0xother' }]));
 
       const caller = submissionsRouter.createCaller(ctx) as any;
@@ -1628,7 +1804,7 @@ describe('submissions router', () => {
     });
 
     it('rejects previewing a never-mode artifact for an unauthenticated caller', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([artifactRow]))
         .mockReturnValueOnce(
@@ -1643,7 +1819,7 @@ describe('submissions router', () => {
     });
 
     it('allows the submitting worker to preview their own never-mode artifact', async () => {
-      const ctx = createMockCtx(undefined, { address: WORKER });
+      const ctx = createIntentCtx(undefined, { address: WORKER });
       ctx.db.select
         .mockReturnValueOnce(makeChain([artifactRow]))
         .mockReturnValueOnce(
@@ -1658,7 +1834,7 @@ describe('submissions router', () => {
     });
 
     it('allows an anonymous caller to preview a reveal_all artifact once the task has ended', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([artifactRow]))
         .mockReturnValueOnce(
@@ -1673,7 +1849,7 @@ describe('submissions router', () => {
     });
 
     it('allows an anonymous caller to preview a winner_only artifact that is the task_awards winner', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([artifactRow]))
         .mockReturnValueOnce(
@@ -1689,7 +1865,7 @@ describe('submissions router', () => {
     });
 
     it('rejects an anonymous caller previewing a winner_only artifact that is NOT the winner', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([artifactRow]))
         .mockReturnValueOnce(
@@ -1707,7 +1883,7 @@ describe('submissions router', () => {
     });
 
     it('treats a REJECT-verdict cancelled task as ended for reveal_all preview', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([artifactRow]))
         .mockReturnValueOnce(
@@ -1728,7 +1904,7 @@ describe('submissions router', () => {
     });
 
     it('treats a plain (non-verdict) cancelled task as still active for reveal_all preview', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([artifactRow]))
         .mockReturnValueOnce(
@@ -1773,7 +1949,7 @@ describe('submissions router', () => {
     }
 
     it('shows a public-mode submission to any unauthenticated caller', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([myRow()]));
 
       const caller = submissionsRouter.createCaller(ctx);
@@ -1784,7 +1960,7 @@ describe('submissions router', () => {
     });
 
     it('hides a never-mode active-task submission from an unauthenticated caller', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([myRow({ submissionVisibility: 'never', taskStatus: 'open' })])
       );
@@ -1796,7 +1972,7 @@ describe('submissions router', () => {
     });
 
     it('still shows a never-mode submission to the worker themselves once ctx.caller proves it', async () => {
-      const ctx = createMockCtx(undefined, { address: WORKER });
+      const ctx = createIntentCtx(undefined, { address: WORKER });
       ctx.db.select.mockReturnValueOnce(
         makeChain([myRow({ submissionVisibility: 'never', taskStatus: 'open' })])
       );
@@ -1808,7 +1984,7 @@ describe('submissions router', () => {
     });
 
     it('does not let an unrelated caller impersonate the worker via the workerAddress query param alone', async () => {
-      const ctx = createMockCtx(undefined, { address: OTHER_WORKER });
+      const ctx = createIntentCtx(undefined, { address: OTHER_WORKER });
       ctx.db.select.mockReturnValueOnce(
         makeChain([myRow({ submissionVisibility: 'never', taskStatus: 'open' })])
       );
@@ -1820,7 +1996,7 @@ describe('submissions router', () => {
     });
 
     it("still shows a never-mode submission to that task's requester", async () => {
-      const ctx = createMockCtx(undefined, { address: REQUESTER });
+      const ctx = createIntentCtx(undefined, { address: REQUESTER });
       ctx.db.select.mockReturnValueOnce(
         makeChain([myRow({ submissionVisibility: 'never', taskStatus: 'open' })])
       );
@@ -1832,7 +2008,7 @@ describe('submissions router', () => {
     });
 
     it('reveals a reveal_all submission to anyone once the task has ended', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([myRow({ submissionVisibility: 'reveal_all', taskStatus: 'completed' })])
       );
@@ -1844,7 +2020,7 @@ describe('submissions router', () => {
     });
 
     it('hides a reveal_all submission from anyone while the task is still active', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([myRow({ submissionVisibility: 'reveal_all', taskStatus: 'open' })])
       );
@@ -1856,7 +2032,7 @@ describe('submissions router', () => {
     });
 
     it('reveals only the winner_only submissions the caller actually won, across multiple tasks', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       // Two rows, two different tasks -- both winner_only and ended, but only
       // one of them has this worker in task_awards.
       ctx.db.select
@@ -1880,6 +2056,139 @@ describe('submissions router', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].taskId).toBe(TASK_ID);
+    });
+  });
+
+  describe('who pays for a paid submission', () => {
+    const FUNDER = '0xFunder00000000000000000000000000000001';
+    const FROM_KEYS_ARTIFACT_KEY = `submissions/${TASK_ID}/pending/submission.txt`;
+    const fromKeysInput = {
+      taskId: TASK_ID,
+      workerAddress: WORKER,
+      signature: '0xsig',
+      artifacts: [
+        {
+          artifactKey: FROM_KEYS_ARTIFACT_KEY,
+          fileName: 'submission.txt',
+          mimeType: 'text/plain',
+          role: 'attachment' as const,
+          sizeBytes: 123,
+          sha256Hash: 'a'.repeat(64),
+          keccak256Hash: `0x${'b'.repeat(64)}`,
+        },
+      ],
+    };
+
+    /** What the x402 middleware publishes once it has settled a fee (ADR-0057). */
+    function settlePayment(ctx: ReturnType<typeof createIntentCtx>, payer: string) {
+      ctx.res.locals.payer = payer;
+      ctx.res.locals.paymentAmount = '10000';
+      ctx.res.locals.paymentTxHash = '0xpaymenttxhash';
+    }
+
+    // `vi.clearAllMocks` clears calls but not queued one-shot implementations, so a
+    // `mockResolvedValueOnce` an earlier test never consumed would otherwise decide the head
+    // size here. Restated per test rather than assumed.
+    beforeEach(() => {
+      vi.mocked(getStorageBackend().headObject)
+        .mockReset()
+        .mockResolvedValue({ contentLength: 123 });
+    });
+
+    function openTaskCtx(payerAddress?: string) {
+      const ctx = createIntentCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]))
+        .mockReturnValueOnce(
+          makeChain([{ artifactKey: FROM_KEYS_ARTIFACT_KEY, workerAddress: WORKER }])
+        );
+      if (payerAddress) settlePayment(ctx, payerAddress);
+      return ctx;
+    }
+
+    // Verifies: ADR-0059
+    it('accepts a paid submit whose fee the worker paid', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = openTaskCtx(WORKER);
+
+      const result = await submissionsRouter.createCaller(ctx).submit(baseSubmitInput);
+
+      expect(result.success).toBe(true);
+      // The initiator ADR-0059 scopes `intents.get` to is now unambiguously the author of the
+      // work: the settled payer and the signature-verified worker are the same address.
+      expect(ctx.intents[0]!.payer).toBe(WORKER);
+      expect(ctx.intents[0]!.paymentTxHash).toBe('0xpaymenttxhash');
+    });
+
+    // Verifies: ADR-0059
+    it('refuses a paid submit funded by an address other than the worker', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = openTaskCtx(FUNDER);
+
+      const error = await submissionsRouter
+        .createCaller(ctx)
+        .submit(baseSubmitInput)
+        .catch((thrown: unknown) => thrown);
+
+      expect(envelopeForError(error).reason).toBe('payment_payer_mismatch');
+      // Refused before the intent exists, so nothing was broadcast and no row records a write
+      // whose initiator is not its author.
+      expect(ctx.intents).toHaveLength(0);
+      expect(contractSubmitWork).not.toHaveBeenCalled();
+    });
+
+    // Verifies: ADR-0059
+    it('leaves a free submit alone, since it has no payer to compare against', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      // No paymentAmount and no paymentTxHash: the RFC-0006 allowance path, which is most
+      // submissions. `res.locals.payer` is set anyway, because anything that authenticates a
+      // caller sets it -- so a check reading that field rather than the settled payment would
+      // reject the common path outright.
+      const ctx = openTaskCtx();
+      ctx.res.locals.payer = FUNDER;
+
+      const result = await submissionsRouter.createCaller(ctx).submit(baseSubmitInput);
+
+      expect(result.success).toBe(true);
+      expect(ctx.intents[0]!.paymentTxHash).toBeNull();
+    });
+
+    // Verifies: ADR-0059
+    it('accepts a paid submitFromKeys whose fee the worker paid', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = openTaskCtx(WORKER);
+
+      const result = await submissionsRouter.createCaller(ctx).submitFromKeys(fromKeysInput);
+
+      expect(result.success).toBe(true);
+      expect(ctx.intents[0]!.payer).toBe(WORKER);
+    });
+
+    // Verifies: ADR-0059
+    it('refuses a paid submitFromKeys funded by an address other than the worker', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = openTaskCtx(FUNDER);
+
+      const error = await submissionsRouter
+        .createCaller(ctx)
+        .submitFromKeys(fromKeysInput)
+        .catch((thrown: unknown) => thrown);
+
+      expect(envelopeForError(error).reason).toBe('payment_payer_mismatch');
+      expect(ctx.intents).toHaveLength(0);
+      expect(contractSubmitWork).not.toHaveBeenCalled();
+    });
+
+    // Verifies: ADR-0059
+    it('leaves a free submitFromKeys alone', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = openTaskCtx();
+      ctx.res.locals.payer = FUNDER;
+
+      const result = await submissionsRouter.createCaller(ctx).submitFromKeys(fromKeysInput);
+
+      expect(result.success).toBe(true);
+      expect(ctx.intents[0]!.paymentTxHash).toBeNull();
     });
   });
 });

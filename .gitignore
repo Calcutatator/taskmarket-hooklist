@@ -82,3 +82,8 @@ apps/web/storybook-static/
 # ADR audit — auto-generated outputs (regenerate via packages/adr/adr-audit.ts)
 docs/adr-audit/
 .claude/worktrees/
+
+# Scratch space for background agents (build logs, grep fodder, commit-message
+# drafts). Ignored because one such draft was committed by an over-broad
+# `git add -A` -- these are never worth keeping.
+.agent-logs/

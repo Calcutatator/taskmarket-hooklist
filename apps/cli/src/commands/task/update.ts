@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
-import { apiGet } from '../../lib/api.js';
-import { printResult, printError } from '../../lib/output.js';
+import { apiGet, withErrorContext } from '../../lib/api.js';
+import { printResult, printError, renderFailure } from '../../lib/output.js';
 import { usdcToBaseUnits } from '../../lib/usdc.js';
 
 export const updateCmd = new Command('update')
@@ -37,9 +37,8 @@ export const updateCmd = new Command('update')
         try {
           body.reward = usdcToBaseUnits(opts.reward);
         } catch (err) {
-          return void printError(
-            `Invalid --reward: ${err instanceof Error ? err.message : String(err)}`
-          );
+          renderFailure(withErrorContext(err, 'Invalid --reward'));
+          return;
         }
       }
 
@@ -49,10 +48,12 @@ export const updateCmd = new Command('update')
           printError(
             `--extend-expiry must be a positive integer (seconds), got: ${opts.extendExpiry}`
           );
+          return;
         }
         const task = (await apiGet(`/api/tasks/${taskId}`)) as Record<string, unknown> | null;
         if (!task) {
           printError(`Task not found: ${taskId}`);
+          return;
         }
         const currentExpiry = Math.floor(new Date(task.expiryTime as string).getTime() / 1000);
         const newExpiry = currentExpiry + delta;
@@ -63,6 +64,7 @@ export const updateCmd = new Command('update')
             `--extend-expiry would set expiry in the past. Task expired ${expiredAgo}s ago; ` +
               `pass at least ${expiredAgo + 1} seconds to extend beyond now.`
           );
+          return;
         }
         body.expiryTime = newExpiry;
       }
@@ -71,6 +73,7 @@ export const updateCmd = new Command('update')
         const ts = Math.floor(new Date(opts.bidDeadline).getTime() / 1000);
         if (ts <= Math.floor(Date.now() / 1000)) {
           printError('--bid-deadline must be in the future');
+          return;
         } else {
           body.bidDeadline = ts;
         }
@@ -80,6 +83,7 @@ export const updateCmd = new Command('update')
         const ts = Math.floor(new Date(opts.pitchDeadline).getTime() / 1000);
         if (ts <= Math.floor(Date.now() / 1000)) {
           printError('--pitch-deadline must be in the future');
+          return;
         } else {
           body.pitchDeadline = ts;
         }
@@ -89,9 +93,8 @@ export const updateCmd = new Command('update')
         try {
           body.auctionFloorPrice = usdcToBaseUnits(opts.auctionFloorPrice, { allowZero: true });
         } catch (err) {
-          return void printError(
-            `Invalid --auction-floor-price: ${err instanceof Error ? err.message : String(err)}`
-          );
+          renderFailure(withErrorContext(err, 'Invalid --auction-floor-price'));
+          return;
         }
       }
 
@@ -99,9 +102,8 @@ export const updateCmd = new Command('update')
         try {
           body.auctionStartPrice = usdcToBaseUnits(opts.auctionStartPrice, { allowZero: true });
         } catch (err) {
-          return void printError(
-            `Invalid --auction-start-price: ${err instanceof Error ? err.message : String(err)}`
-          );
+          renderFailure(withErrorContext(err, 'Invalid --auction-start-price'));
+          return;
         }
       }
 
@@ -120,7 +122,10 @@ export const updateCmd = new Command('update')
         body.metricDescription = opts.metricDescription;
       }
 
-      const result = await x402Post(`/api/tasks/${taskId}/update`, body);
-      printResult(result as Record<string, unknown>);
+      const { data: result, idempotencyKey } = await x402Post<Record<string, unknown>>(
+        `/api/tasks/${taskId}/update`,
+        body
+      );
+      printResult(result, { idempotencyKey });
     }
   );
