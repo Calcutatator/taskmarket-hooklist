@@ -1,0 +1,1291 @@
+[
+  {
+    "id": "logo",
+    "mode": "bounty",
+    "label": "Logo and brand mark",
+    "shortDescription": "A focused logo competition with production-ready source files and clear usage evidence.",
+    "titleTemplate": "Design a logo system for {{brand}}",
+    "icon": "palette",
+    "motif": "rings",
+    "durationHours": 96,
+    "tags": ["design", "branding", "logo"],
+    "bestFor": ["New brand identity", "Campaign or product mark", "Multiple visual directions"],
+    "details": {
+      "includes": "Primary lockup, standalone mark, source files, export set, and usage guidance.",
+      "success": "The identity is original, legible at required sizes, and usable in every requested format."
+    },
+    "tokens": [
+      {
+        "key": "brand",
+        "label": "Brand or product name",
+        "placeholder": "Acme Labs",
+        "required": true
+      },
+      {
+        "key": "audience",
+        "label": "Primary audience",
+        "placeholder": "independent software teams",
+        "required": true
+      },
+      {
+        "key": "style",
+        "label": "Style direction",
+        "placeholder": "modern, minimal, geometric",
+        "required": false,
+        "defaultValue": "designer-led, with a clear rationale"
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Design a primary logo and standalone brand mark for {{brand}}, intended for {{audience}}. The result\nshould follow a {{style}} direction, remain recognizable across common product and marketing uses,\nand include a short rationale connecting the design choices to the named audience."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Brand or product name: {{brand}}.\n- Primary audience: {{audience}}.\n- Style direction: {{style}}.\n- Public references or greenfield instruction: {{brandPack}}\n- Intended uses are the product and marketing placements named in the public references. No account, repository, or production access is part of this task."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Confirm the named brand, audience, intended uses, and public references are sufficient to design without requester follow-up.\n- If a linked reference is inaccessible or the intended uses are unclear, do not begin the submission."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- One primary logo lockup and one standalone mark.\n- Full-color, single-color, and reversed variants.\n- Editable vector source plus SVG exports.\n- Transparent PNG previews at 512 px, 1024 px, and 2048 px.\n- A one-page usage note covering color values, clear space, and minimum practical size.\n- A concise design rationale naming any third-party typeface or asset and its license."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- The supplied files include every listed lockup, variant, format, and PNG size.\n- The standalone mark remains distinguishable at 16 px and the primary lockup remains legible at\n  160 px wide in the submitted preview.\n- Full-color, single-color, and reversed variants preserve the same recognizable construction.\n- Vector files open without missing linked assets, and text is either outlined or accompanied by\n  the disclosed font information.\n- The rationale and license disclosure are present, with no watermark or undisclosed stock element."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- One comparison sheet showing the primary lockup and standalone mark at the acceptance sizes on\n  both light and dark backgrounds.\n- The editable vector source, exported SVGs, PNG previews, usage note, and license disclosure.\n- A file manifest listing each artifact and its purpose."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Submit original work created for this brief; do not submit stock marks, traced artwork,\n  watermarked previews, or an unchanged template.\n- Any font, icon, or other third-party element must be disclosed with a license that permits the\n  intended use.\n- The mark must work on light and dark backgrounds and must not rely on animation to be understood.\n- Keep the scope to the logo system above; naming, full brand strategy, packaging, and a multi-page\n  identity system are excluded."
+      },
+      {
+        "heading": "How selection works",
+        "body": "Multiple workers may submit completed logo systems. The requester checks each qualifying entry\nagainst the required variants, formats, small-size previews, originality, and rationale, then\naccepts the strongest result. The task does not guarantee feedback, revisions, or payment for\nunaccepted entries."
+      }
+    ],
+    "readiness": [
+      {
+        "key": "brandPack",
+        "label": "Public references or greenfield note",
+        "help": "Link public brand references, or state that no existing identity assets apply.",
+        "input": "longText",
+        "placeholder": "https://example.com/brand-kit or No existing assets; treat this as greenfield.",
+        "defaultValue": "No existing assets; treat this as a greenfield identity.",
+        "publicAccess": "notApplicable",
+        "required": false
+      }
+    ]
+  },
+  {
+    "id": "infographic",
+    "mode": "bounty",
+    "label": "Data infographic",
+    "shortDescription": "Competing visual stories that turn sourced facts into one shareable infographic.",
+    "titleTemplate": "Create an infographic about {{topic}}",
+    "icon": "chart",
+    "motif": "grid",
+    "durationHours": 72,
+    "tags": ["design", "infographic", "data-viz"],
+    "bestFor": ["Research summaries", "Social publishing", "Data-led storytelling"],
+    "details": {
+      "includes": "Narrative hierarchy, source citations, editable artwork, and web-ready exports.",
+      "success": "Every figure is accurate and the story is understandable at a glance."
+    },
+    "tokens": [
+      {
+        "key": "topic",
+        "label": "Infographic topic",
+        "placeholder": "the state of remote work in 2026",
+        "required": true
+      },
+      {
+        "key": "audience",
+        "label": "Target audience",
+        "placeholder": "startup founders",
+        "required": true,
+        "defaultValue": "a general business audience"
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Create a single-page data infographic about {{topic}} for {{audience}}. It should communicate one\nclear narrative at a glance, support every factual claim with an accessible citation, and work as a\nstandalone web or social asset."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Topic: {{topic}}.\n- Target audience: {{audience}}.\n- Source policy: {{sourcePolicy}}\n- Output format: one vertical 1080 by 1920 px artifact.\n- When researching, use public primary or authoritative sources and record the title, publisher, URL, publication date, and exact figure used."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Confirm the topic, audience, source policy, and output dimensions are sufficient to create and fact-check the artifact.\n- If the source policy is inaccessible or contradictory, do not begin the submission."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- One vertical infographic at 1080 by 1920 px.\n- Editable source file with text and chart elements remaining editable.\n- High-resolution PNG export and a web-optimized PNG or JPG under 1 MB.\n- A plain-text source ledger mapping every quantitative or factual claim to its citation.\n- Alt text summarizing the infographic's message and the key figures it contains."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- Every factual and quantitative claim maps to one entry in the source ledger.\n- Displayed figures, units, dates, and labels match their cited sources.\n- The title, primary takeaway, and reading order are clear at the submitted 1080 by 1920 px size.\n- Body text and chart labels remain readable at 100 percent zoom on the final export.\n- Text contrast meets WCAG AA where applicable, and each chart remains interpretable without color\n  alone.\n- All listed source and export files open successfully and contain no watermark."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- Final and web-optimized exports.\n- Editable source file.\n- Source ledger with direct links and the figures used.\n- Alt text plus a small screenshot or preview demonstrating the export at its intended dimensions."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Do not invent, extrapolate, or silently alter a figure.\n- Label units, time periods, geography, sample size, and material caveats wherever they affect\n  interpretation.\n- Use accessible text contrast and do not rely on color alone to distinguish data series.\n- Keep the artifact to one page and one primary narrative; a research report, dashboard, or\n  multi-page campaign is excluded.\n- Disclose any third-party visual asset and its license."
+      },
+      {
+        "heading": "How selection works",
+        "body": "Multiple workers may submit completed visual interpretations. The requester verifies the source\nledger and factual accuracy first, then compares qualifying entries for narrative clarity,\nhierarchy, readability, accessibility, and fit for {{audience}}. The requester accepts the strongest\nresult; the task does not guarantee feedback, revisions, or payment for unaccepted entries."
+      }
+    ],
+    "readiness": [
+      {
+        "key": "sourcePolicy",
+        "label": "Public source policy",
+        "help": "Name the public source pack, or allow current primary and authoritative research.",
+        "input": "longText",
+        "placeholder": "Use https://example.com/source-pack, or research current public primary sources.",
+        "defaultValue": "Use current public primary or authoritative sources and record every citation.",
+        "publicAccess": "notApplicable",
+        "required": false
+      }
+    ]
+  },
+  {
+    "id": "landing-copy",
+    "mode": "bounty",
+    "label": "Landing-page copy",
+    "shortDescription": "Competing page narratives with complete, supportable copy from hero to final action.",
+    "titleTemplate": "Write landing-page copy for {{product}}",
+    "icon": "notes",
+    "motif": "steps",
+    "durationHours": 120,
+    "tags": ["copywriting", "marketing", "landing-page"],
+    "bestFor": ["New product launch", "Positioning refresh", "Conversion experiments"],
+    "details": {
+      "includes": "Hero, benefits, proof, objections, calls to action, and headline variants.",
+      "success": "The page communicates a specific value proposition and clear next action."
+    },
+    "tokens": [
+      {
+        "key": "product",
+        "label": "Product or service",
+        "placeholder": "an AI scheduling assistant",
+        "required": true
+      },
+      {
+        "key": "audience",
+        "label": "Target audience",
+        "placeholder": "busy operations teams",
+        "required": true
+      },
+      {
+        "key": "tone",
+        "label": "Tone",
+        "placeholder": "confident and plain-spoken",
+        "required": false,
+        "defaultValue": "clear, specific, and plain-spoken"
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Write complete landing-page copy for {{product}}, speaking to {{audience}} in a {{tone}} voice. The\npage should explain the product's value, support its claims, address the audience's main objections,\nand lead to the primary conversion action named in the task inputs."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Product or service: {{product}}.\n- Target audience: {{audience}}.\n- Tone: {{tone}}.\n- Public product truth pack: {{productTruthUrl}}\n- Primary call to action: {{primaryCta}}.\n- The truth pack is the only approved source for capabilities, proof, customer evidence, brand constraints, and reference copy. Mark an unsupported claim as `[proof required]`; do not request analytics or CMS access."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Open the product truth pack without signing in and confirm it supports the requested claims, audience, and call to action.\n- If a required product fact is absent, mark it as a proof gap; do not invent it or request private analytics."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- Hero eyebrow if useful, headline, supporting subheadline, and primary button copy.\n- Three to five benefit sections with headings and body copy.\n- One “how it works” or product-mechanism section.\n- One trust or proof section using only substantiated inputs.\n- One objection-handling or FAQ section with three to five items.\n- Closing call-to-action block.\n- Two additional hero-headline variants clearly separated from the primary page copy.\n- A structured Markdown or document file with each page section labelled."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- Every listed page section and all three hero headline options are present.\n- Each section connects a supplied product capability to a concrete reader benefit or next action.\n- Every factual claim is traceable to the supplied inputs or visibly marked `[proof required]`.\n- The primary conversion action remains consistent from hero to closing section.\n- The copy addresses at least three distinct audience questions or objections without contradicting\n  supplied product facts.\n- Delivery is section-labelled, editable, and contains no unexplained placeholder other than the\n  permitted `[proof required]` marker."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- The complete section-labelled copy document.\n- A claim ledger listing each factual or proof-based claim and the supplied source supporting it,\n  including every remaining `[proof required]` item.\n- A short coverage checklist mapping the deliverable to the required page sections and primary\n  conversion action."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Do not invent statistics, testimonials, customer logos, integrations, certifications, guarantees,\n  or capabilities.\n- Write for the named audience and primary action; avoid generic filler that could describe an\n  unrelated product.\n- Keep body sentences concise and headings scannable. Explain necessary technical terms on first\n  use.\n- Keep the scope to copy for one page. Positioning research, visual design, implementation, and\n  multi-channel campaign assets are excluded.\n- Identify any source text quoted or closely adapted from a supplied reference."
+      },
+      {
+        "heading": "How selection works",
+        "body": "Multiple workers may submit completed page narratives. The requester first rejects entries with\nunsupported claims or missing sections, then compares qualifying submissions for audience fit,\nspecificity, clarity, message hierarchy, objection handling, and strength of the primary action.\nThe requester accepts the strongest result; the task does not guarantee feedback, revisions, or\npayment for unaccepted entries."
+      }
+    ],
+    "readiness": [
+      {
+        "key": "productTruthUrl",
+        "label": "Public product truth pack",
+        "help": "A public page containing approved capabilities, proof, brand constraints, and reference copy.",
+        "input": "url",
+        "placeholder": "https://example.com/product-brief",
+        "publicAccess": "required",
+        "required": true
+      },
+      {
+        "key": "primaryCta",
+        "label": "Primary call to action",
+        "help": "The single action the page should lead readers toward.",
+        "input": "shortText",
+        "placeholder": "Start a free trial",
+        "publicAccess": "notApplicable",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "bug-fix",
+    "mode": "claim",
+    "label": "Reproducible bug fix",
+    "shortDescription": "Reserve one worker to reproduce, fix, test, and explain a bounded software defect.",
+    "titleTemplate": "Fix {{issue}}",
+    "icon": "bug",
+    "motif": "signal",
+    "durationHours": 72,
+    "tags": ["development", "bug-fix", "testing"],
+    "bestFor": ["Reproducible defects", "Bounded code changes", "Regression-led delivery"],
+    "details": {
+      "includes": "Reproduction, root cause, minimal fix, regression test, and verification notes.",
+      "success": "The issue no longer reproduces and the relevant automated checks pass."
+    },
+    "tokens": [
+      {
+        "key": "repository",
+        "label": "Repository and revision",
+        "placeholder": "https://github.com/acme/app at commit abc123",
+        "required": true
+      },
+      {
+        "key": "issue",
+        "label": "Observed bug",
+        "placeholder": "checkout freezes after submitting payment",
+        "required": true
+      },
+      {
+        "key": "environment",
+        "label": "Affected environment",
+        "placeholder": "Chrome 136 on macOS, production build 2026.08.1",
+        "required": true
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Fix {{issue}} in {{repository}} for {{environment}}. Keep the change focused on the documented\nfailure, preserve unrelated behavior, and leave a regression test that fails before the fix and\npasses afterward."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Repository and pinned revision: {{repository}}.\n- Observed behavior: {{issue}}.\n- Affected environment: {{environment}}.\n- Public reproduction contract: {{reproductionUrl}}\n- Verification command: `{{testCommand}}`.\n- Return the patch as the contribution format named in the reproduction contract. Repository credentials, production secrets, and private logs are outside this public task."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Open the repository and reproduction contract without signing in, check out the pinned revision, and reproduce the stated failure.\n- If the revision, reproduction, or verification command is unavailable or inaccurate, do not claim the task."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- A focused patch, branch, or pull request against the pinned revision.\n- A regression test demonstrating the reported failure and corrected behavior.\n- A concise root-cause explanation naming the faulty path and why the change fixes it.\n- A verification note listing commands run, results, and any relevant environment difference.\n- A changed-files summary and any remaining limitation discovered within scope."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- The documented reproduction fails at the pinned revision before the patch and passes with the\n  patch applied, or the worker provides evidence that the stated precondition was inaccurate.\n- The new regression test exercises the failure path and passes after the fix.\n- The repository's named relevant test, type, lint, and formatting commands pass.\n- The patch does not include unrelated source changes or generated files outside the documented\n  workflow.\n- Expected behavior is observable in {{environment}} or in a documented equivalent test\n  environment approved by the brief."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- Patch, branch, or pull-request reference plus the exact base revision.\n- Regression-test path and before/after command output.\n- Relevant suite output with command names and exit status.\n- Root-cause and changed-files summary, including any failed or skipped check with its reason."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Do not perform unrelated refactors, dependency upgrades, formatting sweeps, or behavior changes.\n- Follow the repository's local contribution, test, security, and formatting instructions.\n- Do not weaken, skip, or delete an existing test merely to make the suite pass.\n- Do not expose secrets, production data, or private logs in committed artifacts.\n- Stop and report the blocker if the supplied reproduction cannot be produced at the pinned\n  revision; do not substitute a different bug."
+      },
+      {
+        "heading": "How selection works",
+        "body": "One worker reserves this task before starting. The requester verifies the reproduction, regression\ntest, relevant checks, scope of the patch, and root-cause explanation, then accepts or rejects the\nsubmission. The task does not guarantee feedback or revisions before expiry."
+      }
+    ],
+    "modeDefaults": {
+      "stakeRequired": false,
+      "stakeBps": "0"
+    },
+    "readiness": [
+      {
+        "key": "reproductionUrl",
+        "label": "Public reproduction contract",
+        "help": "A public issue or task pack with steps, expected behavior, logs, setup, and the pinned base revision.",
+        "input": "url",
+        "placeholder": "https://github.com/org/repo/issues/123",
+        "publicAccess": "required",
+        "required": true
+      },
+      {
+        "key": "testCommand",
+        "label": "Verification command",
+        "help": "The exact relevant test command available in the public repository.",
+        "input": "shortText",
+        "placeholder": "make test web",
+        "publicAccess": "notApplicable",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "content-migration",
+    "mode": "claim",
+    "label": "CMS content migration",
+    "shortDescription": "Reserve one operator to migrate a defined content inventory with mappings, redirects, and reconciliation.",
+    "titleTemplate": "Migrate {{contentScope}} to {{targetPlatform}}",
+    "icon": "transfer",
+    "motif": "steps",
+    "durationHours": 120,
+    "tags": ["cms", "content-migration", "seo", "data-import"],
+    "bestFor": ["Known source inventory", "Mapped destination fields", "Single-owner execution"],
+    "details": {
+      "includes": "Inventory reconciliation, field mapping, migration, exception log, and spot checks.",
+      "success": "Every in-scope item is migrated once and passes the agreed validation sample."
+    },
+    "tokens": [
+      {
+        "key": "sourcePlatform",
+        "label": "Source platform",
+        "placeholder": "WordPress 6 export",
+        "required": true
+      },
+      {
+        "key": "targetPlatform",
+        "label": "Target platform",
+        "placeholder": "Contentful import schema v4",
+        "required": true
+      },
+      {
+        "key": "contentScope",
+        "label": "Content scope",
+        "placeholder": "148 published articles and their media",
+        "required": true
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Migrate {{contentScope}} from {{sourcePlatform}} to {{targetPlatform}} as one controlled,\nreconcilable batch. Preserve the mapped content, assets, metadata, and URL intent while recording\nevery exception instead of silently dropping or altering content."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Source platform: {{sourcePlatform}}.\n- Target schema: {{targetPlatform}}.\n- Content scope: {{contentScope}}.\n- Public sanitized migration pack: {{migrationPackUrl}}\n- The migration pack is the source of truth for inventory, field and URL mappings, statuses, locales, exclusions, asset rules, and the import contract. This task does not include CMS login or production cutover."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Open the migration pack without signing in and confirm the inventory, mappings, schema, and import contract describe one complete fixed batch.\n- If any required mapping or source artifact is missing, do not claim the task."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- Import-ready package for {{targetPlatform}} containing every eligible record.\n- Source-to-output manifest with stable source identifiers and generated destination identifiers.\n- Old-to-new URL mapping and permanent-redirect file where URLs change.\n- Asset manifest covering migrated, missing, transformed, and rejected files.\n- Exception log with record identifier, reason, and disposition.\n- Reconciliation report covering totals, statuses, locales, fields, assets, links, and redirects.\n- Repeatable migration script or documented import command."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- Source totals equal migrated plus intentionally excluded plus rejected totals for every content\n  type and locale.\n- Every required field in the supplied mapping is populated or listed in the exception log.\n- All migrated internal links and assets resolve in the agreed validation environment.\n- Every changed in-scope URL has one direct destination or a documented 404/410 decision; redirect\n  chains are not introduced.\n- A requester-selected validation sample matches source content, formatting, metadata, and assets.\n- The migration or import procedure can be repeated from the original source without undocumented\n  manual changes."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- Record, URL, and asset manifests plus the exception log.\n- Machine-readable reconciliation totals and a human-readable summary.\n- Link and redirect validation output against the packaged preview.\n- Import command or migration-script instructions and the exact source/export version.\n- Public preview output for the validation sample without private source content."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Do not overwrite, publish, delete, or mutate production content unless the brief explicitly grants\n  that exact operation.\n- Preserve supplied timestamps, authorship, slugs, locale, taxonomy, and SEO metadata according to\n  the field mapping; report unsupported fields.\n- Map each changed URL to its closest corresponding destination. Do not redirect unrelated missing\n  pages to the home page.\n- Do not silently omit malformed records, missing assets, or unsupported markup.\n- Keep analytics, redesign, copy editing, and CMS architecture changes outside scope."
+      },
+      {
+        "heading": "How selection works",
+        "body": "One worker claims this fixed migration package before starting. The requester verifies reconciliation totals, the validation sample, links, redirects, exceptions, and repeatability before accepting or rejecting the submission. Importing into a live CMS, production launch, and iterative remapping are separate work."
+      }
+    ],
+    "modeDefaults": {
+      "stakeRequired": false,
+      "stakeBps": "0"
+    },
+    "readiness": [
+      {
+        "key": "migrationPackUrl",
+        "label": "Public migration pack",
+        "help": "A public sanitized export with inventory, field and URL mappings, target schema, and import contract.",
+        "input": "url",
+        "placeholder": "https://example.com/migration-pack",
+        "publicAccess": "required",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "dataset-cleanup",
+    "mode": "claim",
+    "label": "Dataset cleanup and normalization",
+    "shortDescription": "Reserve one worker to apply fixed cleanup rules and return a reproducible, reconciled dataset.",
+    "titleTemplate": "Clean and normalize {{dataset}}",
+    "icon": "database",
+    "motif": "grid",
+    "durationHours": 96,
+    "tags": ["data-processing", "data-cleaning", "validation", "etl"],
+    "bestFor": ["Known input dataset", "Explicit quality rules", "Deterministic validation"],
+    "details": {
+      "includes": "Schema checks, normalization, deduplication, exception handling, and quality report.",
+      "success": "The output passes every automated rule and accounts for every input record."
+    },
+    "tokens": [
+      {
+        "key": "dataset",
+        "label": "Dataset and version",
+        "placeholder": "customers-2026-08.csv version 3",
+        "required": true
+      },
+      {
+        "key": "outputFormat",
+        "label": "Required output",
+        "placeholder": "UTF-8 CSV matching schema v2",
+        "required": true
+      },
+      {
+        "key": "cleanupGoal",
+        "label": "Primary cleanup goal",
+        "placeholder": "normalize contacts and remove exact duplicates",
+        "required": true
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Clean and normalize {{dataset}} to produce {{outputFormat}}, with the primary goal to\n{{cleanupGoal}}. Apply only the published rules, preserve provenance, and make every transformed,\ndeduplicated, or rejected record explainable."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Dataset and pinned version: {{dataset}}.\n- Required output: {{outputFormat}}.\n- Primary cleanup goal: {{cleanupGoal}}.\n- Public sanitized dataset and rules pack: {{datasetRulesUrl}}\n- The pack fixes the input data, target schema, normalization rules, duplicate keys and survivor policy, null policy, protected fields, fixtures, encoding, delimiter, and time-zone conventions. Personal or restricted records are outside this public task."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Open the dataset and rules pack without signing in and confirm its version, schema, deterministic rules, and fixtures.\n- If the pack contains personal or restricted records, or a rule is undefined, do not claim the public task."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- Cleaned dataset in {{outputFormat}}.\n- Repeatable transformation script, query, notebook, or pipeline configuration.\n- Row-level change log or stable aggregate audit where row-level output would expose restricted\n  data.\n- Rejected-record file containing stable identifiers and reasons.\n- Validation and reconciliation report with input, output, duplicate, transformed, unchanged,\n  rejected, and null counts.\n- Data dictionary documenting output fields and any normalized enumerations."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- Input count reconciles to retained plus merged duplicates plus rejected records according to the\n  supplied survivor policy.\n- Output validates against the target schema, encoding, field types, enumerations, and required\n  constraints.\n- Running the supplied transformation against the pinned input produces the delivered output or an\n  equivalent deterministically ordered result.\n- Protected fields match their source values, and every modified field follows one published rule.\n- Every rejected or ambiguous record has a stable identifier and reason.\n- The validation sample and requester-provided edge cases produce the expected results."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- Cleaned dataset and transformation artifact.\n- Reconciliation and schema-validation output with command or execution instructions.\n- Change/reject audit at the approved sensitivity level.\n- Hashes or version identifiers for the source and delivered dataset.\n- Results for the supplied sample and edge-case fixtures."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Do not infer missing facts or modify protected fields.\n- Apply only the supplied normalization, null, and duplicate rules. Report ambiguous records rather\n  than choosing an undocumented interpretation.\n- Keep stable source identifiers so output rows and rejects can be traced to the input.\n- Do not discard records silently or log sensitive raw values beyond the approved artifacts.\n- Modeling, enrichment from external sources, schema design, and probabilistic entity resolution\n  are outside scope unless fully specified as deterministic rules."
+      },
+      {
+        "heading": "How selection works",
+        "body": "One worker reserves this deterministic cleanup task. The requester verifies schema validity,\nreconciliation, protected fields, rule coverage, reproducibility, and the supplied edge cases before\naccepting or rejecting the submission. The task does not guarantee iterative rule discovery or a\nrevision round."
+      }
+    ],
+    "modeDefaults": {
+      "stakeRequired": false,
+      "stakeBps": "0"
+    },
+    "readiness": [
+      {
+        "key": "datasetRulesUrl",
+        "label": "Public dataset and rules pack",
+        "help": "A public sanitized dataset plus schema, normalization rules, duplicate policy, and fixtures.",
+        "input": "url",
+        "placeholder": "https://example.com/dataset-v3",
+        "publicAccess": "required",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "ai-integration",
+    "mode": "pitch",
+    "label": "AI workflow integration",
+    "shortDescription": "Choose an architecture before one worker builds and proves a bounded AI-assisted workflow.",
+    "titleTemplate": "Build an AI integration for {{workflow}}",
+    "icon": "robot",
+    "motif": "rings",
+    "durationHours": 168,
+    "tags": ["ai-integration", "automation", "development", "testing"],
+    "bestFor": ["Open technical approach", "Architecture tradeoffs", "Prototype-led selection"],
+    "details": {
+      "includes": "Proposed architecture, model choice, risk plan, delivery milestones, and working integration.",
+      "success": "The selected approach delivers the target workflow with observable quality and cost controls."
+    },
+    "tokens": [
+      {
+        "key": "workflow",
+        "label": "Workflow to improve",
+        "placeholder": "triaging inbound support requests",
+        "required": true
+      },
+      {
+        "key": "outcome",
+        "label": "Desired outcome",
+        "placeholder": "route each request with a reviewable draft response",
+        "required": true
+      },
+      {
+        "key": "environment",
+        "label": "Target environment",
+        "placeholder": "our TypeScript service and Zendesk sandbox",
+        "required": true
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Design and implement a bounded AI-assisted integration for {{workflow}} in {{environment}}. The\nintegration should achieve {{outcome}} while keeping material actions reviewable, failures visible,\nand the selected implementation reproducible in the named target environment."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Current workflow: {{workflow}}.\n- Desired outcome: {{outcome}}.\n- Target runtime: {{environment}}.\n- Public integration pack: {{integrationPackUrl}}\n- The pack fixes the workflow contract, mock APIs or events, sanitized fixtures, evaluation set, volume, latency and cost limits, model/tool versions, logging policy, and human approval points. Live credentials, private records, and production writes are outside this public task."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Open the integration pack without signing in and confirm its mocks, fixtures, evaluation set, target runtime, and approval boundaries.\n- If the proposed approach requires live credentials, private records, or production writes, do not pitch it for this public task."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- Working integration and source code against the public mocks or sandbox in the selected architecture.\n- Versioned configuration and environment-variable schema with no embedded secrets.\n- Automated tests for happy paths, malformed input, provider or tool failure, retry, timeout, duplicate events, and human rejection.\n- Evaluation report against the pinned fixtures, including quality, failure, latency, and cost results.\n- Architecture and data-flow summary naming models, tools, stored data, trust boundaries, and approval points.\n- Setup, operation, monitoring, and rollback instructions for the public runtime."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- Every named end-to-end scenario produces its expected output or declared review state against the\n  pinned evaluation set.\n- Malformed input, provider failure, timeout, retry, duplicate event, and human rejection follow the\n  documented safe path without an undeclared side effect.\n- No secret is present in source, configuration, logs, or submitted evidence.\n- Measured latency, cost, and quality satisfy the numerical limits supplied in the task, or the\n  report identifies each miss without hiding it.\n- A clean checkout can be configured, tested, and rolled back using the supplied instructions.\n- Architecture documentation matches the delivered data flow, provider calls, storage, and approval\n  boundaries."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- Source revision and configuration manifest.\n- Test command and unedited passing/failing summary for every required scenario.\n- Evaluation report tied to the pinned dataset and model/tool versions.\n- Redacted example logs demonstrating a success, a safe refusal or review handoff, and a provider or\n  tool failure.\n- Architecture diagram plus a setup-and-rollback walkthrough from a clean environment."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Use least-privilege access and preserve every required human approval point.\n- Do not train on, retain, or send supplied data to an undeclared provider.\n- Pin model, provider, library, prompt, and tool versions wherever a change could affect acceptance.\n- Make retries bounded and side effects idempotent where the target interfaces permit it.\n- Record refusals, low-confidence results, and tool failures rather than silently presenting them as\n  successful output.\n- General platform redesign, unrestricted autonomous action, model training, and production rollout\n  are excluded unless the published inputs explicitly specify them."
+      },
+      {
+        "heading": "How selection works",
+        "body": "Each pitch should state the proposed architecture and data flow, model/tool rationale, evaluation\nmethod, security and failure risks, milestones, estimated duration, and one relevant prior artifact\nor result. It may include a small pseudocode or interface example, but must not include the finished\nintegration. The requester selects the approach that best fits the published environment,\nconstraints, evaluation method, and risk controls, then reviews the selected worker's final\ndeliverables against the criteria above."
+      }
+    ],
+    "modeDefaults": {
+      "pitchDeadline": "48"
+    },
+    "readiness": [
+      {
+        "key": "integrationPackUrl",
+        "label": "Public integration pack",
+        "help": "A public repository or specification with mock APIs, sanitized fixtures, evaluation data, and runtime constraints.",
+        "input": "url",
+        "placeholder": "https://github.com/org/integration-fixture",
+        "publicAccess": "required",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "ux-ui-redesign",
+    "mode": "pitch",
+    "label": "UX/UI redesign",
+    "shortDescription": "Compare product diagnoses and design approaches before one worker redesigns a complete flow.",
+    "titleTemplate": "Redesign {{flow}} in {{product}}",
+    "icon": "layout",
+    "motif": "grid",
+    "durationHours": 168,
+    "tags": ["ux-design", "ui-design", "product-design", "accessibility"],
+    "bestFor": [
+      "Ambiguous interaction problem",
+      "Multiple design directions",
+      "Prototype comparison"
+    ],
+    "details": {
+      "includes": "Problem framing, proposed direction, key flows, high-fidelity screens, and handoff notes.",
+      "success": "The selected solution resolves the priority user problem and is ready for implementation."
+    },
+    "tokens": [
+      {
+        "key": "product",
+        "label": "Product or surface",
+        "placeholder": "our customer-support dashboard",
+        "required": true
+      },
+      {
+        "key": "flow",
+        "label": "Flow to redesign",
+        "placeholder": "finding and resolving an escalated ticket",
+        "required": true
+      },
+      {
+        "key": "audience",
+        "label": "Primary user",
+        "placeholder": "support leads working across large queues",
+        "required": true
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Redesign {{flow}} in {{product}} for {{audience}}. The result should resolve the documented user\nproblem, cover the complete interaction rather than an isolated attractive screen, and provide\neditable, accessible, implementation-ready design specifications."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Product or surface: {{product}}.\n- Flow: {{flow}}.\n- Primary user: {{audience}}.\n- Public current-state and evidence pack: {{designContextUrl}}\n- The pack fixes the current screens or build, observed evidence, brand and component guidance, platforms, breakpoints, content constraints, and preserved behaviors. Distinguish observed evidence from requester assumptions; private analytics and a restricted test environment are outside this task."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Open the design context without signing in and confirm the current flow, evidence, platform constraints, and required states are visible.\n- If the evidence is absent, treat requester beliefs as assumptions in the pitch; do not imply private analytics will arrive later."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- Current-state diagnosis and a concise prioritized problem statement.\n- End-to-end user flow covering entry, core path, completion, and recovery.\n- High-fidelity screens for every agreed step at each supplied breakpoint.\n- Loading, empty, error, validation, disabled, permission, and success states that can occur in the\n  named flow.\n- Component and interaction annotations covering behavior, content, keyboard order, focus, and\n  responsive changes.\n- Clickable prototype for the critical path, editable source files, and a handoff manifest linking\n  screens to existing or proposed components."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- The delivered screen-and-state matrix contains every agreed flow step, breakpoint, and applicable\n  loading, empty, error, permission, validation, disabled, and success state.\n- The prototype completes the critical path and at least one named recovery path without a dead end.\n- Annotations specify keyboard order, focus behavior, labels, responsive behavior, and component\n  reuse or additions for each interactive screen.\n- Text and UI component contrast meet WCAG AA against the supplied palette, with exceptions named\n  and measured rather than hidden.\n- Editable source files open without missing assets, and every handoff link resolves to the matching\n  screen or component note.\n- The diagnosis distinguishes supplied evidence, reasonable inference, and open research questions."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- Editable design source, prototype link, and export manifest.\n- Flow diagram and screen-and-state coverage matrix.\n- Accessibility checklist with contrast measurements and keyboard/focus notes.\n- Component reuse/addition inventory and a walkthrough of the critical and recovery paths.\n- A trace from each prioritized problem to the screen, interaction, or open question that addresses it."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Preserve the published brand and platform constraints unless a deviation is explicitly explained.\n- Reuse supplied design-system components where they meet the need; identify proposed additions or\n  variants rather than silently forking them.\n- Support keyboard operation, visible focus, meaningful labels, reduced motion where applicable,\n  and WCAG AA contrast for supplied colors and states.\n- Do not rely on color alone for status or remove a required workflow capability to simplify a mock.\n- Production frontend implementation, new user research, a full product redesign, and unrelated\n  flows are excluded unless explicitly included in the published task."
+      },
+      {
+        "heading": "How selection works",
+        "body": "Each pitch should provide a concise diagnosis, design principles, evidence and assumptions, proposed\nprocess and artifacts, accessibility approach, milestones, estimated duration, and representative\nprior work. A pitch may show a rough flow fragment or explain one design principle, but must not\ncontain the finished screens or full redesign. The requester selects the strongest evidence-aware,\nfeasible approach, then evaluates the selected worker's final coverage, interaction coherence,\naccessibility, editability, and implementation handoff."
+      }
+    ],
+    "modeDefaults": {
+      "pitchDeadline": "48"
+    },
+    "readiness": [
+      {
+        "key": "designContextUrl",
+        "label": "Public design context",
+        "help": "A public build or screenshot pack with current states, evidence, design constraints, and target breakpoints.",
+        "input": "url",
+        "placeholder": "https://example.com/design-context",
+        "publicAccess": "required",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "go-to-market",
+    "mode": "pitch",
+    "label": "Go-to-market launch plan",
+    "shortDescription": "Select an audience and channel thesis before one strategist builds an evidence-led launch plan.",
+    "titleTemplate": "Create a go-to-market plan for {{product}}",
+    "icon": "rocket",
+    "motif": "rays",
+    "durationHours": 120,
+    "tags": ["go-to-market", "marketing-strategy", "positioning", "launch"],
+    "bestFor": ["New market entry", "Product launch", "Positioning choices"],
+    "details": {
+      "includes": "Positioning, channels, launch sequence, experiments, budget assumptions, and measures.",
+      "success": "The plan gives the team a specific, testable route to the target audience."
+    },
+    "tokens": [
+      {
+        "key": "product",
+        "label": "Product or offer",
+        "placeholder": "a compliance workspace for fintech teams",
+        "required": true
+      },
+      {
+        "key": "audience",
+        "label": "Priority audience",
+        "placeholder": "operations leaders at early-stage fintechs",
+        "required": true
+      },
+      {
+        "key": "launchGoal",
+        "label": "Launch goal",
+        "placeholder": "generate 40 qualified design-partner applications",
+        "required": true
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Create an evidence-led go-to-market launch plan for {{product}}, prioritizing {{audience}}, with the\ngoal to {{launchGoal}}. The plan should make its positioning, channel choices, budget, sequence,\nownership, and measurement logic explicit enough for a team to execute."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Product or offer: {{product}}.\n- Priority audience: {{audience}}.\n- Launch goal: {{launchGoal}}.\n- Public launch fact pack: {{launchPackUrl}}\n- The pack fixes approved product facts and proof, dated public research, competitors, launch date and geography, budget, channels, team capacity, brand and legal constraints, existing assets, and available measurement events. CRM, customer-list, ad-account, and production-site access are outside this planning task."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Open the launch pack without signing in and confirm it states the approved facts, launch constraints, budget, capacity, and measurement sources.\n- If execution would require a CRM, customer list, ad account, or private analytics, keep that work outside this planning pitch."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- Audience definition, priority segment rationale, buying context, and key objections.\n- Positioning statement, message hierarchy, proof mapping, and prohibited or unsupported claims.\n- Channel plan with role, audience, activity, owner, timing, budget, dependencies, and rationale for\n  each recommended channel.\n- Launch calendar covering preparation, launch, and follow-through.\n- Two to four campaign concepts with channel, audience, message, call to action, and required asset\n  outline; finished campaign production is not included.\n- Measurement framework connecting the launch goal to leading and outcome indicators, source,\n  cadence, decision threshold, and owner.\n- Prioritized next actions, material risks, assumptions, and contingency triggers."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- Every activity maps to a priority audience, message, launch phase, owner, timing, cost, and measure.\n- Planned external spend does not exceed the supplied budget, and all material dependencies are named.\n- Every factual market, customer, competitor, and performance claim maps to a supplied or cited source;\n  unsupported statements are labelled as hypotheses or gaps.\n- The calendar fits the supplied launch date and team capacity, with prerequisite and fallback paths.\n- The measurement framework defines the formula or event source, cadence, owner, and action threshold\n  for each primary measure.\n- Campaign concepts remain consistent with the approved product truth, proof, brand, legal constraints,\n  and call to action."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- Final plan in an editable document or structured Markdown file.\n- Source ledger mapping claims and decisions to supplied or discovered evidence.\n- Channel-and-budget table whose totals reconcile to the stated budget.\n- Launch calendar, ownership matrix, measurement table, and execution checklist.\n- Assumption, risk, and evidence-gap register with proposed validation or contingency action."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Do not invent customer quotes, market figures, product capabilities, certifications, performance\n  history, or legal claims. Mark a missing proof point as a gap.\n- Keep total planned spend within the supplied budget and distinguish media spend, tools, production,\n  and internal effort where the inputs permit it.\n- Recommend only channels the supplied geography, timing, team, consent, and access constraints can\n  support; explain any proposed prerequisite.\n- Separate sourced facts, requester assumptions, strategist inferences, and hypotheses to test.\n- Ad buying, outreach execution, asset production, sales operations, and product changes are outside\n  scope unless expressly added to the published task."
+      },
+      {
+        "heading": "How selection works",
+        "body": "Each pitch should state its audience thesis, positioning hypothesis, channel-selection method,\nresearch gaps, success-measure approach, major risks, milestones, estimated duration, and comparable\nprior work. It may include a short illustrative positioning angle, but must not deliver the completed\nstrategy, channel plan, or launch calendar before selection. The requester selects the proposal\nwhose reasoning, evidence plan, feasibility, and measurement approach best fit the published inputs,\nthen reviews the selected worker's completed plan against the criteria above."
+      }
+    ],
+    "modeDefaults": {
+      "pitchDeadline": "36"
+    },
+    "readiness": [
+      {
+        "key": "launchPackUrl",
+        "label": "Public launch fact pack",
+        "help": "A public pack with approved product facts, evidence, date, geography, budget, capacity, and legal constraints.",
+        "input": "url",
+        "placeholder": "https://example.com/launch-pack",
+        "publicAccess": "required",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "prompt-eval",
+    "mode": "benchmark",
+    "label": "Prompt and evaluation optimization",
+    "shortDescription": "Compete on a pinned held-out evaluation while preserving model, tool, cost, and leakage controls.",
+    "titleTemplate": "Optimize prompts for {{task}}",
+    "icon": "sparkles",
+    "motif": "rays",
+    "durationHours": 120,
+    "tags": ["prompt-engineering", "evaluation", "llm", "optimization"],
+    "bestFor": ["Fixed evaluation set", "Objective scoring rubric", "Repeatable prompt trials"],
+    "details": {
+      "includes": "Baseline prompt, held-out set, scoring rubric, constraints, and reproducible evidence.",
+      "success": "The submitted prompt improves the target score without violating fixed constraints."
+    },
+    "tokens": [
+      {
+        "key": "task",
+        "label": "Model task to optimize",
+        "placeholder": "classify support requests into the supplied taxonomy",
+        "required": true
+      },
+      {
+        "key": "model",
+        "label": "Pinned model and version",
+        "placeholder": "the model and snapshot named in eval-config.yaml",
+        "required": true
+      },
+      {
+        "key": "evaluationSet",
+        "label": "Evaluation set and harness",
+        "placeholder": "support-routing-eval v2 and commit 4f19c2a",
+        "required": true
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Optimize the prompt or agent configuration for {{task}} using {{model}} and {{evaluationSet}}. The\nwinning eligible artifact maximizes held-out pass rate without changing the pinned evaluator,\nexceeding the supplied cost or latency gates, or leaking held-out examples."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Task: {{task}}.\n- Model and version: {{model}}.\n- Evaluation set and harness: {{evaluationSet}}.\n- Public benchmark pack: {{benchmarkPackUrl}}\n- The pack fixes the baseline artifact and score, public development set, evaluator and rubric, run command, allowed context and tools, generation parameters, run count, aggregation, token prices, latency environment, eligibility gates, and sealed held-out procedure. Held-out examples, labels, and secrets are never worker inputs."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Open the benchmark pack without signing in and reproduce the baseline with the pinned public development harness.\n- Confirm the requester or evaluator can run the sealed held-out set; if held-out labels are exposed or the proof path is undefined, do not enter."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- Complete optimized prompt, agent configuration, and any allowed tool definitions or deterministic\n  preprocessing needed to run it.\n- Machine-readable configuration pinning model, parameters, tool and dependency versions.\n- Runnable development-evaluation command and environment setup.\n- Raw development results and authorized held-out result artifact.\n- Method summary describing changes, experiments, failure analysis, and discarded approaches.\n- Canonical proof package with primary score, gates, tie-breakers, artifact revision, and caveats."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- The authorized held-out runner produces a pass rate above the published baseline using the pinned\n  model, evaluator, dataset version, run count, and aggregation rule.\n- `metricValue` equals `round(passRate * 10000)` and lies between 0 and 10000 inclusive.\n- Median token cost and p95 latency meet their published gates, and every required tool or format\n  check passes.\n- A clean development run using the supplied command reproduces the reported development score\n  within the task's declared stochastic tolerance.\n- The submitted artifact is complete, contains no per-record answer map or held-out identifier\n  branch, and matches the revision named in the proof."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- Optimized artifact and immutable revision.\n- Canonical proof package with `metricValue` encoded in basis points.\n- Raw per-example or aggregate outputs at the visibility level permitted by the held-out policy,\n  including failures rather than only successful cases.\n- Harness output naming model snapshot, evaluator, dataset hash, generation parameters, token use,\n  latency, run count, and final aggregation.\n- Baseline comparison and reproduction command from a clean environment."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Do not change the pinned model, evaluator, task inputs, reference answers, run count, sampling\n  configuration, tool allowance, or score aggregation unless the brief explicitly marks it variable.\n- Do not inspect, reconstruct, memorize, encode, or manually special-case sealed held-out examples or\n  labels. Do not key outputs to record IDs, order, hashes, or other evaluation-set fingerprints.\n- The submitted artifact must handle every evaluation record; omit neither failures nor low scores.\n- Stay within the published median token-cost and p95 latency gates, using the supplied calculation.\n- Disclose every external prompt, dataset, model, tool, and code dependency and its version."
+      },
+      {
+        "heading": "How selection works",
+        "body": "The requester first rejects entries that fail leakage review, artifact completeness, model or tool\npinning, format checks, cost, latency, or reproducibility. Among eligible entries, the highest\nheld-out pass-rate basis points wins. Ties compare lower median token cost, then lower p95 latency,\nthen the earlier onchain proof submission. These rules are requester-applied; Taskmarket records the\nclaim but does not execute them automatically."
+      }
+    ],
+    "modeDefaults": {
+      "metricDescription": "Held-out pass rate in basis points (0-10000); higher is better.",
+      "metricTarget": "Exceed the published baseline; tie-break lower median token cost, then lower p95 latency."
+    },
+    "readiness": [
+      {
+        "key": "benchmarkPackUrl",
+        "label": "Public benchmark pack",
+        "help": "A public baseline, development set, harness, evaluator contract, gates, and sealed-run instructions.",
+        "input": "url",
+        "placeholder": "https://github.com/org/prompt-benchmark",
+        "publicAccess": "required",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "api-latency",
+    "mode": "benchmark",
+    "label": "API latency optimization",
+    "shortDescription": "Compare reproducible p95 latency improvements behind correctness and resource gates.",
+    "titleTemplate": "Reduce p95 latency for {{endpoint}}",
+    "icon": "gauge",
+    "motif": "signal",
+    "durationHours": 120,
+    "tags": ["performance", "api", "latency", "load-testing"],
+    "bestFor": [
+      "Stable endpoint contract",
+      "Repeatable load profile",
+      "Measured performance target"
+    ],
+    "details": {
+      "includes": "Baseline environment, load profile, correctness checks, measurement method, and limits.",
+      "success": "Latency improves under the fixed workload while correctness checks still pass."
+    },
+    "tokens": [
+      {
+        "key": "endpoint",
+        "label": "Endpoint or operation",
+        "placeholder": "POST /v1/search",
+        "required": true
+      },
+      {
+        "key": "repository",
+        "label": "Repository and revision",
+        "placeholder": "api-service at commit 82a17df",
+        "required": true
+      },
+      {
+        "key": "loadProfile",
+        "label": "Pinned load profile",
+        "placeholder": "search-mixed-v3 at 50 virtual users for 10 minutes",
+        "required": true
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Reduce p95 response latency for {{endpoint}} in {{repository}} under {{loadProfile}}. The winning\neligible change has the lowest independently reproduced p95 latency while preserving response\ncorrectness, throughput, reliability, and the fixed resource and dependency boundaries."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Endpoint or operation: {{endpoint}}.\n- Repository and revision: {{repository}}.\n- Load profile: {{loadProfile}}.\n- Public reproducible benchmark pack: {{benchmarkPackUrl}}\n- The pack fixes the benchmark script, request corpus and seed, container digest, hardware profile, dependency fixtures, warm-up and cache policy, run duration and count, baseline output, correctness suite, resource ceilings, and every numerical gate. Production infrastructure and credentials are outside this benchmark."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Open the benchmark pack without signing in and reproduce its baseline inside the pinned container and fixed fixtures.\n- If scoring depends on production infrastructure, credentials, or an unspecified resource, do not enter the benchmark."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- Source and configuration change as a reviewable patch or repository revision.\n- Tests covering the changed behavior and any newly exposed race, cache, or failure path.\n- Reproducible benchmark environment and exact baseline/candidate commands.\n- Raw result files for all required baseline and candidate runs.\n- Before/after report covering p50, p95, p99, throughput, error rate, CPU, memory, network, and\n  dependency calls or time where the harness exposes them.\n- Canonical proof package with the candidate p95 in whole microseconds, gates, tie-breakers, artifact\n  revision, run order, and caveats."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- At least the published number of clean candidate runs complete under the pinned image, hardware,\n  fixtures, load script, run duration, concurrency, and run-order policy.\n- `metricValue` is the aggregation rule's candidate p95 converted to whole microseconds with no\n  decimal or unit ambiguity, and it is lower than the published baseline value.\n- The correctness suite passes, error rate does not exceed its gate, minimum throughput is met, and\n  CPU, memory, network, storage, and dependency-service measurements stay within their ceilings.\n- Raw outputs include all scheduled iterations and errors, and recomputing the percentile from them\n  yields the claimed value under the supplied percentile method.\n- A clean checkout of the named revision builds, tests, and runs with the supplied commands."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- Source revision or patch and automated test output.\n- Canonical proof package plus immutable raw output from every baseline and candidate score run.\n- Environment manifest naming image digest, hardware, dependency versions, load-script revision,\n  request-corpus hash, run order, warm-up, and cache state.\n- Recalculation command for p95 and each gate.\n- Before/after report and a short explanation of the optimization and its tradeoffs."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Preserve response semantics and pass the complete pinned correctness suite.\n- Do not remove work, narrow the request corpus, lower concurrency or duration, skip slow responses,\n  hide errors, precompute fixture-specific answers, or move measured work outside the timed boundary.\n- Follow the supplied warm-up, connection reuse, cache, database state, rate-limit, and run-order\n  policy for both baseline and candidate.\n- Stay within the published CPU, memory, network, storage, and downstream-service ceilings. Disclose\n  any capacity or topology change; an undeclared resource increase makes the entry ineligible.\n- Exclude debugger, profiler, and unrelated background-load runs from score runs, but retain them as\n  supporting diagnostic evidence where useful."
+      },
+      {
+        "heading": "How selection works",
+        "body": "The requester first excludes entries that fail correctness, error rate, throughput, resource,\nenvironment, completeness, anti-shortcut, or reproduction checks. Among eligible entries, the\nlowest p95 microseconds wins. Ties compare lower median latency, then lower peak memory, then the\nearlier onchain proof submission. The protocol records the integer claim and proof commitment but\ndoes not calculate a percentile or enforce a gate."
+      }
+    ],
+    "modeDefaults": {
+      "metricDescription": "p95 response latency in whole microseconds under the pinned load profile; lower is better.",
+      "metricTarget": "Beat the published baseline while passing correctness, error-rate, throughput, and resource gates."
+    },
+    "readiness": [
+      {
+        "key": "benchmarkPackUrl",
+        "label": "Public benchmark pack",
+        "help": "A public repository with the harness, corpus, container, fixtures, baseline, resource profile, and gates.",
+        "input": "url",
+        "placeholder": "https://github.com/org/api-benchmark",
+        "publicAccess": "required",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "data-extraction",
+    "mode": "benchmark",
+    "label": "Structured data-extraction accuracy",
+    "shortDescription": "Compete on held-out field-level F1 with schema, leakage, cost, and latency controls.",
+    "titleTemplate": "Improve extraction accuracy for {{documentType}}",
+    "icon": "file-search",
+    "motif": "steps",
+    "durationHours": 144,
+    "tags": ["data-extraction", "evaluation", "f1-score", "structured-data"],
+    "bestFor": ["Labeled fixture set", "Strict output schema", "Accuracy-led comparison"],
+    "details": {
+      "includes": "Fixtures, expected schema, scoring method, failure classes, and reproducible evidence.",
+      "success": "Accuracy improves on held-out fixtures with valid structured output."
+    },
+    "tokens": [
+      {
+        "key": "documentType",
+        "label": "Source document type",
+        "placeholder": "English-language supplier invoices",
+        "required": true
+      },
+      {
+        "key": "schema",
+        "label": "Target schema and version",
+        "placeholder": "invoice-schema v3",
+        "required": true
+      },
+      {
+        "key": "evaluationSet",
+        "label": "Evaluation corpus and harness",
+        "placeholder": "invoice-eval-2026-08 and scorer commit b90c61e",
+        "required": true
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Build an extractor for {{documentType}} that emits {{schema}} and maximizes macro field-level F1 on\n{{evaluationSet}}. Every record must be processed, every output must pass the declared schema gate,\nand the winning eligible artifact must respect the fixed leakage, runtime, and cost constraints."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Source document type: {{documentType}}.\n- Target schema: {{schema}}.\n- Evaluation corpus and harness: {{evaluationSet}}.\n- Public extraction benchmark pack: {{extractorPackUrl}}\n- The pack fixes the sanitized development examples, schema and field definitions, normalization and matching rules, scorer, baseline, allowed models and tools, container, cost and latency gates, macro averaging, absent-field treatment, arrays, duplicates, partial matches, and zero-division behavior. The requester or evaluator runs the sealed held-out corpus; workers do not receive private documents or labels."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Open the benchmark pack without signing in and reproduce schema validation and the development score.\n- Confirm the requester or evaluator runs the sealed corpus; if private held-out documents must be downloaded by workers, do not enter."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- Complete extractor source, configuration, prompts or rules, and dependency lockfile.\n- Machine-readable outputs for the development set and the authorized held-out result.\n- Schema validator and exact scoring command.\n- Tests for required, optional, repeated, missing, malformed, and unsupported fields plus unreadable\n  documents and tool/model failure.\n- Error-analysis report grouped by field and failure category.\n- Canonical proof package with macro F1 basis points, schema gate, cost and latency gates,\n  tie-breakers, artifact revision, and caveats."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- The authorized held-out runner reports macro field-level F1 above the published baseline using the\n  pinned corpus, schema, normalization rules, scorer, and averaging behavior.\n- `metricValue` equals `round(macroF1 * 10000)` and lies between 0 and 10000 inclusive.\n- Every input has one output disposition, schema-valid outputs meet the required validity rate, and\n  failures remain included under the scorer's declared policy.\n- Per-record cost and p95 latency meet the published gates, and model/tool versions match the\n  submitted configuration.\n- A clean run against the labelled development set reproduces the reported development metric and\n  exact-match count using the supplied command.\n- Leakage review finds no record-specific answer map, held-out label, or evaluation-set fingerprint."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- Extractor revision, configuration, lockfile, and setup instructions.\n- Canonical proof package with primary score encoded in basis points.\n- Raw scorer and schema-validator output naming corpus, schema, scorer, model/tool, and environment\n  versions, with aggregate counts that include every record.\n- Field-level precision, recall, F1, support, exact-match, cost, latency, and failure-category report.\n- Immutable development output and authorized held-out result at the permitted visibility level."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Do not inspect or reconstruct held-out labels, manually map held-out record IDs to outputs, encode\n  answers from file names or ordering, or omit difficult records.\n- Do not alter the corpus, schema, normalization, scorer, macro averaging, or failure treatment.\n- Produce one declared output for every input, including an explicit failure object where the schema\n  permits it; never silently drop a failed document from scoring.\n- Use only the allowed models, services, external data, and tools, pinned to the versions required by\n  the brief. Disclose every dependency and per-record external call.\n- Stay within the published per-record cost and p95 latency gates."
+      },
+      {
+        "heading": "How selection works",
+        "body": "The requester first excludes entries that fail schema validity, corpus completeness, leakage,\nallowed-tool, cost, latency, artifact, or reproduction checks. Among eligible entries, the highest\nmacro field-level F1 basis points wins. Ties compare higher record exact-match basis points, then\nlower per-record cost in the task's declared integer unit, then lower p95 latency, then the earlier\nonchain proof submission. Taskmarket does not execute the scorer or enforce this ordering."
+      }
+    ],
+    "modeDefaults": {
+      "metricDescription": "Macro field-level F1 in basis points (0-10000) on held-out records; higher is better.",
+      "metricTarget": "Exceed the published baseline; tie-break record exact match, then lower cost, then lower p95 latency."
+    },
+    "readiness": [
+      {
+        "key": "extractorPackUrl",
+        "label": "Public extraction benchmark pack",
+        "help": "A public sanitized development corpus, schema, scorer, baseline, gates, and sealed-run instructions.",
+        "input": "url",
+        "placeholder": "https://github.com/org/extraction-benchmark",
+        "publicAccess": "required",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "data-labeling",
+    "mode": "auction",
+    "label": "AI data-labeling batch",
+    "shortDescription": "Sealed price competition for a fixed annotation batch with explicit rules and quality checks.",
+    "titleTemplate": "Label {{itemCount}} in {{dataset}}",
+    "icon": "list-check",
+    "motif": "grid",
+    "durationHours": 168,
+    "tags": ["data-labeling", "annotation", "ai-data", "quality-control"],
+    "bestFor": [
+      "Large labeled datasets",
+      "Consistent annotation rules",
+      "Comparable batch pricing"
+    ],
+    "details": {
+      "includes": "Item scope, label taxonomy, edge-case guidance, review sample, and delivery format.",
+      "success": "The completed batch meets the agreed sample accuracy and format checks."
+    },
+    "tokens": [
+      {
+        "key": "dataset",
+        "label": "Dataset and version",
+        "placeholder": "support-intents batch 2026-08-01",
+        "required": true
+      },
+      {
+        "key": "itemCount",
+        "label": "Items to label",
+        "placeholder": "2,400 records",
+        "required": true
+      },
+      {
+        "key": "taxonomy",
+        "label": "Label taxonomy and version",
+        "placeholder": "intent-taxonomy v4",
+        "required": true
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Label all {{itemCount}} in {{dataset}} using {{taxonomy}}. Apply the published decision rules\nconsistently, flag genuinely ambiguous items instead of guessing, and return a schema-valid batch\nwhose quality-control score meets the stated threshold."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Dataset and pinned version: {{dataset}}.\n- Exact item count: {{itemCount}}.\n- Taxonomy and version: {{taxonomy}}.\n- Public sanitized labeling pack: {{labelingPackUrl}}\n- The pack contains the complete file-based batch, stable identifiers, schema, annotation guide, positive and negative examples, multi-label and abstention rules, edge cases, QC sample, scorer, target score, and output format. No labeling-tool account or private record is part of this task."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Open the complete batch without signing in and confirm its item count, taxonomy, decision rules, scorer, and output format.\n- Bid only if the entire fixed file-based batch can be completed at the offered price; do not assume tool credentials or extra examples will arrive later."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- One label disposition for every stable input identifier in the required schema and file format.\n- Schema-valid export ready for the public importer or evaluator.\n- Ambiguity and abstention log with item identifier, rule considered, and reason.\n- Quality report containing counts by label, unlabeled and multi-label counts, QC score, and systematic issues.\n- Immutable output manifest naming dataset and taxonomy versions."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- The output contains exactly one permitted disposition for every one of the {{itemCount}} stable\n  identifiers, with no unknown, duplicate, added, or silently missing item.\n- The supplied schema and importer validate the complete export without error.\n- The published QC scorer reaches or exceeds its numerical threshold on the fixed sample under the\n  declared tie, abstention, and multi-label rules.\n- Every abstained, ambiguous, or rejected record appears in the log with an allowed reason.\n- Label counts reconcile to total item count under the published multi-label accounting rule.\n- Submitted files and evidence contain no prohibited raw values or credential material."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- Final label export and content hash or immutable manifest.\n- Schema/importer command with complete output.\n- QC scorer command and unedited aggregate result against the pinned sample.\n- Reconciliation table for total, labelled, multi-labelled, abstained, ambiguous, and rejected items.\n- Ambiguity log and data-handling attestation naming the execution environment without exposing data."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Apply only the published taxonomy and decision rules; do not invent labels or silently reinterpret\n  a class.\n- Do not guess when the abstention or escalation rule applies, and do not omit difficult items.\n- Do not use automated, model-generated, or subcontracted labels unless the task explicitly permits\n  that method and applies the same QC requirements to it.\n- Keep source data inside the approved environment and do not reproduce restricted content in logs,\n  screenshots, or public evidence.\n- Model training, taxonomy redesign, active-learning strategy, and sourcing additional records are\n  outside this fixed batch."
+      },
+      {
+        "heading": "How selection works",
+        "body": "Workers submit sealed prices for the exact published batch before the task's bid deadline. After bidding closes, the requester selects the lowest valid bid through the task's selection action. The requester then checks completeness, schema validity, QC score, reconciliation, ambiguity handling, and public-data boundaries before accepting or rejecting the selected worker's delivery. Use Pitch if capability, method, or a sample must influence selection."
+      }
+    ],
+    "modeDefaults": {
+      "auctionType": "reverse_english",
+      "bidDeadline": "48"
+    },
+    "readiness": [
+      {
+        "key": "labelingPackUrl",
+        "label": "Public labeling pack",
+        "help": "A public sanitized batch with stable IDs, taxonomy, examples, scorer, and file format.",
+        "input": "url",
+        "placeholder": "https://example.com/labeling-batch-v2",
+        "publicAccess": "required",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "cross-browser-qa",
+    "mode": "auction",
+    "label": "Scripted browser test matrix",
+    "shortDescription": "Open price competition for executing a fixed public test matrix with reproducible defect evidence.",
+    "titleTemplate": "Run a scripted browser matrix for {{product}}",
+    "icon": "shield-check",
+    "motif": "rings",
+    "durationHours": 120,
+    "tags": ["quality-assurance", "cross-browser", "manual-testing", "defect-reporting"],
+    "bestFor": ["Defined browser matrix", "Repeatable test scripts", "Comparable test quotes"],
+    "details": {
+      "includes": "Browser matrix, test paths, severity rules, evidence format, and exclusions.",
+      "success": "Every required path is tested with reproducible evidence for reported defects."
+    },
+    "tokens": [
+      {
+        "key": "product",
+        "label": "Build or product surface",
+        "placeholder": "public checkout demo build 2026.08.14",
+        "required": true
+      },
+      {
+        "key": "flows",
+        "label": "Flows to test",
+        "placeholder": "guest and signed-in checkout",
+        "required": true
+      },
+      {
+        "key": "matrix",
+        "label": "Browser and device matrix",
+        "placeholder": "Chrome, Firefox, and Safari desktop plus iPhone Safari",
+        "required": true
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Execute the scripted cases for {{flows}} in {{product}} across {{matrix}}. Account for every matrix cell, distinguish verified passes from blockers or untested states, and report each new defect with evidence another person can reproduce."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Public build or product surface: {{product}}.\n- Scripted flows: {{flows}}.\n- Browser and device matrix: {{matrix}}.\n- Public scripted test pack: {{testPackUrl}}\n- The pack fixes the build, step-by-step cases and expected results, browser/OS/device or emulator versions, viewport and network conditions, non-secret fixtures, severity taxonomy, known issues, duplicate policy, report format, and any scoped accessibility rules. Login credentials, billing, messaging, production data, and customer interactions are outside this task."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Open the build and test pack without signing in and confirm every scripted case, expected result, environment, and fixture is available.\n- Bid only if the complete fixed matrix can be executed without credentials, production effects, or requester follow-up."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- Completed test matrix with pass, fail, blocked, or not-applicable disposition for every cell.\n- One reproducible report per new defect containing environment, preconditions, steps, expected and\n  actual behavior, severity, and stable evidence links.\n- Duplicate map connecting repeated observations to one canonical defect.\n- Summary by flow, environment, status, and severity, including blockers and untested cells.\n- Browser/device evidence manifest and any scoped accessibility-rule output required by the task."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- Every required flow-by-environment cell has one permitted disposition and evidence or blocker\n  reason; counts reconcile to the published matrix.\n- Each new defect reproduces from its listed preconditions and steps on the claimed environment, or\n  is explicitly marked intermittent with attempt counts and evidence.\n- Expected behavior maps to the supplied requirement or reference, and severity follows the\n  published taxonomy.\n- Duplicate observations link to one canonical report without losing affected environments.\n- Screenshots, recordings, console/network logs, and accessibility output are redacted according to\n  the task's data policy and resolve from the report.\n- No production, billing, messaging, or customer side effect occurred."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- Completed matrix and aggregate status counts.\n- Defect reports with timestamped screenshots or recordings and relevant redacted logs.\n- Environment manifest naming device source, OS, browser version, viewport, network profile, build,\n  test data, and execution time.\n- Duplicate map, blocker list, known-issue comparison, and scoped accessibility results where required.\n- A short reproduction walkthrough for each critical or high-severity new defect."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Execute only the published scripted cases against the public build and fixtures.\n- Do not claim a physical device, OS, browser version, viewport, assistive technology, or network profile that was not used.\n- Record blocked and unavailable cells honestly; do not convert them into passes or hide intermittent failures.\n- Do not trigger billing, messaging, customer contact, or production mutation.\n- Exploratory strategy, automated-suite implementation, penetration testing, and unrestricted accessibility auditing are outside the fixed matrix."
+      },
+      {
+        "heading": "How selection works",
+        "body": "Workers openly undercut the current lowest price for the exact published matrix before the task's bid deadline. After bidding closes, the requester selects the lowest valid bid through the task's selection action; experience or a proposed strategy cannot justify selecting a higher bid. After delivery, the requester checks matrix coverage, environment truthfulness, defect reproducibility, evidence, severity, duplicates, blockers, and safe execution before acceptance."
+      }
+    ],
+    "modeDefaults": {
+      "auctionType": "english",
+      "bidDeadline": "24"
+    },
+    "readiness": [
+      {
+        "key": "testPackUrl",
+        "label": "Public scripted test pack",
+        "help": "A public pinned demo or fixture with exact cases, expected results, matrix, versions, and known issues.",
+        "input": "url",
+        "placeholder": "https://example.com/browser-test-pack",
+        "publicAccess": "required",
+        "required": true
+      }
+    ]
+  },
+  {
+    "id": "data-entry",
+    "mode": "auction",
+    "label": "Structured data-entry batch",
+    "shortDescription": "Sealed price competition for entering a fixed source batch under deterministic validation rules.",
+    "titleTemplate": "Prepare {{itemCount}} records for {{destination}}",
+    "icon": "database",
+    "motif": "steps",
+    "durationHours": 168,
+    "tags": ["data-entry", "data-processing", "validation", "batch-processing"],
+    "bestFor": ["Structured source records", "Fixed destination schema", "Volume-based pricing"],
+    "details": {
+      "includes": "Source boundaries, field mapping, validation, exception handling, and output format.",
+      "success": "All records pass required completeness, formatting, and duplicate checks."
+    },
+    "tokens": [
+      {
+        "key": "sourceBatch",
+        "label": "Source batch and version",
+        "placeholder": "supplier onboarding forms received 1-7 August",
+        "required": true
+      },
+      {
+        "key": "itemCount",
+        "label": "Records to enter",
+        "placeholder": "600 source documents",
+        "required": true
+      },
+      {
+        "key": "destination",
+        "label": "Destination schema",
+        "placeholder": "vendor-import schema v5",
+        "required": true
+      }
+    ],
+    "brief": [
+      {
+        "heading": "Outcome",
+        "body": "Transform all {{itemCount}} from {{sourceBatch}} into an import-ready file matching {{destination}}. Preserve source meaning, apply only the published mappings, flag records that cannot be completed without invention, and return complete reconciliation and quality evidence."
+      },
+      {
+        "heading": "Public inputs",
+        "body": "- Source batch and pinned version: {{sourceBatch}}.\n- Exact record count: {{itemCount}}.\n- Destination schema: {{destination}}.\n- Public sanitized data-entry pack: {{entryPackUrl}}\n- The pack contains the complete source manifest, destination schema and required fields, mappings, formatting and normalization rules, protected fields, duplicate and survivor policy, rejection reasons, validation sample, scorer, target score, and file-import instructions. Direct destination-system access is outside this public task."
+      },
+      {
+        "heading": "Readiness gate",
+        "body": "- Open the complete batch without signing in and confirm its count, mapping, target schema, rules, and validator.\n- Bid only if the entire import-ready file can be delivered at the offered price; direct system access is not part of this public template."
+      },
+      {
+        "heading": "Deliverables",
+        "body": "- Schema-valid import file for every eligible source item.\n- Rejection and ambiguity log with stable source identifiers and allowed reasons.\n- Duplicate and survivor map where the published policy merges records.\n- Reconciliation report covering source, prepared, merged, rejected, blocked, and unchanged counts.\n- Validation report and immutable output manifest."
+      },
+      {
+        "heading": "Acceptance",
+        "body": "- Every one of the {{itemCount}} source identifiers reconciles exactly once to imported,\n  merged, rejected, or blocked status under the published accounting rule.\n- Completed output passes the destination schema, type, required-field, enumeration, and referential\n  validations supplied in the task.\n- The fixed validation sample meets or exceeds the published field and record accuracy threshold.\n- Protected fields match their source values, and every normalized field cites one permitted rule.\n- Every rejected, ambiguous, duplicate, or blocked item has a stable identifier and allowed reason.\n- Import validation reports no unauthorized change outside the prepared target batch."
+      },
+      {
+        "heading": "Evidence",
+        "body": "- Final import artifact with a content hash or immutable revision.\n- Reconciliation, duplicate/survivor, rejection, ambiguity, and blocker reports.\n- Schema-validator and QC-scorer commands with complete aggregate results.\n- Spot-check map for the public validation sample and protected fields."
+      },
+      {
+        "heading": "Boundaries",
+        "body": "- Transcribe and normalize only according to the published rules; do not infer missing facts or alter protected fields.\n- Do not silently drop illegible, incomplete, duplicate, conflicting, or invalid items. Apply the stated rejection or ambiguity path.\n- Do not contact source subjects, access any destination system, or copy source data beyond the public task artifacts.\n- Keep stable identifiers so every result is traceable to its source.\n- Schema design, enrichment, probabilistic matching, business-rule discovery, and source-data cleanup beyond the fixed mappings are excluded."
+      },
+      {
+        "heading": "How selection works",
+        "body": "Workers submit sealed prices for the exact published batch before the task's bid deadline. After bidding closes, the requester selects the lowest valid bid through the task's selection action. The requester then checks count reconciliation, schema validity, sampled accuracy, protected fields, exception handling, and the immutable output before accepting or rejecting the selected worker's delivery."
+      }
+    ],
+    "modeDefaults": {
+      "auctionType": "reverse_english",
+      "bidDeadline": "48"
+    },
+    "readiness": [
+      {
+        "key": "entryPackUrl",
+        "label": "Public data-entry pack",
+        "help": "A public sanitized batch with stable IDs, mapping, target schema, rules, fixtures, and validator.",
+        "input": "url",
+        "placeholder": "https://example.com/data-entry-batch-v4",
+        "publicAccess": "required",
+        "required": true
+      }
+    ]
+  }
+]

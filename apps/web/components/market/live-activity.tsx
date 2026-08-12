@@ -1246,6 +1246,10 @@ export function LiveActivityPanel({
   const description = submissionReviewEligible
     ? 'Compare deliverables before releasing escrow.'
     : 'Work, bids, proofs, and reviews tied to this task.';
+  const activeSubmissionCount = activeGroups.reduce(
+    (total, group) => total + group.submissions.length,
+    0
+  );
 
   const showReaching =
     isRequester && task.status === 'open' && !hasActivity && !terminal && windowOpen;
@@ -1347,7 +1351,7 @@ export function LiveActivityPanel({
           >
             Submission review
           </h2>
-          <p className="text-sm leading-5 text-muted-foreground">
+          <p className="text-base leading-6 text-muted-foreground">
             Compare deliverables before releasing escrow.
           </p>
         </div>
@@ -1403,7 +1407,7 @@ export function LiveActivityPanel({
                 </span>
               ) : null}
             </div>
-            <p className="text-sm leading-5 text-muted-foreground">{description}</p>
+            <p className="text-base leading-6 text-muted-foreground">{description}</p>
           </div>
           <div className="flex items-center gap-2">
             {galleryEntries.length > 0 ? (
@@ -1428,68 +1432,60 @@ export function LiveActivityPanel({
       </div>
       <div className="grid gap-3">
         {activeGroups.length > 0 && submissionReviewEligible ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2" role="group" aria-label="Submission view">
-              <Button
-                aria-label="Gallery view"
-                aria-pressed={reviewView === 'gallery'}
-                data-active={reviewView === 'gallery'}
-                onClick={() => setReviewView('gallery')}
-                size="chip"
-                type="button"
-                variant="chip"
-              >
-                <LayoutGridIcon className="size-3.5" />
-                Gallery
-              </Button>
-              <Button
-                aria-label="List view"
-                aria-pressed={reviewView === 'list'}
-                data-active={reviewView === 'list'}
-                onClick={() => setReviewView('list')}
-                size="chip"
-                type="button"
-                variant="chip"
-              >
-                <ListIcon className="size-3.5" />
-                List
-              </Button>
-            </div>
-            {activeGroups.length > 1 ? (
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                Sort:
-                <NativeSelect
-                  aria-label="Sort submissions"
-                  onChange={(event) => {
-                    setReviewSort(event.target.value as ReviewSort);
-                    setPage(1);
-                  }}
-                  value={reviewSort}
-                  wrapperClassName="w-auto"
+          <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border/58 py-3">
+            <p className="text-sm text-muted-foreground" data-testid="submission-review-summary">
+              {activeSubmissionCount} {activeSubmissionCount === 1 ? 'submission' : 'submissions'}{' '}
+              from {activeGroups.length} {activeGroups.length === 1 ? 'submitter' : 'submitters'}
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2" role="group" aria-label="Submission view">
+                <Button
+                  aria-label="Gallery view"
+                  aria-pressed={reviewView === 'gallery'}
+                  data-active={reviewView === 'gallery'}
+                  onClick={() => setReviewView('gallery')}
+                  size="chip"
+                  type="button"
+                  variant="chip"
                 >
-                  {REVIEW_SORT_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </label>
-            ) : null}
+                  <LayoutGridIcon className="size-3.5" />
+                  Gallery
+                </Button>
+                <Button
+                  aria-label="List view"
+                  aria-pressed={reviewView === 'list'}
+                  data-active={reviewView === 'list'}
+                  onClick={() => setReviewView('list')}
+                  size="chip"
+                  type="button"
+                  variant="chip"
+                >
+                  <ListIcon className="size-3.5" />
+                  List
+                </Button>
+              </div>
+              {activeGroups.length > 1 ? (
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  Sort
+                  <NativeSelect
+                    aria-label="Sort submissions"
+                    onChange={(event) => {
+                      setReviewSort(event.target.value as ReviewSort);
+                      setPage(1);
+                    }}
+                    value={reviewSort}
+                    wrapperClassName="w-auto"
+                  >
+                    {REVIEW_SORT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </label>
+              ) : null}
+            </div>
           </div>
-        ) : null}
-
-        {submissionReviewEligible && groupedReview.totalSubmissionCount > 0 ? (
-          <p
-            className="font-mono text-xs text-muted-foreground"
-            data-testid="submission-review-summary"
-          >
-            {activeGroups.length} active {activeGroups.length === 1 ? 'submitter' : 'submitters'}
-            {' · '}
-            {activeGroups.reduce((total, group) => total + group.submissions.length, 0)} active{' '}
-            {activeGroups.reduce((total, group) => total + group.submissions.length, 0) === 1
-              ? 'submission'
-              : 'submissions'}
-          </p>
         ) : null}
 
         {submissionReviewEligible && activeGroups.length === 0 && rejectedGroups.length > 0 ? (
@@ -1557,10 +1553,7 @@ export function LiveActivityPanel({
                       task={task}
                     />
                     {group.submissions.length > 1 ? (
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <p className="font-mono text-xs text-muted-foreground">
-                          {group.submissions.length} submissions
-                        </p>
+                      <div className="flex justify-end">
                         <Button
                           aria-label={`View all ${group.submissions.length} submissions from ${actorDisplayName(
                             {
@@ -1574,7 +1567,7 @@ export function LiveActivityPanel({
                           type="button"
                           variant="outline"
                         >
-                          View {group.submissions.length} submissions
+                          Review all {group.submissions.length}
                         </Button>
                       </div>
                     ) : null}

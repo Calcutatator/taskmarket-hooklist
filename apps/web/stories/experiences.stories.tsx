@@ -31,7 +31,8 @@
 import type { ActivityFeedResponse } from '@taskmarket/shared';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { MotionConfig } from 'motion/react';
-import { expect, within } from 'storybook/test';
+import { useEffect, useState } from 'react';
+import { expect, userEvent, within } from 'storybook/test';
 
 import { BurstStages } from '@/components/market/burst-stages';
 import { CreateTaskWizard } from '@/components/market/create-task-wizard';
@@ -46,7 +47,7 @@ import { PublishedCelebration } from '@/components/market/tasks/published-celebr
 import { StepTemplate } from '@/components/market/wizard/step-template';
 import { WizardStepper } from '@/components/market/wizard/wizard-stepper';
 import { TryExperience } from '@/components/try/try-experience';
-import { taskTemplates } from '@/lib/market/task-templates';
+import { DEFAULT_FORM_VALUES } from '@/lib/market/create-task-form';
 import { TRY_DROPS } from '@/lib/try/drops';
 
 import { taskFixture } from './fixtures';
@@ -63,6 +64,36 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+const TASK_DRAFT_KEY = 'taskmarket:create-task-draft:v4:default:custom';
+
+function FreshTaskWizard({ invalidDraft = false }: { invalidDraft?: boolean }) {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    window.sessionStorage.removeItem(TASK_DRAFT_KEY);
+    if (invalidDraft) {
+      window.sessionStorage.setItem(
+        TASK_DRAFT_KEY,
+        JSON.stringify({
+          campaignBriefState: {
+            hasManualEdits: false,
+            readinessConfirmations: {},
+            readinessValues: {},
+            tokenValues: {},
+          },
+          stepIndex: 0,
+          values: { ...DEFAULT_FORM_VALUES, mode: 'claim', templateId: 'logo' },
+          version: 4,
+        })
+      );
+    }
+    setReady(true);
+    return () => window.sessionStorage.removeItem(TASK_DRAFT_KEY);
+  }, [invalidDraft]);
+
+  return ready ? <CreateTaskWizard initialMarketStats={null} /> : null;
+}
 
 const activityFeed: ActivityFeedResponse = {
   items: [
@@ -137,6 +168,99 @@ export const TaskWizardDefaultAndCampaign: Story = {
   ),
 };
 
+export const TaskWizardBriefEssentials: Story = {
+  globals: { theme: 'dark' },
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <div className="mx-auto max-w-3xl p-6">
+      <FreshTaskWizard />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: /continue to brief/i }));
+
+    await expect(canvas.queryByRole('heading', { name: /reward and timing/i })).toBeNull();
+    await expect(canvas.getByRole('spinbutton', { name: /^reward/i })).toBeVisible();
+    await expect(canvas.getByRole('spinbutton', { name: /^duration/i })).toHaveValue(72);
+    await expect(canvas.getByLabelText(/description/i)).toBeVisible();
+    const publishingSummary = canvas.getByText(/public task.*public submissions/i);
+    await expect(publishingSummary).toHaveTextContent(/public task.*public submissions/i);
+    await expect(canvas.queryByRole('radiogroup', { name: /task visibility/i })).toBeNull();
+
+    await userEvent.click(canvas.getByRole('button', { name: /change publishing visibility/i }));
+    await expect(canvas.getByRole('radiogroup', { name: /task visibility/i })).toBeVisible();
+    await expect(canvas.getByRole('radiogroup', { name: /submission visibility/i })).toBeVisible();
+  },
+};
+
+export const TaskWizardBriefMobile: Story = {
+  globals: { theme: 'dark', viewport: { value: 'mobile' } },
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <div className="p-3">
+      <FreshTaskWizard />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: /continue to brief/i }));
+    await expect(canvas.queryByRole('heading', { name: /reward and timing/i })).toBeNull();
+    const publishingSummary = canvas.getByText(/public task.*public submissions/i);
+    await expect(publishingSummary).toHaveTextContent(/public task.*public submissions/i);
+  },
+};
+
+export const TaskWizardReplacementDialog: Story = {
+  globals: { theme: 'light' },
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <div className="mx-auto max-w-6xl p-6">
+      <CreateTaskWizard initialMarketStats={null} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('radio', { name: /logo and brand mark/i }));
+    await userEvent.click(canvas.getByRole('button', { name: /continue to brief/i }));
+    await userEvent.type(canvas.getByLabelText(/brand or product name/i), 'Northstar');
+    await userEvent.click(canvas.getByRole('button', { name: /^back$/i }));
+    const claim = within(canvas.getByRole('radiogroup', { name: /task mode/i })).getByRole(
+      'radio',
+      {
+        name: /claim/i,
+      }
+    );
+    await userEvent.click(claim);
+    const page = within(canvasElement.ownerDocument.body);
+    await expect(page.getByRole('dialog', { name: /replace this brief/i })).toBeVisible();
+    await userEvent.click(page.getByRole('button', { name: /keep current brief/i }));
+    await expect(claim).toHaveFocus();
+    await userEvent.click(claim);
+    await userEvent.click(page.getByRole('button', { name: /^replace brief$/i }));
+    await expect(claim).toHaveAttribute('aria-checked', 'true');
+  },
+};
+
+export const TaskWizardInvalidDraftRecovery: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <div className="mx-auto max-w-6xl p-6">
+      <FreshTaskWizard invalidDraft />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByText(/saved template did not match its work type/i)
+    ).toBeVisible();
+    await expect(canvas.getByRole('radio', { name: /^start blank/i })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+  },
+};
+
 export const TaskWizardReviewerAccessDisclosure: Story = {
   parameters: { a11y: { test: 'error' } },
   render: () => (
@@ -146,7 +270,8 @@ export const TaskWizardReviewerAccessDisclosure: Story = {
   ),
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole('button', { name: /write the brief/i }));
+    await userEvent.click(canvas.getByRole('button', { name: /continue to brief/i }));
+    await userEvent.click(canvas.getByRole('button', { name: /show advanced settings/i }));
     const disclosure = await canvas.findByText(/grants that address confidential access/i);
     await expect(disclosure).toHaveTextContent(/private task details and every submission/i);
     await expect(canvas.getByLabelText('Evaluator address')).toHaveAttribute(
@@ -160,30 +285,153 @@ export const TaskWizardReviewerAccessDisclosure: Story = {
   },
 };
 
+export const TaskWizardGuidedRegeneration: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <div className="mx-auto max-w-6xl p-6">
+      <FreshTaskWizard />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('radio', { name: /logo and brand mark/i }));
+    await userEvent.click(canvas.getByRole('button', { name: /continue to brief/i }));
+    const brand = canvas.getByLabelText(/brand or product name/i);
+    await userEvent.type(brand, 'Northstar');
+    await userEvent.type(canvas.getByLabelText(/primary audience/i), 'Design teams');
+    await userEvent.type(canvas.getByLabelText(/description/i), ' Manual requester note.');
+    await userEvent.clear(brand);
+
+    const page = within(canvasElement.ownerDocument.body);
+    await expect(page.getByRole('dialog', { name: /regenerate this brief/i })).toBeVisible();
+    await userEvent.click(page.getByRole('button', { name: /keep manual edits/i }));
+    await expect(brand).toHaveValue('Northstar');
+  },
+};
+
+export const TaskWizardPublicReadinessGate: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <div className="mx-auto max-w-6xl p-6">
+      <FreshTaskWizard />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('radio', { name: /landing-page copy/i }));
+    await userEvent.click(canvas.getByRole('button', { name: /continue to brief/i }));
+    await userEvent.type(
+      canvas.getByLabelText(/product or service/i),
+      'Northstar collaboration workspace'
+    );
+    await userEvent.type(canvas.getByLabelText(/target audience/i), 'Distributed design teams');
+    await userEvent.type(canvas.getByLabelText(/^reward/i), '25');
+    await userEvent.click(canvas.getByRole('button', { name: /continue to task drop/i }));
+    await expect(canvas.getByText(/public product truth pack is required/i)).toBeVisible();
+
+    const truthPack = canvas.getByLabelText(/public product truth pack/i);
+    await userEvent.type(truthPack, 'not-a-url');
+    await userEvent.type(canvas.getByLabelText(/primary call to action/i), 'Start a free trial');
+    await userEvent.click(canvas.getByRole('button', { name: /continue to task drop/i }));
+    await expect(canvas.getByText(/complete public url that opens without sign-in/i)).toBeVisible();
+
+    await userEvent.clear(truthPack);
+    await userEvent.type(truthPack, 'https://example.com/northstar/product-truth');
+    await userEvent.click(canvas.getByRole('button', { name: /continue to task drop/i }));
+    await expect(
+      canvas.getByText(/confirm that this link opens without signing in/i)
+    ).toBeVisible();
+    await userEvent.click(canvas.getByLabelText(/confirmed this link opens without signing in/i));
+    await userEvent.click(canvas.getByRole('button', { name: /continue to task drop/i }));
+    await expect(canvas.getByRole('heading', { name: /choose a task drop/i })).toBeVisible();
+  },
+};
+
+export const TaskWizardPrivateTemplateWarning: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <div className="mx-auto max-w-6xl p-6">
+      <FreshTaskWizard />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('radio', { name: /logo and brand mark/i }));
+    await userEvent.click(canvas.getByRole('button', { name: /continue to brief/i }));
+    await userEvent.click(canvas.getByRole('button', { name: /change publishing visibility/i }));
+    await userEvent.click(canvas.getByRole('radio', { name: /^private/i }));
+    await expect(
+      canvas.getByText(/this template remains public-safe.*does not hide onchain activity/i)
+    ).toBeVisible();
+  },
+};
+
+export const TaskWizardPublicTemplatePublishing: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <div className="mx-auto max-w-6xl p-6">
+      <FreshTaskWizard />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('radio', { name: /logo and brand mark/i }));
+    await userEvent.click(canvas.getByRole('button', { name: /continue to brief/i }));
+    await userEvent.click(canvas.getByRole('button', { name: /change publishing visibility/i }));
+    const taskVisibility = within(
+      canvas.getByRole('radiogroup', { name: /task visibility/i })
+    ).getByRole('radio', { name: /^public/i });
+    const submissionVisibility = within(
+      canvas.getByRole('radiogroup', { name: /submission visibility/i })
+    ).getByRole('radio', { name: /^public/i });
+    await expect(taskVisibility.getBoundingClientRect().height).toBe(
+      submissionVisibility.getBoundingClientRect().height
+    );
+  },
+};
+
+export const TaskWizardOverlongTitle: Story = {
+  parameters: { a11y: { test: 'error' } },
+  render: () => (
+    <div className="mx-auto max-w-6xl p-6">
+      <FreshTaskWizard />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('radio', { name: /logo and brand mark/i }));
+    await userEvent.click(canvas.getByRole('button', { name: /continue to brief/i }));
+    await userEvent.type(canvas.getByLabelText(/brand or product name/i), 'A'.repeat(90));
+    await userEvent.type(canvas.getByLabelText(/primary audience/i), 'Design teams');
+    await userEvent.type(canvas.getByLabelText(/^reward/i), '25');
+    await userEvent.click(canvas.getByRole('button', { name: /continue to task drop/i }));
+    await expect(
+      canvas.getByText(/shorten this value so the task title is 80 characters/i)
+    ).toBeVisible();
+    await expect(canvas.getByLabelText(/brand or product name/i)).toHaveFocus();
+  },
+};
+
 export const WizardNavigationAndTemplates: Story = {
+  parameters: { a11y: { test: 'error' } },
   render: () => (
     <div className="mx-auto grid max-w-6xl gap-8 p-6">
       <WizardStepper
         current={2}
         onStepClick={() => undefined}
         steps={[
-          { label: 'Template' },
+          { label: 'Setup' },
           { label: 'Brief' },
           { label: 'Task Drop' },
           { label: 'Publish' },
         ]}
       />
       <StepTemplate
-        applyTemplate={() => undefined}
-        marketStats={{
-          activeAgents7d: 52,
-          activeWorkers7d: 68,
-          openTasks: 18,
-          registeredWorkers: 1248,
-        }}
-        onCustomize={() => undefined}
-        onExpressPublish={() => undefined}
-        templateId={taskTemplates[0].id}
+        mode="bounty"
+        onContinue={() => undefined}
+        onModeChange={() => undefined}
+        onTemplateChange={() => undefined}
+        templateId="logo"
       />
     </div>
   ),

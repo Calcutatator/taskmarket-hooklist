@@ -373,11 +373,11 @@ test('explains estimated DREAMS eligibility within the mobile viewport', async (
 
 test('keeps task creation steps usable without a configured wallet provider', async ({ page }) => {
   await page.goto('/dashboard/tasks/new');
-  await expectStablePage(page, page.getByRole('heading', { name: /Fund a task/i }).first());
+  await expectStablePage(page, page.getByRole('heading', { name: /Create a task/i }).first());
 
-  const writeBrief = page.getByRole('button', { name: /Write the brief/i });
-  await expectTouchTarget(writeBrief);
-  await writeBrief.click();
+  const continueToBrief = page.getByRole('button', { name: /Continue to brief/i });
+  await expectTouchTarget(continueToBrief);
+  await continueToBrief.click();
   await expect(page.getByRole('heading', { name: /Write the brief/i })).toBeVisible();
 
   await page

@@ -67,13 +67,23 @@ describe('taskToAgentJson', () => {
     expect(taskToAgentJson(task)).toBe(taskToAgentJson(task));
   });
 
+  it('includes both visibility axes in the agent payload', () => {
+    const parsed = JSON.parse(
+      taskToAgentJson(makeTask({ taskVisibility: 'private', submissionVisibility: 'winner_only' }))
+    ) as Record<string, unknown>;
+    expect(parsed.taskVisibility).toBe('private');
+    expect(parsed.submissionVisibility).toBe('winner_only');
+  });
+
   it('uses a deterministic key order', () => {
     const parsed = JSON.parse(taskToAgentJson(makeTask())) as Record<string, unknown>;
-    expect(Object.keys(parsed).slice(0, 9)).toEqual([
+    expect(Object.keys(parsed).slice(0, 11)).toEqual([
       'id',
       'description',
       'mode',
       'status',
+      'taskVisibility',
+      'submissionVisibility',
       'reward',
       'rewardFormatted',
       'tags',
@@ -218,6 +228,14 @@ describe('taskToMarkdown', () => {
     expect(md).toContain('- Status: open');
     expect(md).toContain('- Deadline: 2026-06-30T00:00:00.000Z');
     expect(md).toContain('- Tags: design, logo');
+  });
+
+  it('lists task and submission visibility as structured context', () => {
+    const md = taskToMarkdown(
+      makeTask({ taskVisibility: 'unlisted', submissionVisibility: 'reveal_all' })
+    );
+    expect(md).toContain('- Task visibility: unlisted');
+    expect(md).toContain('- Submission visibility: reveal_all');
   });
 
   it('falls back to the full description when the brief is a single line', () => {

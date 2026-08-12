@@ -1,220 +1,319 @@
 import { TASK_DESCRIPTION_MAX_LENGTH, type TaskModeType } from '@taskmarket/shared';
-import { IconChartArcs, IconNotes, IconPalette, IconPencil } from '@tabler/icons-react';
+import {
+  IconActivity,
+  IconBug,
+  IconChartArcs,
+  IconDatabase,
+  IconFileText,
+  IconFileSearch,
+  IconGauge,
+  IconLayoutDashboard,
+  IconListCheck,
+  IconNotes,
+  IconPalette,
+  IconRobot,
+  IconRocket,
+  IconShieldCheck,
+  IconSparkles,
+  IconTransfer,
+  type Icon,
+} from '@tabler/icons-react';
+import { z } from 'zod';
 
-// A single light personalization input rendered under the brief. Its key is
-// referenced as {{key}} inside brief section bodies.
-export type TemplateToken = {
-  key: string;
-  label: string;
-  placeholder: string;
-  defaultValue?: string;
-  required?: boolean;
+import templateCatalogue from './task-templates.json';
+import { TASK_TITLE_MAX_LENGTH } from './task-title';
+
+const TEMPLATE_IDS = [
+  'logo',
+  'infographic',
+  'landing-copy',
+  'bug-fix',
+  'content-migration',
+  'dataset-cleanup',
+  'ai-integration',
+  'ux-ui-redesign',
+  'go-to-market',
+  'prompt-eval',
+  'api-latency',
+  'data-extraction',
+  'data-labeling',
+  'cross-browser-qa',
+  'data-entry',
+] as const;
+
+const TEMPLATE_MODE_BY_ID: Record<(typeof TEMPLATE_IDS)[number], TaskModeType> = {
+  'ai-integration': 'pitch',
+  'api-latency': 'benchmark',
+  'bug-fix': 'claim',
+  'content-migration': 'claim',
+  'cross-browser-qa': 'auction',
+  'data-entry': 'auction',
+  'data-extraction': 'benchmark',
+  'data-labeling': 'auction',
+  'dataset-cleanup': 'claim',
+  'go-to-market': 'pitch',
+  infographic: 'bounty',
+  'landing-copy': 'bounty',
+  logo: 'bounty',
+  'prompt-eval': 'benchmark',
+  'ux-ui-redesign': 'pitch',
 };
 
-// One ordered section of an authored brief. Body may contain {{token}}
-// placeholders and newline-delimited bullets.
-export type BriefSection = {
-  heading: string;
-  body: string;
-};
+const BRIEF_HEADINGS = [
+  'Outcome',
+  'Public inputs',
+  'Readiness gate',
+  'Deliverables',
+  'Acceptance',
+  'Evidence',
+  'Boundaries',
+  'How selection works',
+] as const;
 
-export type TaskTemplate = {
-  id: 'custom' | 'logo' | 'infographic' | 'landing-copy';
-  label: string;
-  shortDescription: string;
-  icon: typeof IconPalette;
-  mode: TaskModeType;
-  suggestedRewardUsdc: string;
-  suggestedDurationHours: number;
-  suggestedTags: string[];
-  tokens: TemplateToken[];
-  brief: BriefSection[];
-  briefSource: 'static';
-};
+const tokenSchema = z
+  .object({
+    key: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
+    label: z.string().min(1),
+    placeholder: z.string().min(1),
+    defaultValue: z.string().min(1).optional(),
+    required: z.boolean(),
+  })
+  .strict();
 
-export const taskTemplates = [
-  {
-    id: 'logo',
-    label: 'Logo',
-    shortDescription: 'A polished primary logo with usable source files and basic usage guidance.',
-    icon: IconPalette,
-    mode: 'bounty',
-    suggestedRewardUsdc: '2',
-    suggestedDurationHours: 96,
-    suggestedTags: ['design', 'branding', 'logo'],
-    tokens: [
-      {
-        key: 'brand',
-        label: 'Brand or product name',
-        placeholder: 'Acme Labs',
-        defaultValue: 'our brand',
-        required: true,
-      },
-      {
-        key: 'style',
-        label: 'Style direction',
-        placeholder: 'modern, minimal, geometric',
-        defaultValue: 'modern and minimal',
-      },
-    ],
-    brief: [
-      {
-        heading: 'Goal',
-        body: 'Design a primary logo for {{brand}}. The mark should feel {{style}}, read clearly at small sizes, and work in both light and dark contexts.',
-      },
-      {
-        heading: 'Inputs provided',
-        body: 'Brand name and any existing assets on request.\nPreferred style direction: {{style}}.\nReference logos we like or want to avoid, shared on claim.',
-      },
-      {
-        heading: 'Deliverables',
-        body: 'Primary logo lockup plus a standalone icon mark.\nVector source files (SVG and the original editable format).\nPNG exports at 1x, 2x, and 3x on transparent backgrounds.\nA short one-page usage note covering clear space and minimum size.',
-      },
-      {
-        heading: 'Acceptance criteria',
-        body: 'Legible from a 16px favicon up to a large banner.\nWorks in full color, single color, and reversed (white on dark).\nNo stock clip art, no AI watermarks, original work only.\nDelivered in the formats listed above.',
-      },
-      {
-        heading: 'Review',
-        body: 'One round of revisions is included after the first submission. Final files are accepted once the lockup and icon pass the acceptance criteria.',
-      },
-    ],
-    briefSource: 'static',
-  },
-  {
-    id: 'infographic',
-    label: 'Infographic',
-    shortDescription:
-      'A single shareable infographic that turns your data into a clear visual story.',
-    icon: IconChartArcs,
-    mode: 'bounty',
-    suggestedRewardUsdc: '2',
-    suggestedDurationHours: 72,
-    suggestedTags: ['design', 'infographic', 'data-viz'],
-    tokens: [
-      {
-        key: 'topic',
-        label: 'Infographic topic',
-        placeholder: 'state of remote work in 2026',
-        defaultValue: 'the topic provided',
-        required: true,
-      },
-      {
-        key: 'audience',
-        label: 'Target audience',
-        placeholder: 'startup founders',
-        defaultValue: 'a general audience',
-      },
-    ],
-    brief: [
-      {
-        heading: 'Goal',
-        body: 'Create a single-page infographic about {{topic}} aimed at {{audience}}. It should communicate the key points at a glance and be easy to share on social and in a blog post.',
-      },
-      {
-        heading: 'Inputs provided',
-        body: 'The underlying data points and source links, shared on claim.\nKey message we want the reader to take away.\nAny brand colors or fonts to follow, if available.',
-      },
-      {
-        heading: 'Deliverables',
-        body: 'One vertical infographic optimized for web and social sharing.\nEditable source file plus a high-resolution PNG export.\nA web-optimized PNG or JPG under 1 MB.',
-      },
-      {
-        heading: 'Acceptance criteria',
-        body: 'All figures match the provided data exactly, no invented numbers.\nClear visual hierarchy with a readable type scale.\nAccessible color contrast for text and key elements.\nNo emojis, no stock clip art, original layout work.',
-      },
-      {
-        heading: 'Review',
-        body: 'One round of revisions is included to correct data, copy, or layout issues. Final files are accepted once every figure is verified against the source.',
-      },
-    ],
-    briefSource: 'static',
-  },
-  {
-    id: 'landing-copy',
-    label: 'Landing-page copy',
-    shortDescription: 'Conversion-focused copy for a single landing page, section by section.',
-    icon: IconNotes,
-    mode: 'bounty',
-    suggestedRewardUsdc: '2',
-    suggestedDurationHours: 120,
-    suggestedTags: ['copywriting', 'marketing', 'landing-page'],
-    tokens: [
-      {
-        key: 'product',
-        label: 'Product or service',
-        placeholder: 'an AI scheduling assistant',
-        defaultValue: 'the product',
-        required: true,
-      },
-      {
-        key: 'audience',
-        label: 'Target audience',
-        placeholder: 'busy operations teams',
-        defaultValue: 'the target audience',
-      },
-      {
-        key: 'tone',
-        label: 'Tone',
-        placeholder: 'confident and plain-spoken',
-        defaultValue: 'clear and confident',
-      },
-    ],
-    brief: [
-      {
-        heading: 'Goal',
-        body: 'Write conversion-focused landing-page copy for {{product}}, speaking to {{audience}} in a {{tone}} tone. The page should explain the value quickly and drive sign-ups.',
-      },
-      {
-        heading: 'Inputs provided',
-        body: 'Product overview, top three benefits, and primary call to action, shared on claim.\nAny existing copy, positioning, or competitor pages for reference.\nThe single conversion goal for the page.',
-      },
-      {
-        heading: 'Deliverables',
-        body: 'A hero headline with a supporting subheadline.\nThree to five benefit sections with short headers and body copy.\nOne social-proof or trust section outline.\nA closing call-to-action block with button copy.\nTwo headline variants for the hero to support testing.',
-      },
-      {
-        heading: 'Acceptance criteria',
-        body: 'Copy is original and specific to {{product}}, not generic filler.\nEvery section maps to a clear reader benefit.\nNo unverifiable claims or invented statistics.\nDelivered as a structured document, section by section.',
-      },
-      {
-        heading: 'Review',
-        body: 'One round of revisions is included for tone, clarity, and structure. Copy is accepted once each section is complete and the call to action is clear.',
-      },
-    ],
-    briefSource: 'static',
-  },
-  {
-    id: 'custom',
-    label: 'Custom',
-    shortDescription:
-      'Start from scratch and write your own brief with full control over every field.',
-    icon: IconPencil,
-    mode: 'bounty',
-    suggestedRewardUsdc: '',
-    suggestedDurationHours: 72,
-    suggestedTags: [],
-    tokens: [],
-    brief: [],
-    briefSource: 'static',
-  },
-] as const satisfies TaskTemplate[];
+const readinessItemSchema = z
+  .object({
+    key: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
+    label: z.string().min(1),
+    help: z.string().min(1),
+    input: z.enum(['shortText', 'longText', 'url']),
+    placeholder: z.string().min(1),
+    defaultValue: z.string().min(1).optional(),
+    publicAccess: z.enum(['required', 'notApplicable']),
+    required: z.boolean(),
+  })
+  .strict()
+  .superRefine((item, ctx) => {
+    if (item.publicAccess === 'required' && item.input !== 'url') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Public-access readiness items must use a URL input.',
+        path: ['input'],
+      });
+    }
+  });
 
-export const DEFAULT_TEMPLATE_ID: TaskTemplate['id'] = 'custom';
+const briefSectionSchemas = BRIEF_HEADINGS.map((heading) =>
+  z.object({ heading: z.literal(heading), body: z.string().min(1) }).strict()
+) as [
+  z.ZodObject<{ heading: z.ZodLiteral<'Outcome'>; body: z.ZodString }>,
+  z.ZodObject<{ heading: z.ZodLiteral<'Public inputs'>; body: z.ZodString }>,
+  z.ZodObject<{ heading: z.ZodLiteral<'Readiness gate'>; body: z.ZodString }>,
+  z.ZodObject<{ heading: z.ZodLiteral<'Deliverables'>; body: z.ZodString }>,
+  z.ZodObject<{ heading: z.ZodLiteral<'Acceptance'>; body: z.ZodString }>,
+  z.ZodObject<{ heading: z.ZodLiteral<'Evidence'>; body: z.ZodString }>,
+  z.ZodObject<{ heading: z.ZodLiteral<'Boundaries'>; body: z.ZodString }>,
+  z.ZodObject<{ heading: z.ZodLiteral<'How selection works'>; body: z.ZodString }>,
+];
 
-export function findTemplate(id: string): TaskTemplate | undefined {
-  return taskTemplates.find((template) => template.id === id);
+const baseTemplateSchema = z
+  .object({
+    id: z.enum(TEMPLATE_IDS),
+    label: z.string().min(1),
+    shortDescription: z.string().min(1),
+    titleTemplate: z.string().min(1),
+    icon: z.enum([
+      'activity',
+      'bug',
+      'chart',
+      'database',
+      'file-text',
+      'file-search',
+      'gauge',
+      'layout',
+      'list-check',
+      'notes',
+      'palette',
+      'robot',
+      'rocket',
+      'shield-check',
+      'sparkles',
+      'transfer',
+    ]),
+    motif: z.enum(['grid', 'rays', 'rings', 'signal', 'steps']),
+    durationHours: z.number().int().min(24).max(720),
+    tags: z
+      .array(z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/))
+      .min(3)
+      .max(5)
+      .refine((tags) => new Set(tags).size === tags.length, 'Template tags must be unique.'),
+    bestFor: z.tuple([z.string().min(1), z.string().min(1), z.string().min(1)]),
+    details: z.object({ includes: z.string().min(1), success: z.string().min(1) }).strict(),
+    tokens: z.array(tokenSchema).min(2).max(3),
+    readiness: z.array(readinessItemSchema).min(1).max(3),
+    brief: z.tuple(briefSectionSchemas).readonly(),
+  })
+  .strict();
+
+const catalogueSchema = z.array(
+  z.discriminatedUnion('mode', [
+    baseTemplateSchema.extend({ mode: z.literal('bounty') }),
+    baseTemplateSchema.extend({
+      mode: z.literal('claim'),
+      modeDefaults: z
+        .object({ stakeRequired: z.literal(false), stakeBps: z.literal('0') })
+        .strict(),
+    }),
+    baseTemplateSchema.extend({
+      mode: z.literal('pitch'),
+      modeDefaults: z.object({ pitchDeadline: z.string().regex(/^[1-9]\d*$/) }).strict(),
+    }),
+    baseTemplateSchema.extend({
+      mode: z.literal('benchmark'),
+      modeDefaults: z
+        .object({
+          metricDescription: z.string().min(1),
+          metricTarget: z.string().min(1),
+        })
+        .strict(),
+    }),
+    baseTemplateSchema.extend({
+      mode: z.literal('auction'),
+      modeDefaults: z
+        .object({
+          auctionType: z.enum(['english', 'reverse_english']),
+          bidDeadline: z.string().regex(/^[1-9]\d*$/),
+        })
+        .strict(),
+    }),
+  ])
+);
+
+const iconByKey = {
+  activity: IconActivity,
+  bug: IconBug,
+  chart: IconChartArcs,
+  database: IconDatabase,
+  'file-text': IconFileText,
+  'file-search': IconFileSearch,
+  gauge: IconGauge,
+  layout: IconLayoutDashboard,
+  'list-check': IconListCheck,
+  notes: IconNotes,
+  palette: IconPalette,
+  robot: IconRobot,
+  rocket: IconRocket,
+  'shield-check': IconShieldCheck,
+  sparkles: IconSparkles,
+  transfer: IconTransfer,
+} as const satisfies Record<string, Icon>;
+
+export type TaskTemplateId = (typeof TEMPLATE_IDS)[number];
+export type TemplateToken = z.infer<typeof tokenSchema>;
+export type TemplateReadinessItem = z.infer<typeof readinessItemSchema>;
+export type BriefSection = { heading: (typeof BRIEF_HEADINGS)[number]; body: string };
+type ParsedTaskTemplate = z.infer<typeof catalogueSchema>[number];
+type TaskTemplateFrom<T> = T extends unknown
+  ? Omit<T, 'brief' | 'readiness' | 'tokens'> & {
+      brief: BriefSection[];
+      iconComponent: Icon;
+      readiness: TemplateReadinessItem[];
+      tokens: TemplateToken[];
+    }
+  : never;
+export type TaskTemplate = TaskTemplateFrom<ParsedTaskTemplate>;
+export type TaskTemplateSelection = TaskTemplateId | null;
+
+export function validateTaskTemplateCatalogue(catalogue: unknown): TaskTemplate[] {
+  const parsed = catalogueSchema.parse(catalogue);
+  const ids = new Set(parsed.map((template) => template.id));
+  if (parsed.length !== TEMPLATE_IDS.length || ids.size !== TEMPLATE_IDS.length) {
+    throw new Error('Task template catalogue must contain each supported template exactly once.');
+  }
+
+  for (const template of parsed) {
+    const tokenKeys = new Set(template.tokens.map((token) => token.key));
+    const readinessKeys = new Set(template.readiness.map((item) => item.key));
+    const authoredKeys = new Set([...tokenKeys, ...readinessKeys]);
+    if (TEMPLATE_MODE_BY_ID[template.id] !== template.mode) {
+      throw new Error(`Task template ${template.id} is assigned to the wrong task mode.`);
+    }
+    if (tokenKeys.size !== template.tokens.length) {
+      throw new Error(`Task template ${template.id} token keys must be unique.`);
+    }
+    if (
+      readinessKeys.size !== template.readiness.length ||
+      [...readinessKeys].some((key) => tokenKeys.has(key))
+    ) {
+      throw new Error(`Task template ${template.id} readiness keys must be unique.`);
+    }
+    const placeholders = [
+      ...Array.from(template.titleTemplate.matchAll(/\{\{([^{}]+)\}\}/g), (match) => match[1]),
+      ...template.brief.flatMap((section) =>
+        Array.from(section.body.matchAll(/\{\{([^{}]+)\}\}/g), (match) => match[1])
+      ),
+    ];
+    const titlePlaceholders = Array.from(
+      template.titleTemplate.matchAll(/\{\{([^{}]+)\}\}/g),
+      (match) => match[1]
+    );
+    if (titlePlaceholders.some((key) => !tokenKeys.has(key))) {
+      throw new Error(`Task template ${template.id} title may use only short subject fields.`);
+    }
+    if (placeholders.some((key) => !authoredKeys.has(key))) {
+      throw new Error(`Task template ${template.id} uses an undeclared prompt value.`);
+    }
+    if (template.tokens.some((token) => !placeholders.includes(token.key))) {
+      throw new Error(`Task template ${template.id} declares an unused brief token.`);
+    }
+    if (template.readiness.some((item) => !placeholders.includes(item.key))) {
+      throw new Error(`Task template ${template.id} declares an unused readiness item.`);
+    }
+    const authoredLength = template.brief.map((section) => section.body).join('\n\n').length;
+    if (authoredLength > TASK_DESCRIPTION_MAX_LENGTH) {
+      throw new Error(`Task template ${template.id} brief exceeds the task description limit.`);
+    }
+    if (
+      template.mode === 'pitch' &&
+      Number(template.modeDefaults.pitchDeadline) >= template.durationHours
+    ) {
+      throw new Error(`Task template ${template.id} must leave time after the pitch deadline.`);
+    }
+    if (
+      template.mode === 'auction' &&
+      Number(template.modeDefaults.bidDeadline) >= template.durationHours
+    ) {
+      throw new Error(`Task template ${template.id} must leave time after the bid deadline.`);
+    }
+  }
+
+  return parsed.map((template) => ({
+    ...template,
+    brief: [...template.brief],
+    iconComponent: iconByKey[template.icon],
+    readiness: [...template.readiness],
+    tokens: [...template.tokens],
+  }));
 }
 
-// Visual-direction presets surfaced as chips in the locked /try brief step. Each
-// maps to a single "Visual direction" line appended to the composed brief so
-// choosing one reads as picking a look, not writing more prose. Data-driven so
-// new directions are one entry here. The id is stable; the line is human copy.
-export type VisualPreset = {
-  id: string;
-  label: string;
-  line: string;
-};
+export const taskTemplates = validateTaskTemplateCatalogue(templateCatalogue);
+export const DEFAULT_TEMPLATE_ID: null = null;
+
+export function templatesForMode(mode: TaskModeType): TaskTemplate[] {
+  return taskTemplates.filter((template) => template.mode === mode);
+}
+
+export function findTemplate(id: string | null | undefined): TaskTemplate | undefined {
+  return id ? taskTemplates.find((template) => template.id === id) : undefined;
+}
+
+export function templateBelongsToMode(
+  id: string | null | undefined,
+  mode: TaskModeType
+): id is TaskTemplateId {
+  return findTemplate(id)?.mode === mode;
+}
+
+export type VisualPreset = { id: string; label: string; line: string };
 
 export const VISUAL_PRESETS: readonly VisualPreset[] = [
   {
@@ -238,54 +337,95 @@ export function findVisualPreset(id: string): VisualPreset | undefined {
   return VISUAL_PRESETS.find((preset) => preset.id === id);
 }
 
-// Compose a brief and append the chosen visual-direction line (when any). Keeps
-// composeBrief pure by layering the preset on top: the token-driven body still
-// composes live, and the preset line is clamped in with the same brief limit.
 export function composeBriefWithPreset(
   template: TaskTemplate,
   tokenValues: Record<string, string>,
+  readinessValues: Record<string, string> = {},
   presetId?: string
 ): string {
-  const base = composeBrief(template, tokenValues);
+  const base = composeBrief(template, tokenValues, readinessValues);
   const preset = presetId ? findVisualPreset(presetId) : undefined;
   if (!preset) {
     return base;
   }
-  return `${base}\n\n${preset.line}`.slice(0, TASK_DESCRIPTION_MAX_LENGTH);
+  return `${base}\n\n${preset.line}`;
 }
 
-// Interpolate {{token}} placeholders (user value -> token defaultValue -> empty),
-// render each section as "heading\nbody", drop empties, normalize blank gaps,
-// trim, and clamp to the shared task-description limit. Pure, unit-tested.
-export function composeBrief(template: TaskTemplate, tokenValues: Record<string, string>): string {
-  const resolve = (key: string): string => {
-    const userValue = tokenValues[key];
-    if (userValue !== undefined && userValue.trim()) {
-      return userValue.trim();
-    }
+export function isTemplateReadinessValueValid(
+  item: TemplateReadinessItem,
+  value?: string,
+  publicAccessConfirmed = false
+): boolean {
+  const resolved = value?.trim() || item.defaultValue?.trim() || '';
+  if (!resolved) return !item.required;
+  if (item.input !== 'url') return true;
+
+  return isTemplateReadinessUrlValid(resolved) && publicAccessConfirmed;
+}
+
+export function isTemplateReadinessUrlValid(value: string): boolean {
+  const resolved = value.trim();
+
+  try {
+    const url = new URL(resolved);
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+function promptValueResolver(
+  template: TaskTemplate,
+  tokenValues: Record<string, string>,
+  readinessValues: Record<string, string>
+) {
+  return (key: string): string => {
+    const userValue = tokenValues[key]?.trim();
+    if (userValue) return userValue;
     const token = template.tokens.find((entry) => entry.key === key);
-    return token?.defaultValue ?? '';
+    if (token) return token.defaultValue ?? `[Add: ${token.label}]`;
+    const readinessValue = readinessValues[key]?.trim();
+    if (readinessValue) return readinessValue;
+    const readinessItem = template.readiness.find((entry) => entry.key === key);
+    return readinessItem?.defaultValue ?? (readinessItem ? `[Add: ${readinessItem.label}]` : '');
   };
+}
 
-  const sections = template.brief
-    .map((section) => {
-      const resolvedBody = section.body.replace(/\{\{(\w+)\}\}/g, (_match, key: string) =>
-        resolve(key)
-      );
-      return { heading: section.heading, body: resolvedBody };
-    })
-    .map((section) =>
-      [section.heading, section.body]
-        .filter((part) => part.trim())
-        .join('\n')
-        .trim()
-    )
-    .filter((section) => section.length > 0);
+export function composedTemplateTitle(
+  template: TaskTemplate,
+  tokenValues: Record<string, string>
+): string {
+  const resolve = promptValueResolver(template, tokenValues, {});
+  return template.titleTemplate
+    .replace(/\{\{(\w+)\}\}/g, (_match, key: string) => resolve(key))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
-  const composed = sections
+export function isComposedTemplateTitleValid(
+  template: TaskTemplate,
+  tokenValues: Record<string, string>
+): boolean {
+  const title = composedTemplateTitle(template, tokenValues);
+  return title.length > 0 && title.length <= TASK_TITLE_MAX_LENGTH;
+}
+
+export function composeBrief(
+  template: TaskTemplate,
+  tokenValues: Record<string, string>,
+  readinessValues: Record<string, string> = {}
+): string {
+  const resolve = promptValueResolver(template, tokenValues, readinessValues);
+
+  const replaceTokens = (value: string) =>
+    value.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => resolve(key));
+  const title = composedTemplateTitle(template, tokenValues);
+
+  return [
+    title,
+    ...template.brief.map((section) => `${section.heading}\n${replaceTokens(section.body)}`),
+  ]
     .join('\n\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-
-  return composed.slice(0, TASK_DESCRIPTION_MAX_LENGTH);
 }

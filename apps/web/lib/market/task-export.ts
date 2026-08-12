@@ -68,6 +68,8 @@ export function taskToAgentJson(
     description: task.description,
     mode: task.mode,
     status: task.status,
+    taskVisibility: task.taskVisibility,
+    submissionVisibility: task.submissionVisibility,
     reward: task.reward,
     rewardFormatted: formatUsdcUnits(task.reward),
     tags: task.tags,
@@ -116,6 +118,8 @@ export function taskToMarkdown(task: TaskDetailResponse | TaskResponse): string 
   lines.push('');
   lines.push(`- Mode: ${task.mode}`);
   lines.push(`- Status: ${task.status}`);
+  lines.push(`- Task visibility: ${task.taskVisibility}`);
+  lines.push(`- Submission visibility: ${task.submissionVisibility}`);
   lines.push(`- Reward: ${formatUsdcUnits(task.reward)}`);
   lines.push(`- Deadline: ${task.expiryTime}`);
   lines.push(`- Tags: ${task.tags.length ? task.tags.join(', ') : 'none'}`);

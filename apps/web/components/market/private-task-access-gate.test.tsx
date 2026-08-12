@@ -81,6 +81,9 @@ describe('PrivateTaskAccessGate', () => {
     renderGate();
 
     expect(
+      screen.getByText(/this link may be invalid, or the task may require access/i)
+    ).toBeInTheDocument();
+    expect(
       screen.getByText(/sign in, then choose the wallet that received the invitation/i)
     ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^sign in$/i }));
@@ -122,7 +125,7 @@ describe('PrivateTaskAccessGate', () => {
     vi.mocked(fetch).mockResolvedValue({ ok: false } as Response);
     renderGate();
 
-    const retry = await screen.findByRole('button', { name: /retry private task access/i });
+    const retry = await screen.findByRole('button', { name: /retry task access/i });
     expect(screen.getByText(/could not load private task access/i)).toBeInTheDocument();
     await user.click(retry);
 
@@ -142,13 +145,13 @@ describe('PrivateTaskAccessGate', () => {
       } as Response);
     renderGate();
 
-    await user.type(screen.getByLabelText('Password'), 'open-sesame');
-    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    await user.type(screen.getByLabelText('Task password'), 'open-sesame');
+    await user.click(screen.getByRole('button', { name: 'Unlock task' }));
     expect(await screen.findByText('Task detail')).toBeInTheDocument();
 
     act(() => window.dispatchEvent(new Event('taskmarket:auth-state-cleared')));
 
-    expect(await screen.findByText('Page not found')).toBeInTheDocument();
+    expect(await screen.findByText('Task unavailable')).toBeInTheDocument();
     expect(screen.queryByText('Task detail')).not.toBeInTheDocument();
   });
 });

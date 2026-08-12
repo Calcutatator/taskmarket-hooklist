@@ -5,7 +5,7 @@ import { useAccount } from 'wagmi';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -95,13 +95,7 @@ export function StepTaskDrop({
   return (
     <div className="grid gap-6">
       <Card>
-        <CardHeader>
-          <CardTitle>Task Drop</CardTitle>
-          <CardDescription>
-            Choose whether this task belongs to a subscriber-facing drop.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-5">
+        <CardContent className="grid gap-5 pt-6">
           <div
             aria-label="Task Drop mode"
             className="grid gap-3 sm:grid-cols-3"

@@ -96,6 +96,7 @@ const preview: Preview = {
     },
     viewport: {
       options: {
+        narrowMobile: { name: 'Narrow mobile', styles: { height: '760px', width: '320px' } },
         mobile: { name: 'Mobile', styles: { height: '844px', width: '390px' } },
         tablet: { name: 'Tablet', styles: { height: '1024px', width: '768px' } },
         compactDesktop: {

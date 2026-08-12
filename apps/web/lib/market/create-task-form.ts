@@ -82,11 +82,10 @@ export const MAX_DURATION_HOURS = 8_760;
 
 // DOM order of focusable form fields, used to focus the first invalid one on submit.
 export const FIELD_FOCUS_ORDER: (keyof CreateTaskFormValues)[] = [
-  'description',
   'reward',
   'duration',
+  'description',
   'tags',
-  'maxPrice',
   'auctionFloorPrice',
   'auctionStartPrice',
   'metricDescription',
@@ -116,14 +115,23 @@ export function handleRadioGroupKeyDown(
 ) {
   const forward = event.key === 'ArrowRight' || event.key === 'ArrowDown';
   const backward = event.key === 'ArrowLeft' || event.key === 'ArrowUp';
-  if (!forward && !backward) {
+  const first = event.key === 'Home';
+  const last = event.key === 'End';
+  if ((event.target as HTMLElement).getAttribute('role') !== 'radio') {
+    return;
+  }
+  if (!forward && !backward && !first && !last) {
     return;
   }
 
   event.preventDefault();
   const currentIndex = Math.max(0, values.indexOf(current));
   const delta = forward ? 1 : -1;
-  const nextIndex = (currentIndex + delta + values.length) % values.length;
+  const nextIndex = first
+    ? 0
+    : last
+      ? values.length - 1
+      : (currentIndex + delta + values.length) % values.length;
   const nextValue = values[nextIndex];
   select(nextValue);
 
@@ -163,7 +171,7 @@ export function buildCreateTaskPayload(values: CreateTaskFormValues) {
 
   const bidDeadline = optionalNumber(values.bidDeadline);
   const pitchDeadline = optionalHoursToSeconds(values.pitchDeadline);
-  const maxPrice = optionalUsdcBaseUnits(values.maxPrice);
+  const maxPrice = values.mode === 'auction' ? optionalUsdcBaseUnits(values.reward) : undefined;
   const auctionStartPrice = optionalUsdcBaseUnits(values.auctionStartPrice);
   const auctionFloorPrice = optionalUsdcBaseUnits(values.auctionFloorPrice);
 
@@ -241,7 +249,7 @@ export function validateCreateTask(
   }
 
   if (values.mode === 'auction') {
-    const maxPrice = optionalNumber(values.maxPrice);
+    const maxPrice = optionalNumber(values.reward);
     if (values.auctionType === 'dutch') {
       const floor = optionalNumber(values.auctionFloorPrice);
       if (maxPrice !== undefined && floor !== undefined && floor >= maxPrice) {

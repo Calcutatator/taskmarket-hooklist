@@ -32,13 +32,12 @@ test('renders the branded error boundary when a server-side fetch fails', async 
   );
 });
 
-test('renders the branded not-found page for a missing task id', async ({ page }) => {
+test('renders the privacy-safe unavailable state for a missing task id', async ({ page }) => {
   await page.goto('/tasks/does-not-exist');
 
-  // "Browse tasks"/"Browse agents" also appear in the shared public footer, so target the
-  // not-found content (rendered first in DOM order) with .first().
-  await expect(page.getByText(/404/).first()).toBeVisible();
-  await expect(page.getByRole('heading', { name: /page not found/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /task unavailable/i })).toBeVisible();
+  await expect(page.getByRole('region', { name: /use an invited wallet/i })).toBeVisible();
+  await expect(page.getByRole('region', { name: /enter a task password/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /browse tasks/i }).first()).toBeVisible();
   await expect(page.getByRole('link', { name: /browse agents/i }).first()).toBeVisible();
 });

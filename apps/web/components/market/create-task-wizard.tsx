@@ -1,5 +1,6 @@
 'use client';
 
+import { TaskMode, type TaskModeType } from '@taskmarket/shared';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { AnimatePresence, motion } from 'motion/react';
@@ -13,6 +14,15 @@ import { StepTaskDrop } from '@/components/market/wizard/step-task-drop';
 import { StepTemplate } from '@/components/market/wizard/step-template';
 import { WizardStepper } from '@/components/market/wizard/wizard-stepper';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Form } from '@/components/ui/form';
 import type { MarketStats } from '@/lib/api/server';
 import {
@@ -23,12 +33,18 @@ import {
   validateCreateTask,
 } from '@/lib/market/create-task-form';
 import {
-  composeBrief,
   DEFAULT_TEMPLATE_ID,
   findTemplate,
-  type TaskTemplate,
-  taskTemplates,
+  isComposedTemplateTitleValid,
+  isTemplateReadinessValueValid,
+  templateBelongsToMode,
+  type TaskTemplateId,
+  type TaskTemplateSelection,
 } from '@/lib/market/task-templates';
+import {
+  transitionTemplateChoice,
+  type TemplateBriefState,
+} from '@/lib/market/task-template-transition';
 import { isPrivyConfigured } from '@/lib/privy-config';
 import {
   getSessionStorageItem,
@@ -36,10 +52,10 @@ import {
   setSessionStorageItem,
 } from '@/lib/safe-session-storage';
 
-export type WizardFormValues = CreateTaskFormValues & { templateId: TaskTemplate['id'] };
+export type WizardFormValues = CreateTaskFormValues & { templateId: TaskTemplateSelection };
 
 export type WizardLockConfig = {
-  templateId: TaskTemplate['id'];
+  templateId: TaskTemplateId;
   reward: string;
   prefillFirstToken?: string;
 };
@@ -56,11 +72,7 @@ export type WizardFunnelEvent = {
     | 'task_published';
 };
 
-export type WizardCampaignBriefState = {
-  hasManualEdits: boolean;
-  presetId?: string;
-  tokenValues: Record<string, string>;
-};
+export type WizardCampaignBriefState = TemplateBriefState;
 
 type CreateTaskWizardBaseProps = {
   initialMarketStats: MarketStats | null;
@@ -84,7 +96,6 @@ const STEP_BRIEF_FIELDS: Array<keyof CreateTaskFormValues> = [
   'reward',
   'duration',
   'tags',
-  'maxPrice',
   'auctionFloorPrice',
   'auctionStartPrice',
   'taskVisibility',
@@ -95,7 +106,7 @@ const STEP_BRIEF_FIELDS: Array<keyof CreateTaskFormValues> = [
 const STEP_DROP_FIELDS: Array<keyof CreateTaskFormValues> = ['taskDropId', 'taskDropName'];
 
 const WIZARD_STEPS = [
-  { label: 'Template' },
+  { label: 'Setup' },
   { label: 'Brief' },
   { label: 'Task Drop' },
   { label: 'Publish' },
@@ -103,7 +114,7 @@ const WIZARD_STEPS = [
 
 const CAMPAIGN_STEPS = [{ label: 'Brief' }, { label: 'Fund & publish' }];
 const STEP_EASE = [0.16, 1, 0.3, 1] as const;
-const TASK_DRAFT_VERSION = 1;
+const TASK_DRAFT_VERSION = 4;
 
 type StoredTaskDraft = {
   campaignBriefState: WizardCampaignBriefState;
@@ -111,6 +122,43 @@ type StoredTaskDraft = {
   values: WizardFormValues;
   version: typeof TASK_DRAFT_VERSION;
 };
+
+type HydratedTaskDraft = StoredTaskDraft & { recoveredTemplate: boolean };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isStoredFormValues(value: unknown): value is WizardFormValues {
+  if (!isRecord(value) || (value.templateId !== null && typeof value.templateId !== 'string')) {
+    return false;
+  }
+
+  return Object.entries(DEFAULT_FORM_VALUES).every(
+    ([field, defaultValue]) => typeof value[field] === typeof defaultValue
+  );
+}
+
+function isStoredBriefState(value: unknown): value is WizardCampaignBriefState {
+  if (!isRecord(value) || typeof value.hasManualEdits !== 'boolean') {
+    return false;
+  }
+  if (value.presetId !== undefined && typeof value.presetId !== 'string') {
+    return false;
+  }
+  return (
+    isRecord(value.readinessConfirmations) &&
+    Object.values(value.readinessConfirmations).every(
+      (confirmation) => typeof confirmation === 'boolean'
+    ) &&
+    isRecord(value.readinessValues) &&
+    Object.values(value.readinessValues).every(
+      (readinessValue) => typeof readinessValue === 'string'
+    ) &&
+    isRecord(value.tokenValues) &&
+    Object.values(value.tokenValues).every((tokenValue) => typeof tokenValue === 'string')
+  );
+}
 
 function taskDraftStorageKey(variant: WizardVariant, lock?: WizardLockConfig) {
   if (!lock) {
@@ -127,7 +175,7 @@ function taskDraftStorageKey(variant: WizardVariant, lock?: WizardLockConfig) {
   return `taskmarket:create-task-draft:v${TASK_DRAFT_VERSION}:${variant}:${lock.templateId}:${(fingerprint >>> 0).toString(36)}`;
 }
 
-function readTaskDraft(key: string): StoredTaskDraft | null {
+function readTaskDraft(key: string, lock?: WizardLockConfig): HydratedTaskDraft | null {
   try {
     const stored = getSessionStorageItem(key);
     if (!stored) {
@@ -136,14 +184,79 @@ function readTaskDraft(key: string): StoredTaskDraft | null {
     const draft = JSON.parse(stored) as Partial<StoredTaskDraft>;
     if (
       draft.version !== TASK_DRAFT_VERSION ||
-      !draft.values ||
-      !draft.campaignBriefState ||
+      !isStoredFormValues(draft.values) ||
+      !isStoredBriefState(draft.campaignBriefState) ||
       ![0, 1, 2, 3].includes(draft.stepIndex ?? -1)
     ) {
       removeSessionStorageItem(key);
       return null;
     }
-    return draft as StoredTaskDraft;
+    const modeResult = TaskMode.safeParse(draft.values.mode);
+    const briefState = draft.campaignBriefState;
+    if (!modeResult.success) {
+      removeSessionStorageItem(key);
+      return null;
+    }
+
+    const mode = modeResult.data;
+    const templateId = draft.values.templateId;
+    if (lock && (mode !== findTemplate(lock.templateId)?.mode || templateId !== lock.templateId)) {
+      removeSessionStorageItem(key);
+      return null;
+    }
+    const validTemplate =
+      templateId === null ||
+      (typeof templateId === 'string' && templateBelongsToMode(templateId, mode));
+    const allowedKeys = new Set([...Object.keys(DEFAULT_FORM_VALUES), 'templateId']);
+    const safeValues = Object.fromEntries(
+      Object.entries(draft.values).filter(([field]) => allowedKeys.has(field))
+    ) as WizardFormValues;
+
+    if (!validTemplate) {
+      const transition = transitionTemplateChoice({
+        current: { ...DEFAULT_FORM_VALUES, ...safeValues, mode },
+        mode,
+        templateId: null,
+      });
+      return {
+        campaignBriefState: transition.briefState,
+        recoveredTemplate: true,
+        stepIndex: draft.stepIndex as 0 | 1 | 2 | 3,
+        values: { ...transition.values, accessPassword: '', templateId: null },
+        version: TASK_DRAFT_VERSION,
+      };
+    }
+
+    const template = findTemplate(templateId);
+    const readinessKeys = new Set(template?.readiness.map((item) => item.key) ?? []);
+    const readinessValues = Object.fromEntries(
+      Object.entries(briefState.readinessValues).filter(
+        ([item, value]) => readinessKeys.has(item) && typeof value === 'string'
+      )
+    );
+    const readinessConfirmations = Object.fromEntries(
+      Object.entries(briefState.readinessConfirmations).filter(
+        ([item, confirmed]) => readinessKeys.has(item) && typeof confirmed === 'boolean'
+      )
+    );
+    const tokenKeys = new Set(template?.tokens.map((token) => token.key) ?? []);
+    const tokenValues = Object.fromEntries(
+      Object.entries(briefState.tokenValues).filter(
+        ([token, value]) => tokenKeys.has(token) && typeof value === 'string'
+      )
+    );
+    return {
+      campaignBriefState: {
+        ...briefState,
+        readinessConfirmations,
+        readinessValues,
+        tokenValues,
+      },
+      recoveredTemplate: false,
+      stepIndex: draft.stepIndex as 0 | 1 | 2 | 3,
+      values: { ...initialFormValues(lock), ...safeValues, accessPassword: '', mode, templateId },
+      version: TASK_DRAFT_VERSION,
+    };
   } catch {
     removeSessionStorageItem(key);
     return null;
@@ -185,46 +298,42 @@ function StepTransition({
   );
 }
 
-function templateValuesFrom(
-  template: TaskTemplate,
-  lock?: WizardLockConfig
-): Partial<CreateTaskFormValues> {
-  const tokenValues: Record<string, string> = {};
-  if (lock?.prefillFirstToken && template.tokens[0]) {
-    tokenValues[template.tokens[0].key] = lock.prefillFirstToken;
-  }
-
-  return {
-    mode: template.mode,
-    reward: lock?.reward ?? template.suggestedRewardUsdc,
-    duration: String(template.suggestedDurationHours),
-    tags: template.suggestedTags.join(', '),
-    description: composeBrief(template, tokenValues),
-  };
-}
-
 function initialFormValues(lock?: WizardLockConfig): WizardFormValues {
   if (!lock) {
     return { ...DEFAULT_FORM_VALUES, templateId: DEFAULT_TEMPLATE_ID };
   }
 
-  const template = findTemplate(lock.templateId) ?? taskTemplates[0];
-  return {
-    ...DEFAULT_FORM_VALUES,
-    ...templateValuesFrom(template, lock),
+  const template = findTemplate(lock.templateId);
+  if (!template) {
+    return { ...DEFAULT_FORM_VALUES, templateId: null };
+  }
+  const transition = transitionTemplateChoice({
+    current: DEFAULT_FORM_VALUES,
+    lock,
+    mode: template.mode,
     templateId: template.id,
+  });
+  return {
+    ...transition.values,
+    templateId: transition.templateId,
   };
 }
 
 function initialCampaignBriefState(lock?: WizardLockConfig): WizardCampaignBriefState {
   const template = lock ? findTemplate(lock.templateId) : undefined;
-  const firstToken = template?.tokens[0];
-
-  return {
-    hasManualEdits: false,
-    tokenValues:
-      lock?.prefillFirstToken && firstToken ? { [firstToken.key]: lock.prefillFirstToken } : {},
-  };
+  return template
+    ? transitionTemplateChoice({
+        current: DEFAULT_FORM_VALUES,
+        lock,
+        mode: template.mode,
+        templateId: template.id,
+      }).briefState
+    : {
+        hasManualEdits: false,
+        readinessConfirmations: {},
+        readinessValues: {},
+        tokenValues: {},
+      };
 }
 
 export function CreateTaskWizard({
@@ -313,9 +422,16 @@ function CreateTaskWizardContent({
   const [stepIndex, setStepIndex] = useState<0 | 1 | 2 | 3>(lock ? 1 : 0);
   const [fieldErrors, setFieldErrors] = useState<CreateTaskFieldErrors>({});
   const [campaignTokenError, setCampaignTokenError] = useState<string | null>(null);
+  const [campaignTitleError, setCampaignTitleError] = useState<string | null>(null);
+  const [campaignReadinessError, setCampaignReadinessError] = useState<string | null>(null);
   const [campaignBriefState, setCampaignBriefState] = useState<WizardCampaignBriefState>(() =>
     initialCampaignBriefState(lock)
   );
+  const [draftRecoveryNotice, setDraftRecoveryNotice] = useState<string | null>(null);
+  const [pendingTemplateChoice, setPendingTemplateChoice] = useState<{
+    mode: TaskModeType;
+    templateId: TaskTemplateSelection;
+  } | null>(null);
   const [mounted, setMounted] = useState(false);
   const draftStorageKey = taskDraftStorageKey(variant, lock);
   const draftHydratedRef = useRef(false);
@@ -324,12 +440,14 @@ function CreateTaskWizardContent({
   const lastConnectedWalletRef = useRef<string | undefined>(undefined);
   const publishViewedRef = useRef(false);
   const stepFocusInitialisedRef = useRef(false);
+  const replacementTriggerRef = useRef<HTMLElement | null>(null);
 
   const templateId = form.watch('templateId');
+  const mode = form.watch('mode') as TaskModeType;
   const { isDirty } = form.formState;
 
   useEffect(() => {
-    const draft = readTaskDraft(draftStorageKey);
+    const draft = readTaskDraft(draftStorageKey, lock);
     if (draft) {
       form.reset(
         {
@@ -341,6 +459,11 @@ function CreateTaskWizardContent({
       );
       setCampaignBriefState(draft.campaignBriefState);
       setStepIndex(draft.stepIndex);
+      setDraftRecoveryNotice(
+        draft.recoveredTemplate
+          ? 'The saved template did not match its work type, so this draft was restored as a blank task.'
+          : null
+      );
     } else if (lock) {
       form.reset(initialFormValues(lock), { keepDefaultValues: true });
       setCampaignBriefState(initialCampaignBriefState(lock));
@@ -455,56 +578,77 @@ function CreateTaskWizardContent({
     }
   }
 
-  function applyTemplate(template: TaskTemplate) {
-    if (template.id === templateId) {
+  function commitTemplateChoice(nextMode: TaskModeType, nextTemplateId: TaskTemplateSelection) {
+    setFieldErrors({});
+    const transition = transitionTemplateChoice({
+      current: currentFormValues(),
+      mode: nextMode,
+      templateId: nextTemplateId,
+    });
+    setCampaignBriefState(transition.briefState);
+    form.reset({ ...transition.values, templateId: transition.templateId });
+  }
+
+  function applyTemplateChoice(nextMode: TaskModeType, nextTemplateId: TaskTemplateSelection) {
+    if (nextMode === mode && nextTemplateId === templateId) {
       return;
     }
     if (isDirty) {
-      const confirmed = window.confirm(
-        'Switching templates will replace your current brief and settings. Continue?'
-      );
-      if (!confirmed) {
-        return;
-      }
-    }
-    setFieldErrors({});
-    form.reset({
-      ...DEFAULT_FORM_VALUES,
-      ...templateValuesFrom(template),
-      templateId: template.id,
-    });
-  }
-
-  function handleExpressPublish() {
-    setFieldErrors({});
-    const values = currentFormValues();
-    const errors = validateCreateTask(values);
-    if (errors) {
-      setFieldErrors(errors);
-      goToStep(1);
-      window.requestAnimationFrame(() => focusFirstInvalidField(errors));
+      replacementTriggerRef.current = document.activeElement as HTMLElement | null;
+      setPendingTemplateChoice({ mode: nextMode, templateId: nextTemplateId });
       return;
     }
-    onFunnelEvent?.({ name: 'brief_completed' });
-    goToStep(2);
+    commitTemplateChoice(nextMode, nextTemplateId);
   }
 
   function handleContinueFromBrief() {
     setFieldErrors({});
-    if (lock) {
-      const campaignTemplate = findTemplate(lock.templateId);
-      const missingToken = campaignTemplate?.tokens.find(
-        (token) => token.required && !campaignBriefState.tokenValues[token.key]?.trim()
-      );
-      if (missingToken) {
-        setCampaignTokenError(missingToken.key);
-        window.requestAnimationFrame(() => {
-          document.querySelector<HTMLInputElement>(`#token-${missingToken.key}`)?.focus();
-        });
-        return;
-      }
+    const selectedTemplate = findTemplate(templateId);
+    const missingToken = selectedTemplate?.tokens.find(
+      (token) => token.required && !campaignBriefState.tokenValues[token.key]?.trim()
+    );
+    if (missingToken) {
+      setCampaignTokenError(missingToken.key);
+      window.requestAnimationFrame(() => {
+        document.querySelector<HTMLInputElement>(`#token-${missingToken.key}`)?.focus();
+      });
+      return;
     }
     setCampaignTokenError(null);
+    if (
+      selectedTemplate &&
+      !isComposedTemplateTitleValid(selectedTemplate, campaignBriefState.tokenValues)
+    ) {
+      const titleToken = selectedTemplate.tokens.find((token) =>
+        selectedTemplate.titleTemplate.includes(`{{${token.key}}}`)
+      );
+      setCampaignTitleError(titleToken?.key ?? selectedTemplate.tokens[0]?.key ?? null);
+      window.requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLInputElement>(
+            `#token-${titleToken?.key ?? selectedTemplate.tokens[0]?.key}`
+          )
+          ?.focus();
+      });
+      return;
+    }
+    setCampaignTitleError(null);
+    const invalidReadiness = selectedTemplate?.readiness.find(
+      (item) =>
+        !isTemplateReadinessValueValid(
+          item,
+          campaignBriefState.readinessValues[item.key],
+          campaignBriefState.readinessConfirmations[item.key]
+        )
+    );
+    if (invalidReadiness) {
+      setCampaignReadinessError(invalidReadiness.key);
+      window.requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>(`#readiness-${invalidReadiness.key}`)?.focus();
+      });
+      return;
+    }
+    setCampaignReadinessError(null);
     const values = currentFormValues();
     const errors = validateCreateTask(values, STEP_BRIEF_FIELDS);
     if (errors) {
@@ -536,7 +680,7 @@ function CreateTaskWizardContent({
 
   const stepHeading =
     stepIndex === 0
-      ? 'Choose a template'
+      ? 'Choose how work is awarded'
       : stepIndex === 1
         ? 'Write the brief'
         : stepIndex === 2
@@ -561,6 +705,53 @@ function CreateTaskWizardContent({
 
   return (
     <div className="grid gap-6">
+      {draftRecoveryNotice ? (
+        <p
+          className="rounded-xl border border-warning/46 bg-warning/12 p-3 text-sm text-foreground"
+          role="status"
+        >
+          {draftRecoveryNotice}
+        </p>
+      ) : null}
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open) setPendingTemplateChoice(null);
+        }}
+        open={Boolean(pendingTemplateChoice)}
+      >
+        <DialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            replacementTriggerRef.current?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Replace this brief?</DialogTitle>
+            <DialogDescription>
+              Switching the work type or template replaces the current brief, reward, and
+              mode-specific settings. Visibility, evaluator, hook, and Task Drop choices stay in
+              place.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Keep current brief
+              </Button>
+            </DialogClose>
+            <Button
+              onClick={() => {
+                if (!pendingTemplateChoice) return;
+                commitTemplateChoice(pendingTemplateChoice.mode, pendingTemplateChoice.templateId);
+                setPendingTemplateChoice(null);
+              }}
+              type="button"
+            >
+              Replace brief
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <WizardStepper
         current={stepperCurrent}
         onStepClick={handleStepperClick}
@@ -584,10 +775,10 @@ function CreateTaskWizardContent({
           <StepTransition enabled={Boolean(lock)} stepIndex={stepIndex}>
             {stepIndex === 0 && !lock ? (
               <StepTemplate
-                applyTemplate={applyTemplate}
-                marketStats={initialMarketStats}
-                onCustomize={() => goToStep(1)}
-                onExpressPublish={handleExpressPublish}
+                mode={mode}
+                onContinue={() => goToStep(1)}
+                onModeChange={(nextMode) => applyTemplateChoice(nextMode, null)}
+                onTemplateChange={(nextTemplateId) => applyTemplateChoice(mode, nextTemplateId)}
                 templateId={templateId}
               />
             ) : null}
@@ -595,20 +786,20 @@ function CreateTaskWizardContent({
             {stepIndex === 1 ? (
               <>
                 <StepBrief
-                  campaignState={lock ? campaignBriefState : undefined}
+                  campaignState={campaignBriefState}
+                  campaignReadinessError={campaignReadinessError}
+                  campaignTitleError={campaignTitleError}
                   campaignTokenError={campaignTokenError}
                   fieldErrors={fieldErrors}
                   form={form}
                   lock={lock}
                   onChangeTemplate={() => goToStep(0)}
-                  onCampaignStateChange={
-                    lock
-                      ? (state) => {
-                          setCampaignBriefState(state);
-                          setCampaignTokenError(null);
-                        }
-                      : undefined
-                  }
+                  onCampaignStateChange={(state) => {
+                    setCampaignBriefState(state);
+                    setCampaignReadinessError(null);
+                    setCampaignTitleError(null);
+                    setCampaignTokenError(null);
+                  }}
                   templateId={templateId}
                 />
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">

@@ -45,7 +45,7 @@ describe('buildCreateTaskPayload', () => {
       bidDeadline: 24,
       description: 'Build a scraper',
       duration: 72,
-      maxPrice: '12500000',
+      maxPrice: '25750000',
       mode: 'auction',
       pitchDeadline: 86400,
       reward: '25750000',
@@ -114,7 +114,7 @@ describe('validateCreateTask', () => {
       ...validValues(),
       mode: 'auction',
       auctionType: 'dutch',
-      maxPrice: '10',
+      reward: '10',
       auctionFloorPrice: '10',
     });
     expect(errors?.auctionFloorPrice).toBeTruthy();
@@ -125,7 +125,7 @@ describe('validateCreateTask', () => {
       ...validValues(),
       mode: 'auction',
       auctionType: 'reverse_dutch',
-      maxPrice: '10',
+      reward: '10',
       auctionStartPrice: '12',
     });
     expect(errors?.auctionStartPrice).toBeTruthy();

@@ -42,7 +42,7 @@ test('groups a revision flood by submitter and preserves inline history', async 
   const comparison = page.getByRole('region', { name: /Artifact comparison/i });
   await expect(comparison.getByRole('group', { name: /1 submission/i })).toHaveCount(10);
   await expect(page.getByTestId('submission-review-summary')).toContainText(
-    '12 active submitters · 161 active submissions'
+    '161 submissions from 12 submitters'
   );
   await expect(page.getByText('Showing 1-10 of 12 submitters')).toBeVisible();
   await expect(

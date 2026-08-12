@@ -319,8 +319,10 @@ test('keeps pending-review detail usable without horizontal overflow', async ({ 
     comparison.getByRole('button', { name: /Open candidate-a-wide\.mp4 preview/i })
   ).toBeVisible();
   const taskSidebar = page.getByRole('complementary', { name: /Task sidebar/i });
-  await expect(taskSidebar.getByRole('heading', { name: /Review status/i })).toBeVisible();
-  await expect(taskSidebar.getByText(/Only requester .* can release escrow/i)).toBeVisible();
+  await expect(taskSidebar.getByRole('heading', { name: /Next action/i })).toBeVisible();
+  await expect(
+    taskSidebar.getByText(/Requester .* can accept work and release payment/i)
+  ).toBeVisible();
 
   await comparison.getByRole('button', { name: /Open candidate-a\.png preview/i }).click();
   const previewImage = page.getByRole('dialog').getByRole('img', { name: 'candidate-a.png' });
@@ -347,7 +349,7 @@ test('keeps pending-review detail usable without horizontal overflow', async ({ 
   await expectNoHorizontalOverflow(page);
 });
 
-test('places the task description before review and runs HTML in the full-viewport gallery', async ({
+test('places submission review before the task description and runs HTML in the full-viewport gallery', async ({
   page,
 }, testInfo) => {
   test.skip(
@@ -381,7 +383,7 @@ test('places the task description before review and runs HTML in the full-viewpo
   expect(
     await description.evaluate(
       (element, reviewHeading) =>
-        Boolean(element.compareDocumentPosition(reviewHeading) & Node.DOCUMENT_POSITION_FOLLOWING),
+        Boolean(element.compareDocumentPosition(reviewHeading) & Node.DOCUMENT_POSITION_PRECEDING),
       submissionReviewHandle
     )
   ).toBe(true);
@@ -793,6 +795,7 @@ test('offers dedicated HTML showcase tasks with distinct interactive submissions
     const previewButton = comparison.getByRole('button', {
       name: new RegExp(`Open ${showcase.fileName} preview`, 'i'),
     });
+    await previewButton.scrollIntoViewIfNeeded();
     await expect(previewButton.locator(`iframe[title="${frameTitle}"]`)).toHaveCount(1);
     await previewButton.click();
 

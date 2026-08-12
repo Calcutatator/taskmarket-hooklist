@@ -34,7 +34,7 @@ import {
   SUBMISSION_VISIBILITY_LOCKED_NOTICE,
 } from '@/lib/market/status-config';
 import { auctionTypeOptions, taskModeOptions } from '@/lib/market/task-mode-config';
-import { findTemplate, taskTemplates } from '@/lib/market/task-templates';
+import { findTemplate } from '@/lib/market/task-templates';
 import { parseUnits } from 'viem';
 import { cn } from '@/lib/utils';
 import { getLegalRequestHeaders } from '@/lib/legal-receipt';
@@ -235,7 +235,7 @@ export function StepPublish({
   const isSubmitting = phase !== 'form';
 
   const { templateId, ...values } = form.getValues();
-  const selectedTemplate = findTemplate(templateId) ?? taskTemplates[0];
+  const selectedTemplate = findTemplate(templateId);
   const currentMode =
     taskModeOptions.find((taskMode) => taskMode.value === values.mode) ?? taskModeOptions[0];
   const currentAuctionType =
@@ -658,31 +658,25 @@ export function StepPublish({
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="grid gap-6">
         <Card>
-          <CardHeader className="border-b border-border/75">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <CardTitle>Review</CardTitle>
-                <CardDescription className="mt-2">
-                  Confirm the task details before signing the payment.
-                </CardDescription>
+          <CardContent className="grid gap-5 pt-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="terminal">{selectedTemplate?.label ?? 'Start blank'}</Badge>
+                <Badge variant="secondary">{currentMode.label}</Badge>
+                {values.taskVisibility === 'unlisted' || values.taskVisibility === 'private' ? (
+                  <TaskVisibilityBadge visibility={values.taskVisibility} />
+                ) : null}
               </div>
               <Button onClick={onEditBrief} size="sm" type="button" variant="outline">
                 Edit
               </Button>
             </div>
-          </CardHeader>
-          <CardContent className="grid gap-5 pt-6">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="terminal">{selectedTemplate.label}</Badge>
-              <Badge variant="secondary">{currentMode.label}</Badge>
-              {values.taskVisibility === 'unlisted' || values.taskVisibility === 'private' ? (
-                <TaskVisibilityBadge visibility={values.taskVisibility} />
-              ) : null}
-            </div>
 
             <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-border/68 font-mono text-xs uppercase shadow-[var(--shadow-soft)]">
               <div className="border-r border-border/70 p-3">
-                <span className="block text-muted-foreground">Reward</span>
+                <span className="block text-muted-foreground">
+                  {values.mode === 'auction' ? 'Maximum escrow' : 'Reward'}
+                </span>
                 <span className="mt-1 block text-foreground">
                   {formatUsdcUnits(breakdown.escrowed)}
                 </span>
@@ -723,7 +717,11 @@ export function StepPublish({
               <div className="grid gap-1 rounded-xl border border-border/68 bg-surface/42 p-4 text-sm leading-5 text-muted-foreground shadow-[var(--shadow-soft)]">
                 <p className="font-semibold text-foreground">{currentAuctionType.label} auction</p>
                 <p>{currentAuctionType.description}</p>
-                {values.maxPrice ? <p>Max price ${values.maxPrice}</p> : null}
+                {values.reward ? <p>Maximum budget ${values.reward}</p> : null}
+                <p>
+                  The winning price is paid after acceptance. Any unused maximum escrow returns to
+                  you.
+                </p>
               </div>
             ) : null}
 
@@ -810,13 +808,18 @@ export function StepPublish({
               </p>
               <dl className="grid gap-1.5 text-sm">
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-muted-foreground">Reward</dt>
+                  <dt className="text-muted-foreground">
+                    {values.mode === 'auction' ? 'Maximum escrow' : 'Reward'}
+                  </dt>
                   <dd className="font-mono text-foreground">
                     {formatUsdcUnits(breakdown.escrowed)}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-muted-foreground">Platform fee ({PLATFORM_FEE_PERCENT}%)</dt>
+                  <dt className="text-muted-foreground">
+                    {values.mode === 'auction' ? 'Maximum platform fee' : 'Platform fee'} (
+                    {PLATFORM_FEE_PERCENT}%)
+                  </dt>
                   <dd className="font-mono text-muted-foreground">
                     {formatUsdcUnits(breakdown.fee)}
                   </dd>
@@ -827,16 +830,26 @@ export function StepPublish({
                     {formatUsdcUnits(breakdown.escrowed)}
                   </dd>
                 </div>
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-foreground">Worker receives</dt>
-                  <dd className="font-mono font-semibold text-foreground">
-                    {formatUsdcUnits(breakdown.workerNet)}
-                  </dd>
-                </div>
+                {values.mode === 'auction' ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-foreground">Winning price</dt>
+                    <dd className="font-mono font-semibold text-foreground">Set by auction</dd>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-foreground">Worker receives</dt>
+                    <dd className="font-mono font-semibold text-foreground">
+                      {formatUsdcUnits(breakdown.workerNet)}
+                    </dd>
+                  </div>
+                )}
                 {estimatedWorkerDreamsBonus && estimatedWorkerDreamsBonus !== '0' ? (
                   <div className="flex items-center justify-between gap-3">
                     <dt className="flex items-center gap-1 text-muted-foreground">
-                      <span>Estimated worker DREAMS bonus</span>
+                      <span>
+                        {values.mode === 'auction' ? 'Maximum estimated' : 'Estimated'} worker
+                        DREAMS bonus
+                      </span>
                       <DreamsRewardDisclosure />
                     </dt>
                     <dd className="font-mono text-muted-foreground">
@@ -848,7 +861,10 @@ export function StepPublish({
                 {estimatedRequesterDreamsBonus && estimatedRequesterDreamsBonus !== '0' ? (
                   <div className="flex items-center justify-between gap-3">
                     <dt className="flex items-center gap-1 text-muted-foreground">
-                      <span>Estimated requester DREAMS bonus</span>
+                      <span>
+                        {values.mode === 'auction' ? 'Maximum estimated' : 'Estimated'} requester
+                        DREAMS bonus
+                      </span>
                       <DreamsRewardDisclosure />
                     </dt>
                     <dd className="font-mono text-muted-foreground">
@@ -859,8 +875,18 @@ export function StepPublish({
                 ) : null}
               </dl>
               <p className="text-xs leading-5 text-muted-foreground">
-                You fund the full reward up front. The worker is paid the reward minus a{' '}
-                {PLATFORM_FEE_PERCENT}% platform fee when you accept their work.
+                {values.mode === 'auction' ? (
+                  <>
+                    You fund the maximum budget up front. The worker is paid the winning price minus
+                    a {PLATFORM_FEE_PERCENT}% platform fee after acceptance, and unused escrow is
+                    returned.
+                  </>
+                ) : (
+                  <>
+                    You fund the full reward up front. The worker is paid the reward minus a{' '}
+                    {PLATFORM_FEE_PERCENT}% platform fee when you accept their work.
+                  </>
+                )}
               </p>
             </div>
           </CardContent>

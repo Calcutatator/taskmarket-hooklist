@@ -30,25 +30,15 @@ export function WizardStepper({ current, onStepClick, steps }: WizardStepperProp
               className={cn(
                 'flex size-8 shrink-0 items-center justify-center rounded-full border border-border/68 font-mono text-xs font-semibold text-muted-foreground transition-colors',
                 completed && 'border-primary/70 bg-primary text-primary-foreground',
-                isCurrent && 'border-primary/70 bg-primary/12 text-foreground'
+                isCurrent && 'border-primary/70 bg-primary text-primary-foreground'
               )}
             >
               {completed ? <IconCheck className="size-4" /> : String(index + 1).padStart(2, '0')}
             </span>
           );
           const text = (
-            <span className="grid">
-              <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-muted-foreground">
-                Step {index + 1}
-              </span>
-              <span
-                className={cn(
-                  'font-sans text-sm font-semibold tracking-tight text-foreground',
-                  isCurrent && 'text-primary'
-                )}
-              >
-                {step.label}
-              </span>
+            <span className="font-sans text-sm font-semibold tracking-tight text-foreground">
+              {step.label}
             </span>
           );
 

@@ -130,6 +130,7 @@ import { taskToAgentJson, taskToMarkdown } from '@/lib/market/task-export';
 import { TASK_SORT_OPTIONS, normalizeBasePath, taskFiltersHref } from '@/lib/market/task-filters';
 import { taskFullTitle, taskTitle } from '@/lib/market/task-title';
 import { commandForTaskWorker } from '@/lib/market/task-action-command';
+import { cn } from '@/lib/utils';
 import type {
   ActiveFilter,
   TaskListView,
@@ -2377,7 +2378,7 @@ function SummaryRow({
 function SummaryGroup({ children, title }: { children: ReactNode; title: string }) {
   return (
     <section className="grid gap-3 border-t border-border/58 pt-4 first:border-t-0 first:pt-0">
-      <h2 className="font-sans text-sm font-semibold tracking-tight text-foreground">{title}</h2>
+      <h3 className="font-sans text-sm font-semibold tracking-tight text-foreground">{title}</h3>
       <div className="grid gap-2 font-mono text-sm">{children}</div>
     </section>
   );
@@ -2590,161 +2591,164 @@ function TaskSummaryRail({
   const awardCount = resolvedAwardCount(task);
   const winnerCount = awards.length > 0 ? awardRecipientCount(awards) : awardCount;
   const primaryAward = awards.find((award) => award.isPrimary);
+  const readyForReview = activityLabel(task, modeData);
 
   return (
-    <div className="w-full lg:border-l lg:border-border/58 lg:pl-5">
-      <TaskReviewStatus
-        detail={
-          reviewRequired
-            ? task.status === 'pending_approval' || isOpenWindowClosed(task)
-              ? 'Submission window closed'
-              : 'Submissions ready for review'
-            : statusContext(task)
-        }
-        requester={task.requester}
-        reviewRequired={reviewRequired}
-        status={taskStatusLabel(task.status)}
-      />
-      <div className="grid gap-5 pt-5">
-        <SummaryGroup title="Task reference">
-          <SummaryRow
-            label="Requester"
-            value={
-              <ActorLink
-                address={task.requester}
-                agentId={task.requesterAgentId}
-                className="min-w-0 truncate hover:text-primary"
-                profileBasePath={profileBasePath}
-                title={task.requester}
-              />
-            }
+    <div className="w-full overflow-hidden rounded-lg border border-border/58 bg-card/38">
+      <div className="p-5">
+        <TaskReviewStatus
+          detail={reviewRequired ? `${readyForReview} ready for review.` : statusContext(task)}
+          requester={task.requester}
+          reviewRequired={reviewRequired}
+          status={taskStatusLabel(task.status)}
+        />
+      </div>
+      <details className="group border-t border-border/58">
+        <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-5 py-3 text-sm font-semibold tracking-tight text-foreground hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60 [&::-webkit-details-marker]:hidden">
+          Task details
+          <ChevronDown
+            aria-hidden="true"
+            className="size-4 text-muted-foreground transition-transform group-open:rotate-180 motion-reduce:transition-none"
           />
-          {task.selfAward ? (
+        </summary>
+        <div className="grid gap-5 border-t border-border/58 p-5">
+          <SummaryGroup title="Reference">
             <SummaryRow
-              label="Flag"
-              value={
-                <Badge variant="destructive" className="text-xs">
-                  Self-award
-                </Badge>
-              }
-            />
-          ) : null}
-          <SummaryRow label="Task ID" value={compactAddress(task.id)} />
-          <SummaryRow
-            label="Escrow tx"
-            labelTooltip="On-chain transaction that locked the reward in escrow until the work is accepted."
-            value={compactAddress(task.escrowTxHash)}
-          />
-          <SummaryRow
-            label="Platform fee"
-            labelTooltip="Share of the reward kept by Taskmarket when the task settles."
-            value={formatBps(task.platformFeeBps)}
-          />
-          <SummaryRow label="Created" value={formatDateTime(task.createdAt)} />
-        </SummaryGroup>
-
-        {showAuctionPricing ? (
-          <SummaryGroup title="Auction pricing">
-            {task.maxPrice ? (
-              <SummaryRow label="Max price" value={formatUsdcUnits(task.maxPrice)} />
-            ) : null}
-            {task.auctionStartPrice ? (
-              <SummaryRow label="Start price" value={formatUsdcUnits(task.auctionStartPrice)} />
-            ) : null}
-            {task.auctionFloorPrice ? (
-              <SummaryRow label="Floor price" value={formatUsdcUnits(task.auctionFloorPrice)} />
-            ) : null}
-          </SummaryGroup>
-        ) : null}
-
-        {awardCount > 1 ? (
-          <SummaryGroup title="Winners">
-            <SummaryRow label="Recipients" value={countLabel(winnerCount, 'winner')} />
-            <SummaryRow
-              label="Primary"
+              label="Requester"
               value={
                 <ActorLink
-                  address={primaryAward?.workerAddress ?? task.claimedBy}
-                  agentId={primaryAward?.workerAgentId ?? task.workerAgentId}
+                  address={task.requester}
+                  agentId={task.requesterAgentId}
                   className="min-w-0 truncate hover:text-primary"
                   profileBasePath={profileBasePath}
+                  title={task.requester}
                 />
               }
             />
-          </SummaryGroup>
-        ) : task.primaryAward?.workerAddress || task.claimedBy ? (
-          <SummaryGroup title="Assignment">
+            {task.selfAward ? (
+              <SummaryRow
+                label="Flag"
+                value={
+                  <Badge variant="destructive" className="text-xs">
+                    Self-award
+                  </Badge>
+                }
+              />
+            ) : null}
+            <SummaryRow label="Task ID" value={compactAddress(task.id)} />
             <SummaryRow
-              label="Worker"
-              value={
-                <span className="flex items-center gap-1.5">
+              label="Escrow tx"
+              labelTooltip="On-chain transaction that locked the reward in escrow until the work is accepted."
+              value={compactAddress(task.escrowTxHash)}
+            />
+            <SummaryRow
+              label="Platform fee"
+              labelTooltip="Share of the reward kept by Taskmarket when the task settles."
+              value={formatBps(task.platformFeeBps)}
+            />
+            <SummaryRow label="Created" value={formatDateTime(task.createdAt)} />
+          </SummaryGroup>
+
+          {showAuctionPricing ? (
+            <SummaryGroup title="Auction pricing">
+              {task.maxPrice ? (
+                <SummaryRow label="Max price" value={formatUsdcUnits(task.maxPrice)} />
+              ) : null}
+              {task.auctionStartPrice ? (
+                <SummaryRow label="Start price" value={formatUsdcUnits(task.auctionStartPrice)} />
+              ) : null}
+              {task.auctionFloorPrice ? (
+                <SummaryRow label="Floor price" value={formatUsdcUnits(task.auctionFloorPrice)} />
+              ) : null}
+            </SummaryGroup>
+          ) : null}
+
+          {awardCount > 1 ? (
+            <SummaryGroup title="Winners">
+              <SummaryRow label="Recipients" value={countLabel(winnerCount, 'winner')} />
+              <SummaryRow
+                label="Primary"
+                value={
                   <ActorLink
-                    address={task.primaryAward?.workerAddress ?? task.claimedBy}
-                    agentId={task.workerAgentId}
+                    address={primaryAward?.workerAddress ?? task.claimedBy}
+                    agentId={primaryAward?.workerAgentId ?? task.workerAgentId}
                     className="min-w-0 truncate hover:text-primary"
                     profileBasePath={profileBasePath}
                   />
-                  {task.workerActorType === 'human' ? (
-                    <Badge variant="outline" title="Registered as a human via the web app">
-                      human
-                    </Badge>
-                  ) : null}
-                </span>
-              }
-            />
-          </SummaryGroup>
-        ) : null}
+                }
+              />
+            </SummaryGroup>
+          ) : task.primaryAward?.workerAddress || task.claimedBy ? (
+            <SummaryGroup title="Assignment">
+              <SummaryRow
+                label="Worker"
+                value={
+                  <span className="flex items-center gap-1.5">
+                    <ActorLink
+                      address={task.primaryAward?.workerAddress ?? task.claimedBy}
+                      agentId={task.workerAgentId}
+                      className="min-w-0 truncate hover:text-primary"
+                      profileBasePath={profileBasePath}
+                    />
+                    {task.workerActorType === 'human' ? (
+                      <Badge variant="outline" title="Registered as a human via the web app">
+                        human
+                      </Badge>
+                    ) : null}
+                  </span>
+                }
+              />
+            </SummaryGroup>
+          ) : null}
 
-        <SummaryGroup title="Task type">
-          <div className="flex flex-wrap gap-2">
-            <Link href={modeHref}>
-              <Badge className="hover:opacity-80" variant={taskModeBadgeVariant(task.mode)}>
-                {task.mode}
-              </Badge>
-            </Link>
-            <InfoTooltip label={MODE_TOOLTIPS[task.mode]}>
-              <span className="sr-only">About {task.mode} tasks</span>
-            </InfoTooltip>
-            {task.auctionType ? (
-              <Badge variant="terminal">{labelize(task.auctionType)} auction</Badge>
-            ) : null}
-            {task.taskDrop ? (
-              <Link href={`/drops/${task.taskDrop.id}` as Route}>
-                <Badge className="hover:opacity-80" variant="outline">
-                  {task.taskDrop.name}
+          <SummaryGroup title="Task type">
+            <div className="flex flex-wrap gap-2">
+              <Link href={modeHref}>
+                <Badge className="hover:opacity-80" variant={taskModeBadgeVariant(task.mode)}>
+                  {task.mode}
                 </Badge>
               </Link>
-            ) : null}
-            {task.taskVisibility === 'unlisted' || task.taskVisibility === 'private' ? (
-              <TaskVisibilityBadge visibility={task.taskVisibility} withTooltip />
-            ) : null}
-          </div>
-        </SummaryGroup>
+              <InfoTooltip label={MODE_TOOLTIPS[task.mode]}>
+                <span className="sr-only">About {task.mode} tasks</span>
+              </InfoTooltip>
+              {task.auctionType ? (
+                <Badge variant="terminal">{labelize(task.auctionType)} auction</Badge>
+              ) : null}
+              {task.taskDrop ? (
+                <Link href={`/drops/${task.taskDrop.id}` as Route}>
+                  <Badge className="hover:opacity-80" variant="outline">
+                    {task.taskDrop.name}
+                  </Badge>
+                </Link>
+              ) : null}
+            </div>
+          </SummaryGroup>
 
-        <SummaryGroup title="Utilities">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-muted-foreground">Copy for agent</span>
-            <span className="flex items-center gap-1">
-              <CopyButton
-                icon={<FileJsonIcon />}
-                label="Copy as JSON"
-                text={taskToAgentJson(task, modeData)}
-              />
-              <CopyButton
-                icon={<FileTextIcon />}
-                label="Copy as markdown"
-                text={taskToMarkdown(task)}
-              />
-            </span>
-          </div>
-          <Link
-            className="text-muted-foreground transition-colors hover:text-primary"
-            href={taskTypesHref}
-          >
-            How this works
-          </Link>
-        </SummaryGroup>
-      </div>
+          <SummaryGroup title="Utilities">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Copy for agent</span>
+              <span className="flex items-center gap-1">
+                <CopyButton
+                  icon={<FileJsonIcon />}
+                  label="Copy as JSON"
+                  text={taskToAgentJson(task, modeData)}
+                />
+                <CopyButton
+                  icon={<FileTextIcon />}
+                  label="Copy as markdown"
+                  text={taskToMarkdown(task)}
+                />
+              </span>
+            </div>
+            <Link
+              className="text-muted-foreground transition-colors hover:text-primary"
+              href={taskTypesHref}
+            >
+              How this works
+            </Link>
+          </SummaryGroup>
+        </div>
+      </details>
     </div>
   );
 }
@@ -2761,7 +2765,7 @@ function TaskBrief({ body }: { body: string }) {
   // No structure detected: keep the original single-paragraph rendering verbatim.
   if (!hasHeadings) {
     return (
-      <p className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] text-sm leading-6 text-muted-foreground">
+      <p className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] text-base leading-7 text-muted-foreground">
         {softenShout(body)}
       </p>
     );
@@ -2769,27 +2773,29 @@ function TaskBrief({ body }: { body: string }) {
 
   return (
     <div className="grid min-w-0 gap-4 [overflow-wrap:anywhere]">
-      {summary ? <p className="text-sm font-medium leading-6 text-foreground">{summary}</p> : null}
-      <div className="grid gap-2">
+      {summary ? (
+        <p className="text-base font-medium leading-7 text-foreground">{summary}</p>
+      ) : null}
+      <div className="border-t border-border/58">
         {sections.map((section, index) =>
           section.heading ? (
             // Sections open by default so the full spec is never hidden behind a click,
             // but stay collapsible so a long brief can be folded once scanned.
             <details
-              className="group rounded-lg border border-border/52 bg-muted/16 p-3"
+              className="group border-b border-border/58 py-3"
               key={`${section.heading}-${index}`}
               open
             >
-              <summary className="cursor-pointer select-none font-mono text-[0.68rem] uppercase tracking-wide text-muted-foreground hover:text-foreground">
+              <summary className="cursor-pointer select-none text-sm font-semibold text-foreground hover:text-primary">
                 {section.heading}
               </summary>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">
+              <p className="mt-2 whitespace-pre-wrap text-base leading-7 text-muted-foreground">
                 {softenShout(section.body).trim()}
               </p>
             </details>
           ) : section.body.trim() ? (
             <p
-              className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground"
+              className="border-b border-border/58 py-3 whitespace-pre-wrap text-base leading-7 text-muted-foreground"
               key={`intro-${index}`}
             >
               {softenShout(section.body).trim()}
@@ -2902,9 +2908,9 @@ export function TaskDetailPanel({
   const focusLabel = focusIntent ? TASK_ACTION_PRESENTATION[focusIntent].focusLabel : null;
 
   return (
-    <div className="grid w-full min-w-0 gap-6 lg:grid-cols-3">
+    <div className="grid w-full min-w-0 gap-6">
       <PublishedCelebration task={task} />
-      <div className="flex w-full min-w-0 flex-col gap-5 lg:col-span-2">
+      <header className="grid w-full min-w-0 gap-5">
         {!dashboardDetail ? (
           <Breadcrumb className="px-1">
             <BreadcrumbList>
@@ -2922,12 +2928,27 @@ export function TaskDetailPanel({
             </BreadcrumbList>
           </Breadcrumb>
         ) : null}
-        <h1
-          className="break-words font-display text-2xl font-semibold leading-tight tracking-tight text-foreground"
-          title={fullTitle}
-        >
-          {title}
-        </h1>
+        <div className="grid gap-3">
+          <h1
+            className="break-words font-display text-3xl font-semibold leading-tight tracking-tight text-foreground"
+            title={fullTitle}
+          >
+            {title}
+          </h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link href={modeHref}>
+              <Badge className="hover:opacity-80" variant={taskModeBadgeVariant(task.mode)}>
+                {task.mode}
+              </Badge>
+            </Link>
+            {task.taskVisibility === 'unlisted' || task.taskVisibility === 'private' ? (
+              <TaskVisibilityBadge visibility={task.taskVisibility} withTooltip />
+            ) : null}
+            <p className="max-w-2xl text-base leading-6 text-muted-foreground">
+              {MODE_TOOLTIPS[task.mode]}
+            </p>
+          </div>
+        </div>
         {focusLabel ? (
           <div
             aria-live="polite"
@@ -2943,153 +2964,169 @@ export function TaskDetailPanel({
             </p>
           </div>
         ) : null}
-        <section
-          aria-label="Task metrics"
-          className="grid grid-cols-2 overflow-hidden rounded-lg border border-border/58 bg-card/38 md:grid-cols-4"
+      </header>
+      <div className="grid min-w-0 gap-6 lg:grid-cols-3">
+        <aside
+          aria-label="Task sidebar"
+          className="grid h-fit gap-6 lg:col-start-3 lg:row-start-1 lg:sticky lg:top-20"
         >
-          <DetailMetric
-            label="Reward"
-            value={<span className="text-primary">{formatUsdcUnits(taskDisplayReward(task))}</span>}
-            valueCaption={auctionPriceCaption(task)}
+          <TaskSummaryRail
+            modeData={modeData}
+            modeHref={modeHref}
+            profileBasePath={profileBasePath}
+            reviewRequired={Boolean(acceptAction || rejectAction)}
+            task={task}
+            taskTypesHref={taskTypesHref}
           />
-          <DetailMetric
-            label={bonusSummary ? 'Estimated DREAMS bonus' : 'Bonus'}
-            labelAction={bonusSummary ? <DreamsRewardDisclosure /> : undefined}
-            value={bonusSummary?.value ?? '--'}
-            valueCaption={bonusSummary?.caption}
-            valueClassName="mt-2 font-mono text-xl font-semibold tracking-tight text-foreground"
-          />
-          <DetailMetric
-            label="Due"
-            value={<DeadlineLabel className="text-lg" task={task} />}
-            valueClassName="mt-2 min-w-0 text-lg font-medium text-foreground"
-          />
-          <DetailMetric
-            label={activityTitle(task)}
-            value={activityLabel(task, modeData)}
-            valueClassName="mt-2 min-w-0 text-lg font-medium text-foreground"
-          />
-        </section>
-        <LiveStatusBanner marketStats={marketStats} modeData={modeData} task={task} />
-        <VerdictEvidencePanel
-          forceVisible={focusIntent === 'appeal_verdict' || focusIntent === 'finalize_verdict'}
-          task={task}
-        />
-        <SettlementPayoutsPanel profileBasePath={profileBasePath} task={task} />
-        {descriptionBody || detailTags.length > 0 || publishedHtmlArtifact ? (
+        </aside>
+        <div className="flex w-full min-w-0 flex-col gap-5 lg:col-span-2 lg:col-start-1 lg:row-start-1">
           <section
-            className="grid gap-4 border-t border-border/58 pt-5"
-            data-testid="task-description-surface"
+            aria-label="Task metrics"
+            className={cn(
+              'grid grid-cols-2 overflow-hidden rounded-lg border border-border/58 bg-card/38',
+              bonusSummary
+                ? 'md:grid-cols-4'
+                : '[&>article:last-child]:col-span-2 md:grid-cols-3 md:[&>article:last-child]:col-span-1'
+            )}
           >
-            {descriptionBody || publishedHtmlArtifact ? (
-              <TaskDescriptionDisclosure
-                leadingContent={
-                  publishedHtmlArtifact && publishedHtmlHref ? (
-                    <PublishedHtmlResult
-                      artifact={publishedHtmlArtifact.artifact}
-                      artifactCount={publishedHtmlArtifacts.length}
-                      href={publishedHtmlHref}
-                      initiallyOpen={Boolean(requestedHtmlArtifact)}
-                      taskId={task.id}
-                      taskTitle={title}
-                    />
-                  ) : undefined
-                }
-              >
-                {descriptionBody ? <TaskBrief body={descriptionBody} /> : undefined}
-              </TaskDescriptionDisclosure>
+            <DetailMetric
+              label="Reward"
+              value={
+                <span className="text-primary">{formatUsdcUnits(taskDisplayReward(task))}</span>
+              }
+              valueCaption={auctionPriceCaption(task)}
+            />
+            {bonusSummary ? (
+              <DetailMetric
+                label="Estimated DREAMS bonus"
+                labelAction={<DreamsRewardDisclosure />}
+                value={bonusSummary.value}
+                valueCaption={bonusSummary.caption}
+                valueClassName="mt-2 font-mono text-xl font-semibold tracking-tight text-foreground"
+              />
             ) : null}
-            {detailTags.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {detailTags.map((tag) => (
-                  <Link href={taskFiltersHref(listBase, { tags: tag }) as Route} key={tag}>
-                    <Badge className="hover:opacity-80" variant={TASK_TAG_BADGE_VARIANT}>
-                      {tag}
-                    </Badge>
-                  </Link>
-                ))}
-              </div>
-            ) : null}
+            <DetailMetric
+              label="Due"
+              value={<DeadlineLabel className="text-lg" task={task} />}
+              valueClassName="mt-2 min-w-0 text-lg font-medium text-foreground"
+            />
+            <DetailMetric
+              label={activityTitle(task)}
+              value={activityLabel(task, modeData)}
+              valueClassName="mt-2 min-w-0 text-lg font-medium text-foreground"
+            />
           </section>
-        ) : null}
-        {!submissionReviewEligible && participationModule ? (
-          <div className="order-1 lg:order-4">{participationModule}</div>
-        ) : null}
-        {submissionReviewEligible ? (
-          <>
-            {participationModule}
-            <ModeDataPanel
-              marketStats={marketStats}
-              modeData={modeData}
-              profileBasePath={profileBasePath}
-              reviewActions={reviewActions}
-              submissionReviewEligible
-              task={task}
-            />
-          </>
-        ) : null}
-        {showNextActions ? (
-          <div className="order-1 scroll-mt-24 lg:order-2" id="task-next-actions" tabIndex={-1}>
-            <TaskActionsPanel
-              claimedBy={task.claimedBy}
-              emptyReason={pendingActionEmptyReason(task)}
-              evidenceReady={decisionEvidenceReady}
-              pendingActions={mainNextActions}
-              requester={task.requester}
-              task={task}
-              worker={task.primaryAward?.workerAddress}
-            />
-          </div>
-        ) : null}
-        <WorkRequirementsPanel className="order-2 lg:order-1" task={task} />
-        {/* Mutually exclusive by construction: the card renders only once terms exist, the
+          <LiveStatusBanner marketStats={marketStats} modeData={modeData} task={task} />
+          <VerdictEvidencePanel
+            forceVisible={focusIntent === 'appeal_verdict' || focusIntent === 'finalize_verdict'}
+            task={task}
+          />
+          <SettlementPayoutsPanel profileBasePath={profileBasePath} task={task} />
+          {submissionReviewEligible ? (
+            <>
+              {participationModule}
+              <ModeDataPanel
+                marketStats={marketStats}
+                modeData={modeData}
+                profileBasePath={profileBasePath}
+                reviewActions={reviewActions}
+                submissionReviewEligible
+                task={task}
+              />
+            </>
+          ) : null}
+          {descriptionBody || detailTags.length > 0 || publishedHtmlArtifact ? (
+            <section
+              className="grid gap-4 border-t border-border/58 pt-5"
+              data-testid="task-description-surface"
+            >
+              {descriptionBody || publishedHtmlArtifact ? (
+                <TaskDescriptionDisclosure
+                  leadingContent={
+                    publishedHtmlArtifact && publishedHtmlHref ? (
+                      <PublishedHtmlResult
+                        artifact={publishedHtmlArtifact.artifact}
+                        artifactCount={publishedHtmlArtifacts.length}
+                        href={publishedHtmlHref}
+                        initiallyOpen={Boolean(requestedHtmlArtifact)}
+                        taskId={task.id}
+                        taskTitle={title}
+                      />
+                    ) : undefined
+                  }
+                >
+                  {descriptionBody ? <TaskBrief body={descriptionBody} /> : undefined}
+                </TaskDescriptionDisclosure>
+              ) : null}
+              {detailTags.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {detailTags.map((tag) => (
+                    <Link href={taskFiltersHref(listBase, { tags: tag }) as Route} key={tag}>
+                      <Badge className="hover:opacity-80" variant={TASK_TAG_BADGE_VARIANT}>
+                        {tag}
+                      </Badge>
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+          {!submissionReviewEligible && participationModule ? (
+            <div className="order-1 lg:order-4">{participationModule}</div>
+          ) : null}
+          {showNextActions ? (
+            <div className="order-1 scroll-mt-24 lg:order-2" id="task-next-actions" tabIndex={-1}>
+              <TaskActionsPanel
+                claimedBy={task.claimedBy}
+                emptyReason={pendingActionEmptyReason(task)}
+                evidenceReady={decisionEvidenceReady}
+                pendingActions={mainNextActions}
+                requester={task.requester}
+                task={task}
+                worker={task.primaryAward?.workerAddress}
+              />
+            </div>
+          ) : null}
+          <WorkRequirementsPanel className="order-2 lg:order-1" task={task} />
+          {/* Mutually exclusive by construction: the card renders only once terms exist, the
             action only while none do and the connected viewer can still add them. */}
-        <TaskEvaluationTerms
-          className="order-2 lg:order-1"
-          disputeResolverAgentId={evaluationIdentities?.disputeResolverAgentId}
-          evaluatorAgentId={evaluationIdentities?.evaluatorAgentId}
-          profileBasePath={profileBasePath}
-          task={task}
-        />
-        <AssignEvaluatorAction className="order-2 lg:order-1" task={task} />
-        {cancelActions.length > 0 ? (
-          <div className="order-3">
-            <TaskActionsPanel
-              claimedBy={task.claimedBy}
-              emptyReason={pendingActionEmptyReason(task)}
-              evidenceReady={decisionEvidenceReady}
-              hideWhenNoVisibleActions
-              pendingActions={cancelActions}
-              requester={task.requester}
-              task={task}
-              title="Task controls"
-              worker={task.primaryAward?.workerAddress}
-            />
-          </div>
-        ) : null}
-        {!submissionReviewEligible ? (
-          <div className="order-4">
-            <ModeDataPanel
-              marketStats={marketStats}
-              modeData={modeData}
-              profileBasePath={profileBasePath}
-              reviewActions={benchmarkReviewActions}
-              secondarySubmissionReview={benchmarkSubmissionReview}
-              task={task}
-            />
-          </div>
-        ) : null}
+          <TaskEvaluationTerms
+            className="order-2 lg:order-1"
+            disputeResolverAgentId={evaluationIdentities?.disputeResolverAgentId}
+            evaluatorAgentId={evaluationIdentities?.evaluatorAgentId}
+            profileBasePath={profileBasePath}
+            task={task}
+          />
+          <AssignEvaluatorAction className="order-2 lg:order-1" task={task} />
+          {cancelActions.length > 0 ? (
+            <div className="order-3">
+              <TaskActionsPanel
+                claimedBy={task.claimedBy}
+                emptyReason={pendingActionEmptyReason(task)}
+                evidenceReady={decisionEvidenceReady}
+                hideWhenNoVisibleActions
+                pendingActions={cancelActions}
+                requester={task.requester}
+                task={task}
+                title="Task controls"
+                worker={task.primaryAward?.workerAddress}
+              />
+            </div>
+          ) : null}
+          {!submissionReviewEligible ? (
+            <div className="order-4">
+              <ModeDataPanel
+                marketStats={marketStats}
+                modeData={modeData}
+                profileBasePath={profileBasePath}
+                reviewActions={benchmarkReviewActions}
+                secondarySubmissionReview={benchmarkSubmissionReview}
+                task={task}
+              />
+            </div>
+          ) : null}
+        </div>
       </div>
-      <aside aria-label="Task sidebar" className="grid h-fit gap-6 lg:sticky lg:top-20">
-        <TaskSummaryRail
-          modeData={modeData}
-          modeHref={modeHref}
-          profileBasePath={profileBasePath}
-          reviewRequired={Boolean(acceptAction || rejectAction)}
-          task={task}
-          taskTypesHref={taskTypesHref}
-        />
-      </aside>
     </div>
   );
 }

@@ -928,9 +928,10 @@ describe('Task marketplace components', () => {
     ).toBeInTheDocument();
     const metrics = screen.getByRole('region', { name: /task metrics/i });
     const metricCards = within(metrics).getAllByRole('article');
-    expect(metricCards).toHaveLength(4);
+    expect(metricCards).toHaveLength(3);
     expect(metrics).toHaveClass('grid-cols-2');
-    expect(metrics).toHaveClass('md:grid-cols-4');
+    expect(metrics).toHaveClass('md:grid-cols-3');
+    expect(within(metrics).queryByLabelText('Bonus summary')).not.toBeInTheDocument();
     expect(metricCards[0]).toHaveClass('p-3');
     expect(metricCards[0]).toHaveClass('md:p-5');
     const rewardSummary = within(metrics).getByRole('article', { name: /reward summary/i });
@@ -945,7 +946,7 @@ describe('Task marketplace components', () => {
     expect(within(bidsSummary).getByText('2 bids')).toBeInTheDocument();
     expect(metrics.closest('[data-slot="card"]')).toBeNull();
     const sidebar = screen.getByRole('complementary', { name: /task sidebar/i });
-    expect(screen.getByText(/task reference/i).closest('[data-slot="card"]')).toBeNull();
+    expect(screen.getByText(/^reference$/i).closest('[data-slot="card"]')).toBeNull();
     const reference = within(sidebar);
     expect(reference.getByText(/^requester$/i)).toBeInTheDocument();
     expect(reference.getByText(/escrow tx/i)).toBeInTheDocument();
@@ -987,18 +988,18 @@ describe('Task marketplace components', () => {
     ).toBe(true);
   });
 
-  it('gates the summary rail divider and inset to lg and up since the rail stacks full-width below the content on mobile', () => {
+  it('places the action rail before content on mobile and in the right column on desktop', () => {
     render(<TaskDetailPanel modeData={{}} task={taskDetail} />);
 
     const sidebar = screen.getByRole('complementary', { name: /task sidebar/i });
+    const metrics = screen.getByRole('region', { name: /task metrics/i });
     const rail = sidebar.firstElementChild as HTMLElement;
 
-    // Below `lg` the aside stacks full-width under the main content, so an unconditional
-    // left rule and inset render as orphaned decoration with nothing to their left.
-    expect(rail).not.toHaveClass('border-l');
-    expect(rail).not.toHaveClass('pl-5');
-    expect(rail).toHaveClass('lg:border-l');
-    expect(rail).toHaveClass('lg:pl-5');
+    expect(sidebar).toHaveClass('lg:col-start-3', 'lg:row-start-1');
+    expect(rail).toHaveClass('rounded-lg', 'border');
+    expect(
+      Boolean(sidebar.compareDocumentPosition(metrics) & Node.DOCUMENT_POSITION_FOLLOWING)
+    ).toBe(true);
   });
 
   it('announces a valid Inbox focus intent and exposes stable section anchors', () => {
@@ -1123,7 +1124,7 @@ describe('Task marketplace components', () => {
   });
 
   it.each(['/dashboard/tasks', '/tasks'])(
-    'renders a collapsed description preview before submission review on the %s surface',
+    'renders submission review before the collapsed description preview on the %s surface',
     async (backHref) => {
       const user = userEvent.setup();
       render(
@@ -1178,7 +1179,7 @@ describe('Task marketplace components', () => {
       expect(within(description).getByText(/Include a concise findings report/i)).toBeVisible();
       expect(
         activity &&
-          Boolean(description.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING)
+          Boolean(activity.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING)
       ).toBe(true);
       expect(description).not.toContainElement(tagLink);
 
@@ -1572,8 +1573,8 @@ describe('Task marketplace components', () => {
       />
     );
 
-    expect(screen.getByText(/review required/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/submission window closed/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { name: /next action/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/1 submission ready for review/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/1 submission/i).length).toBeGreaterThan(0);
     expect(screen.getByRole('heading', { name: /submission review/i })).toBeInTheDocument();
     expect(screen.getByText(/compare deliverables before releasing escrow/i)).toBeInTheDocument();
@@ -1646,7 +1647,7 @@ describe('Task marketplace components', () => {
 
     renderReviewSubmissions(submissions);
 
-    expect(screen.getByText('1 active submitter · 12 active submissions')).toBeInTheDocument();
+    expect(screen.getByText('12 submissions from 1 submitter')).toBeInTheDocument();
     expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(1);
     expect(
       screen.getByRole('group', {
@@ -2289,13 +2290,13 @@ describe('Task marketplace components', () => {
     );
 
     const sidebar = screen.getByRole('complementary', { name: /task sidebar/i });
-    expect(within(sidebar).getByText(/connected as/i)).toHaveTextContent(/no wallet connected/i);
-    expect(within(sidebar).getByText(/only requester/i)).toBeInTheDocument();
+    expect(within(sidebar).getByText(/requester access required/i)).toBeInTheDocument();
+    expect(within(sidebar).getByText(/can accept work and release payment/i)).toBeInTheDocument();
     expect(
       within(sidebar).getAllByText(
         compactAddressLabel('0x1111111111111111111111111111111111111111')
       )
-    ).toHaveLength(2);
+    ).not.toHaveLength(0);
     await user.click(within(sidebar).getByRole('button', { name: /connect wallet/i }));
     expect(mockPrivyConnect).toHaveBeenCalled();
     expect(
@@ -2772,7 +2773,7 @@ describe('Task marketplace components', () => {
     expect(screen.getAllByText(compactAddressLabel(third)).length).toBeGreaterThan(0);
   });
 
-  it('keeps metrics and reference data visible when activity and actions are empty', () => {
+  it('keeps metrics visible and reference data available when activity and actions are empty', () => {
     render(
       <TaskDetailPanel
         modeData={{ bids: [] }}
@@ -2786,13 +2787,14 @@ describe('Task marketplace components', () => {
     expect(screen.getByText(/no activity yet/i)).toBeInTheDocument();
     expect(screen.getByText(/no pending commands/i)).toBeInTheDocument();
     expect(screen.getByRole('region', { name: /task metrics/i })).toBeInTheDocument();
-    expect(screen.getByText(/task reference/i)).toBeInTheDocument();
+    expect(screen.getByText(/task details/i)).toBeInTheDocument();
     expect(screen.getByText(/escrow tx/i)).toBeInTheDocument();
     expect(screen.getByText(/created/i)).toBeInTheDocument();
     expect(screen.getAllByText('25 USDC').length).toBeGreaterThan(0);
   });
 
-  it('links task detail actors to their profiles using the dashboard base path', () => {
+  it('links task detail actors to their profiles using the dashboard base path', async () => {
+    const user = userEvent.setup();
     render(
       <TaskDetailPanel
         modeData={{
@@ -2810,6 +2812,7 @@ describe('Task marketplace components', () => {
       />
     );
 
+    await user.click(screen.getByText('Task details', { selector: 'summary' }));
     const requesterLink = screen.getByRole('link', {
       name: compactAddressLabel(task.requester),
     });
@@ -2886,10 +2889,12 @@ describe('Task marketplace components', () => {
     expect(tagLink).toHaveAttribute('href', '/dashboard/tasks?tags=research');
   });
 
-  it('shows the mode explainer link on dashboard and public task surfaces', () => {
+  it('shows the mode explainer link on dashboard and public task surfaces', async () => {
+    const user = userEvent.setup();
     const { rerender } = render(
       <TaskDetailPanel backHref="/dashboard/tasks" modeData={{ bids: [] }} task={taskDetail} />
     );
+    await user.click(screen.getByText('Task details', { selector: 'summary' }));
     expect(screen.getAllByRole('link', { name: /how this works/i })).not.toHaveLength(0);
     for (const link of screen.getAllByRole('link', { name: /how this works/i })) {
       expect(link).toHaveAttribute('href', '/dashboard/task-types');
@@ -2902,20 +2907,24 @@ describe('Task marketplace components', () => {
     }
   });
 
-  it('prefers the requester agent id over the wallet address in the reference sidebar', () => {
+  it('prefers the requester agent id over the wallet address in the reference sidebar', async () => {
+    const user = userEvent.setup();
     render(
       <TaskDetailPanel modeData={{ bids: [] }} task={{ ...taskDetail, requesterAgentId: '42' }} />
     );
 
+    await user.click(screen.getByText('Task details', { selector: 'summary' }));
     expect(screen.getByText('Requester')).toBeInTheDocument();
     expect(screen.queryByText(compactAddressLabel(task.requester))).not.toBeInTheDocument();
     const requesterLink = screen.getByRole('link', { name: getAgentName('42') ?? 'Agent #42' });
     expect(requesterLink).toHaveAttribute('href', '/dashboard/agents/42');
   });
 
-  it('falls back to the requester wallet when there is no registered agent id', () => {
+  it('falls back to the requester wallet when there is no registered agent id', async () => {
+    const user = userEvent.setup();
     render(<TaskDetailPanel modeData={{ bids: [] }} task={taskDetail} />);
 
+    await user.click(screen.getByText('Task details', { selector: 'summary' }));
     expect(screen.getByText('Requester')).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: compactAddressLabel(task.requester) })
@@ -2935,12 +2944,14 @@ describe('Task marketplace components', () => {
     );
 
     expect(screen.getAllByText('Expired').length).toBeGreaterThan(0);
-    expect(screen.getByText('Expired - no submissions')).toBeInTheDocument();
+    expect(screen.getAllByText('Expired - no submissions').length).toBeGreaterThan(0);
   });
 
-  it('gives the two copy-for-agent buttons distinct, real hover labels', () => {
+  it('gives the two copy-for-agent buttons distinct, real hover labels', async () => {
+    const user = userEvent.setup();
     render(<TaskDetailPanel modeData={{ bids: [] }} task={taskDetail} />);
 
+    await user.click(screen.getByText('Task details', { selector: 'summary' }));
     expect(screen.getByRole('button', { name: 'Copy as JSON' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy as markdown' })).toBeInTheDocument();
   });

@@ -121,9 +121,9 @@ const PAYMENT_TERMS = {
   ],
 };
 
-// Step 1 (Template) -> select Custom and open the Brief step.
+// Step 1 (Template) -> keep Start blank and open the Brief step.
 async function gotoBriefFromCustom(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: /write the brief/i }));
+  await user.click(screen.getByRole('button', { name: /continue to brief/i }));
 }
 
 // Fill the required Brief fields so step-2 validation passes.
@@ -133,6 +133,10 @@ async function fillBrief(
 ) {
   await user.type(screen.getByLabelText(/description/i), description);
   await user.type(screen.getByLabelText(/^reward/i), reward);
+}
+
+async function fillCampaignAudience(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByLabelText(/target audience/i), 'operations leaders');
 }
 
 // Step 2 (Brief) -> Step 3 (Publish).
@@ -189,7 +193,7 @@ describe('CreateTaskWizard', () => {
 
     try {
       expect(() => render(<CreateTaskWizard initialMarketStats={null} />)).not.toThrow();
-      expect(screen.getByRole('button', { name: /write the brief/i })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /continue to brief/i })).toBeEnabled();
     } finally {
       getItem.mockRestore();
       removeItem.mockRestore();
@@ -420,14 +424,24 @@ describe('CreateTaskWizard', () => {
     expect(tagsLabel?.textContent).not.toContain('*');
   });
 
-  it('toggles the require-stake checkbox', async () => {
+  it('focuses reward before the brief when essential terms are missing', async () => {
     const user = userEvent.setup();
     render(<CreateTaskWizard initialMarketStats={null} />);
 
     await gotoBriefFromCustom(user);
-    // Open the Mode & advanced disclosure, then pick the Claim mode.
-    await user.click(screen.getByRole('button', { name: /^show$/i }));
+    await user.click(screen.getByRole('button', { name: /continue to task drop/i }));
+
+    await waitFor(() => expect(screen.getByRole('spinbutton', { name: /^reward/i })).toHaveFocus());
+    expect(screen.queryByRole('heading', { name: /choose a task drop/i })).not.toBeInTheDocument();
+  });
+
+  it('toggles the require-stake checkbox', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
     await user.click(screen.getByRole('radio', { name: /claim/i }));
+    await user.click(screen.getByRole('button', { name: /continue to brief/i }));
+    await user.click(screen.getByRole('button', { name: /show advanced settings/i }));
 
     const checkbox = screen.getByRole('checkbox', { name: /require stake/i });
     expect(checkbox).toHaveAttribute('aria-checked', 'false');
@@ -446,34 +460,257 @@ describe('CreateTaskWizard', () => {
     expect(description.className).toContain('md:text-sm');
   });
 
-  it('pre-fills the description and reward when the Logo template is selected', async () => {
+  it('pre-fills the description but leaves reward for the requester', async () => {
     const user = userEvent.setup();
     render(<CreateTaskWizard initialMarketStats={null} />);
 
     await user.click(screen.getByRole('radio', { name: /logo/i }));
-    await user.click(screen.getByRole('button', { name: /customize brief/i }));
+    await user.click(screen.getByRole('button', { name: /continue to brief/i }));
 
     const description = screen.getByLabelText(/description/i) as HTMLTextAreaElement;
     expect(description.value).toContain('primary logo');
     const reward = screen.getByLabelText(/^reward/i) as HTMLInputElement;
-    expect(reward.value).toBe('2');
+    expect(reward.value).toBe('');
   });
 
-  it('lands on the Publish step with a complete summary via "Use this and publish"', async () => {
+  it('switches work type and template before continuing to the Brief step', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await user.click(screen.getByRole('radio', { name: /claim/i }));
+    expect(screen.getByRole('radio', { name: /content migration/i })).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: /logo/i })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: /content migration/i }));
+    await user.click(screen.getByRole('button', { name: /continue to brief/i }));
+
+    expect(await screen.findByRole('heading', { name: /write the brief/i })).toBeInTheDocument();
+    expect(screen.getByText('CMS content migration')).toBeInTheDocument();
+    expect(screen.getByLabelText(/duration/i)).toHaveValue(120);
+    expect(screen.getByLabelText(/^reward/i)).toHaveValue(null);
+  });
+
+  it('always routes a selected template through the Brief step', async () => {
     const user = userEvent.setup();
     render(<CreateTaskWizard initialMarketStats={null} />);
 
     await user.click(screen.getByRole('radio', { name: /logo/i }));
-    await user.click(screen.getByRole('button', { name: /use this and publish/i }));
+    await user.click(screen.getByRole('button', { name: /continue to brief/i }));
 
-    expect(await screen.findByRole('heading', { name: /choose a task drop/i })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: /no drop/i })).toHaveAttribute('aria-checked', 'true');
+    expect(await screen.findByRole('heading', { name: /write the brief/i })).toBeInTheDocument();
+    expect(screen.getByText(/logo and brand mark/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^reward/i)).toHaveValue(null);
+  });
 
-    await user.click(screen.getByRole('button', { name: /continue to publish/i }));
+  it('requires every authored template input before leaving the Brief step', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
 
-    expect(await screen.findByRole('heading', { name: /review and publish/i })).toBeInTheDocument();
-    expect(screen.getByText('Logo')).toBeInTheDocument();
-    expect(screen.getByText(/primary logo/i, { exact: false })).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: /logo and brand mark/i }));
+    await user.click(screen.getByRole('button', { name: /continue to brief/i }));
+    await user.type(screen.getByLabelText(/^reward/i), '25');
+    await user.click(screen.getByRole('button', { name: /continue to task drop/i }));
+
+    expect(screen.getByText('Brand or product name is required.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText(/brand or product name/i)).toHaveFocus());
+    expect(screen.queryByRole('heading', { name: /choose a task drop/i })).not.toBeInTheDocument();
+  });
+
+  it('blocks publication until required public readiness context is resolved', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await user.click(screen.getByRole('radio', { name: /landing-page copy/i }));
+    await user.click(screen.getByRole('button', { name: /continue to brief/i }));
+    await user.type(screen.getByLabelText(/product or service/i), 'Northstar');
+    await user.type(screen.getByLabelText(/target audience/i), 'Design teams');
+    await user.type(screen.getByLabelText(/^reward/i), '25');
+    await user.click(screen.getByRole('button', { name: /continue to task drop/i }));
+
+    expect(screen.getByText('Public product truth pack is required.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText(/public product truth pack/i)).toHaveFocus());
+    expect(screen.queryByRole('heading', { name: /choose a task drop/i })).not.toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText(/public product truth pack/i),
+      'https://example.com/northstar/truth'
+    );
+    await user.type(screen.getByLabelText(/primary call to action/i), 'Start a trial');
+    await user.click(screen.getByRole('button', { name: /continue to task drop/i }));
+    expect(
+      screen.getByText(/confirm that this link opens without signing in/i)
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText(/confirmed this link opens without signing in/i));
+    await user.click(screen.getByRole('button', { name: /continue to task drop/i }));
+    expect(screen.getByRole('heading', { name: /choose a task drop/i })).toBeInTheDocument();
+  });
+
+  it('blocks a template title that exceeds the marketplace title limit', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await user.click(screen.getByRole('radio', { name: /logo and brand mark/i }));
+    await user.click(screen.getByRole('button', { name: /continue to brief/i }));
+    await user.type(screen.getByLabelText(/brand or product name/i), 'A'.repeat(90));
+    await user.type(screen.getByLabelText(/primary audience/i), 'Design teams');
+    await user.type(screen.getByLabelText(/^reward/i), '25');
+    await user.click(screen.getByRole('button', { name: /continue to task drop/i }));
+
+    expect(
+      screen.getByText(/shorten this value so the task title is 80 characters/i)
+    ).toBeVisible();
+    expect(screen.queryByRole('heading', { name: /choose a task drop/i })).not.toBeInTheDocument();
+  });
+
+  it('preserves template answers when navigating back to the gallery', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await user.click(screen.getByRole('radio', { name: /logo and brand mark/i }));
+    await user.click(screen.getByRole('button', { name: /continue to brief/i }));
+    await user.type(screen.getByLabelText(/brand or product name/i), 'Northstar');
+    await user.type(screen.getByLabelText(/primary audience/i), 'Design teams');
+    await user.click(screen.getByRole('button', { name: /^back$/i }));
+    await user.click(screen.getByRole('button', { name: /continue to brief/i }));
+
+    expect(screen.getByLabelText(/brand or product name/i)).toHaveValue('Northstar');
+    expect(screen.getByLabelText(/primary audience/i)).toHaveValue('Design teams');
+    expect((screen.getByLabelText(/description/i) as HTMLTextAreaElement).value).toContain(
+      'Northstar'
+    );
+  });
+
+  it('restores public readiness answers from a versioned draft', async () => {
+    const user = userEvent.setup();
+    const firstRender = render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await user.click(screen.getByRole('radio', { name: /landing-page copy/i }));
+    await user.click(screen.getByRole('button', { name: /continue to brief/i }));
+    await user.type(screen.getByLabelText(/product or service/i), 'Northstar');
+    await user.type(screen.getByLabelText(/target audience/i), 'Design teams');
+    await user.type(
+      screen.getByLabelText(/public product truth pack/i),
+      'https://example.com/northstar/truth'
+    );
+    await user.click(screen.getByLabelText(/confirmed this link opens without signing in/i));
+    await user.type(screen.getByLabelText(/primary call to action/i), 'Start a trial');
+
+    const key = 'taskmarket:create-task-draft:v4:default:custom';
+    await waitFor(() =>
+      expect(window.sessionStorage.getItem(key)).toContain('https://example.com/northstar/truth')
+    );
+    firstRender.unmount();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    expect(await screen.findByLabelText(/public product truth pack/i)).toHaveValue(
+      'https://example.com/northstar/truth'
+    );
+    expect(screen.getByLabelText(/primary call to action/i)).toHaveValue('Start a trial');
+  });
+
+  it('confirms before replacing a dirty brief and returns focus on cancel', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await user.click(screen.getByRole('radio', { name: /logo and brand mark/i }));
+    await user.click(screen.getByRole('button', { name: /continue to brief/i }));
+    await user.type(screen.getByLabelText(/brand or product name/i), 'Northstar');
+    await user.click(screen.getByRole('button', { name: /^back$/i }));
+    const claim = within(screen.getByRole('radiogroup', { name: /task mode/i })).getByRole(
+      'radio',
+      { name: /claim/i }
+    );
+    await user.click(claim);
+
+    expect(screen.getByRole('dialog', { name: /replace this brief/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /keep current brief/i }));
+    expect(claim).toHaveFocus();
+    expect(screen.getByRole('radio', { name: /logo and brand mark/i })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+
+    await user.click(claim);
+    await user.click(screen.getByRole('button', { name: /^replace brief$/i }));
+    expect(claim).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: /start blank/i })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+  });
+
+  it('recovers a mismatched saved template as the selected mode blank', async () => {
+    const { unmount } = render(<CreateTaskWizard initialMarketStats={null} />);
+    const key = 'taskmarket:create-task-draft:v4:default:custom';
+    await waitFor(() => expect(window.sessionStorage.getItem(key)).not.toBeNull());
+    unmount();
+    const draft = JSON.parse(window.sessionStorage.getItem(key) ?? '{}') as {
+      values: { mode: string; templateId: string | null };
+    };
+    draft.values.mode = 'claim';
+    draft.values.templateId = 'logo';
+    window.sessionStorage.setItem(key, JSON.stringify(draft));
+
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    expect(
+      await screen.findByText(/saved template did not match its work type/i)
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('radiogroup', { name: /task mode/i })).getByRole('radio', {
+        name: /claim/i,
+      })
+    ).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: /start blank/i })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+  });
+
+  it('discards a malformed saved form value without crashing the wizard', async () => {
+    const firstRender = render(<CreateTaskWizard initialMarketStats={null} />);
+    const key = 'taskmarket:create-task-draft:v4:default:custom';
+    await waitFor(() => expect(window.sessionStorage.getItem(key)).not.toBeNull());
+    firstRender.unmount();
+    const draft = JSON.parse(window.sessionStorage.getItem(key) ?? '{}') as {
+      values: Record<string, unknown>;
+    };
+    draft.values.tags = { malformed: true };
+    window.sessionStorage.setItem(key, JSON.stringify(draft));
+
+    expect(() => render(<CreateTaskWizard initialMarketStats={null} />)).not.toThrow();
+    expect(
+      await screen.findByRole('heading', { name: /choose how work is awarded/i })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /start blank/i })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+  });
+
+  it('confirms before a guided answer replaces manual dashboard brief edits', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await user.click(screen.getByRole('radio', { name: /logo and brand mark/i }));
+    await user.click(screen.getByRole('button', { name: /continue to brief/i }));
+    const brand = screen.getByLabelText(/brand or product name/i);
+    await user.type(brand, 'Northstar');
+    await user.type(screen.getByLabelText(/primary audience/i), 'Design teams');
+    const description = screen.getByLabelText(/description/i);
+    await user.type(description, ' Manual requester note.');
+
+    await user.clear(brand);
+    expect(screen.getByRole('dialog', { name: /regenerate this brief/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /keep manual edits/i }));
+    expect((description as HTMLTextAreaElement).value).toContain('Manual requester note.');
+    expect(brand).toHaveValue('Northstar');
+
+    await user.clear(brand);
+    await user.click(screen.getByRole('button', { name: /regenerate brief/i }));
+    expect((description as HTMLTextAreaElement).value).not.toContain('Manual requester note.');
+    expect((description as HTMLTextAreaElement).value).toContain('[Add: Brand or product name]');
   });
 
   it('signs in before loading drops for a disconnected user', async () => {
@@ -592,11 +829,10 @@ describe('CreateTaskWizard', () => {
     );
   });
 
-  it('keeps the step 1 primary CTA available because a template is always selected', () => {
+  it('keeps the step 1 primary CTA available for the blank choice', () => {
     render(<CreateTaskWizard initialMarketStats={null} />);
 
-    // Default template is custom, so its primary CTA is "Write the brief".
-    const cta = screen.getByRole('button', { name: /write the brief/i });
+    const cta = screen.getByRole('button', { name: /continue to brief/i });
     expect(cta).toBeEnabled();
   });
 
@@ -610,7 +846,7 @@ describe('CreateTaskWizard', () => {
 
     // Back to Template via the context strip, then return to the Brief step.
     await user.click(screen.getByRole('button', { name: /change template/i }));
-    await user.click(await screen.findByRole('button', { name: /write the brief/i }));
+    await user.click(await screen.findByRole('button', { name: /continue to brief/i }));
 
     const description = screen.getByLabelText(/description/i) as HTMLTextAreaElement;
     expect(description.value).toBe('A bespoke brief I typed.');
@@ -620,7 +856,6 @@ describe('CreateTaskWizard', () => {
 
   it('prompts before overwriting edits when a different template is chosen', async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     render(<CreateTaskWizard initialMarketStats={null} />);
 
     await gotoBriefFromCustom(user);
@@ -630,13 +865,12 @@ describe('CreateTaskWizard', () => {
     await user.click(screen.getByRole('button', { name: /change template/i }));
     await user.click(await screen.findByRole('radio', { name: /logo/i }));
 
-    expect(confirmSpy).toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: /replace this brief/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /keep current brief/i }));
     // Declined the confirm, so the edited brief survives.
-    await user.click(screen.getByRole('button', { name: /write the brief/i }));
+    await user.click(screen.getByRole('button', { name: /continue to brief/i }));
     const description = screen.getByLabelText(/description/i) as HTMLTextAreaElement;
     expect(description.value).toBe('Edited brief that should be guarded.');
-
-    confirmSpy.mockRestore();
   });
 
   it('shows the cost breakdown on the Publish review (reward, 7.5% fee, worker receives)', async () => {
@@ -723,7 +957,7 @@ describe('CreateTaskWizard', () => {
     const user = userEvent.setup();
     render(<CreateTaskWizard initialMarketStats={null} />);
 
-    // Template gallery renders, no labour-market strip when stats are absent.
+    // Starting points render without a labour-market strip when stats are absent.
     expect(screen.getByRole('radio', { name: /logo/i })).toBeInTheDocument();
     expect(screen.queryByText(/labour market/i)).not.toBeInTheDocument();
 
@@ -770,7 +1004,7 @@ describe('CreateTaskWizard', () => {
     expect(onFunnelEvent).toHaveBeenCalledWith({ name: 'publish_viewed' });
 
     render(<CreateTaskWizard initialMarketStats={null} />);
-    expect(screen.getAllByText('Template').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Setup').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Publish').length).toBeGreaterThan(0);
   });
 
@@ -805,7 +1039,6 @@ describe('CreateTaskWizard', () => {
 
   it('asks before a guided answer replaces manual campaign brief edits', async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     render(
       <CreateTaskWizard
         initialMarketStats={null}
@@ -827,23 +1060,21 @@ describe('CreateTaskWizard', () => {
     await user.type(description, 'Keep this manually edited brief.');
     await user.click(screen.getByRole('button', { name: 'Editorial' }));
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      'Changing a guided answer will replace your manual brief edits. Continue?'
-    );
+    expect(screen.getByRole('dialog', { name: /regenerate this brief/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /keep manual edits/i }));
     expect(screen.getByRole('button', { name: 'Editorial' })).toHaveAttribute(
       'aria-pressed',
       'false'
     );
     expect(description).toHaveValue('Keep this manually edited brief.');
 
-    confirmSpy.mockReturnValue(true);
     await user.click(screen.getByRole('button', { name: 'Editorial' }));
+    await user.click(screen.getByRole('button', { name: /^regenerate brief$/i }));
     expect(screen.getByRole('button', { name: 'Editorial' })).toHaveAttribute(
       'aria-pressed',
       'true'
     );
     expect(description).not.toHaveValue('Keep this manually edited brief.');
-    confirmSpy.mockRestore();
   });
 
   it('keeps a locked topic visible through the Strict Mode effect replay', () => {
@@ -876,6 +1107,7 @@ describe('CreateTaskWizard', () => {
       />
     );
 
+    await fillCampaignAudience(user);
     await user.click(screen.getByRole('button', { name: /review and fund/i }));
 
     expect(screen.getByText('Enter a topic before reviewing and funding.')).toBeInTheDocument();
@@ -899,6 +1131,7 @@ describe('CreateTaskWizard', () => {
       />
     );
 
+    await fillCampaignAudience(user);
     await user.click(screen.getByRole('button', { name: /review and fund/i }));
 
     expect(await screen.findByText(/publication is unavailable/i)).toBeInTheDocument();
@@ -921,6 +1154,7 @@ describe('CreateTaskWizard', () => {
         variant="campaign"
       />
     );
+    await fillCampaignAudience(user);
     await user.click(screen.getByRole('button', { name: /review and fund/i }));
     const connectButton = screen.getByRole('button', { name: /sign in to fund \$1/i });
     await waitFor(() => expect(connectButton).toBeEnabled());
@@ -953,6 +1187,7 @@ describe('CreateTaskWizard', () => {
         variant="campaign"
       />
     );
+    await fillCampaignAudience(user);
     await user.click(screen.getByRole('button', { name: /review and fund/i }));
     await user.click(screen.getByRole('button', { name: /fund \$1 and publish/i }));
     await waitFor(() => expect(onFunnelEvent).toHaveBeenCalledWith({ name: 'funding_required' }));
@@ -997,6 +1232,7 @@ describe('CreateTaskWizard', () => {
         variant="campaign"
       />
     );
+    await fillCampaignAudience(user);
     await user.click(screen.getByRole('button', { name: /review and fund/i }));
     await user.click(screen.getByRole('button', { name: /fund \$1 and publish/i }));
 
@@ -1051,6 +1287,7 @@ describe('CreateTaskWizard', () => {
           variant="campaign"
         />
       );
+      await fillCampaignAudience(user);
       await user.click(screen.getByRole('button', { name: /review and fund/i }));
       await user.click(screen.getByRole('button', { name: /fund \$1 and publish/i }));
 
@@ -1107,6 +1344,7 @@ describe('CreateTaskWizard', () => {
         variant="campaign"
       />
     );
+    await fillCampaignAudience(user);
     await user.click(screen.getByRole('button', { name: /review and fund/i }));
     await user.click(screen.getByRole('button', { name: /fund \$1 and publish/i }));
 

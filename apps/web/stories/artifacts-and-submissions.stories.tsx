@@ -246,7 +246,7 @@ export const CollapsedTaskDescription: Story = {
   },
 };
 
-export const TaskDetailCollapsedDescriptionBeforeSubmissions: Story = {
+export const TaskDetailReviewFirst: Story = {
   parameters: {
     a11y: { test: 'error' },
     viewport: { defaultViewport: 'desktop' },
@@ -265,6 +265,8 @@ export const TaskDetailCollapsedDescriptionBeforeSubmissions: Story = {
     const description = canvas.getByRole('group', { name: 'Description' });
     const descriptionBody = within(description).getByTestId('task-description-body');
     const submissionReview = canvas.getByRole('heading', { name: 'Submission review' });
+    const taskDetailsSummary = canvas.getByText('Task details', { selector: 'summary' });
+    const taskDetails = taskDetailsSummary.closest('details');
     const publishedResult = within(description).getByRole('link', {
       name: /open interactive result/i,
     });
@@ -289,9 +291,17 @@ export const TaskDetailCollapsedDescriptionBeforeSubmissions: Story = {
     ).toBeVisible();
     await expect(
       Boolean(
-        description.compareDocumentPosition(submissionReview) & Node.DOCUMENT_POSITION_FOLLOWING
+        submissionReview.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING
       )
     ).toBe(true);
+    await expect(canvas.queryByLabelText('Bonus summary')).not.toBeInTheDocument();
+    await expect(taskDetails).not.toBeNull();
+    await expect(taskDetails).not.toHaveAttribute('open');
+
+    await userEvent.click(taskDetailsSummary);
+    await expect(taskDetails).toHaveAttribute('open');
+    await userEvent.click(taskDetailsSummary);
+    await expect(taskDetails).not.toHaveAttribute('open');
 
     await userEvent.click(showFullDescription);
     await expect(
@@ -304,6 +314,42 @@ export const TaskDetailCollapsedDescriptionBeforeSubmissions: Story = {
     ).not.toBeInTheDocument();
     await expect(briefCopy).toBeVisible();
     await expect(canvas.getByText('long-brief', { exact: true })).toBeVisible();
+
+    await userEvent.click(
+      within(description).getByRole('button', { name: 'Collapse description' })
+    );
+    await expect(showFullDescription).toHaveAttribute('aria-expanded', 'false');
+    await expect(descriptionBody).toHaveAttribute('data-collapsed', 'true');
+  },
+};
+
+export const TaskDetailReviewFirstMobile: Story = {
+  globals: { theme: 'dark' },
+  parameters: {
+    a11y: { test: 'error' },
+    viewport: { defaultViewport: 'mobile' },
+  },
+  render: () => (
+    <TaskDetailPanel
+      backHref="/tasks"
+      htmlSubmissions={submissions}
+      modeData={{ submissions }}
+      profileBasePath="/agents"
+      task={longBriefReviewTask}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const nextAction = canvas.getByRole('heading', { name: 'Next action' });
+    const submissionReview = canvas.getByRole('heading', { name: 'Submission review' });
+
+    await expect(nextAction).toBeVisible();
+    await expect(
+      Boolean(
+        nextAction.compareDocumentPosition(submissionReview) & Node.DOCUMENT_POSITION_FOLLOWING
+      )
+    ).toBe(true);
+    await expect(canvas.getByText('3 submissions ready for review.')).toBeVisible();
   },
 };
 
@@ -447,6 +493,7 @@ export const SubmissionDecisionStates: Story = {
 };
 
 export const PrivateTaskGate: Story = {
+  parameters: { a11y: { test: 'error' } },
   render: () => (
     <PrivateTaskAccessGate
       backHref="/tasks"
@@ -456,6 +503,14 @@ export const PrivateTaskGate: Story = {
       taskId="private-task-1"
     />
   ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByRole('heading', { name: 'Task unavailable' })).toBeVisible();
+    await expect(canvas.getByRole('heading', { name: 'Use an invited wallet' })).toBeVisible();
+    await expect(canvas.getByLabelText('Task password')).toBeVisible();
+    await expect(canvas.queryByText('404')).not.toBeInTheDocument();
+  },
 };
 
 const submitAction: PendingAction = {

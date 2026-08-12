@@ -1,6 +1,6 @@
 import type { TaskResponse } from '@taskmarket/shared';
 
-const TASK_TITLE_MAX_LENGTH = 80;
+export const TASK_TITLE_MAX_LENGTH = 80;
 
 type TaskTitleSource = Pick<TaskResponse, 'description' | 'id'>;
 

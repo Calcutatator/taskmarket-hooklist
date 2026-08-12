@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
+import { LockKeyhole } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import type { TaskDetailResponse } from '@taskmarket/shared';
 
@@ -24,13 +25,11 @@ import {
  * Phase 3 (ADR-0031/0031): rendered inline by the task-detail page components in place
  * of `notFound()` when `fetchTask`'s unauthenticated SSR fetch returns null -- either the
  * task genuinely doesn't exist, or it's private and this caller can't view it yet.
- * Deliberately does not distinguish the two cases (matching canView's own posture), so
- * this renders the exact same branded not-found content as the site's generic
- * `app/not-found.tsx` -- a caller with no proof of access sees nothing different from a
- * truly missing task -- plus, below it, "connect wallet" (reusing the existing read-auth
- * signature flow) and "enter password" affordances that only matter if the task actually
- * exists and is private. Once either proof succeeds, this refetches the task
- * client-side and renders the normal detail view in its place.
+ * Deliberately does not distinguish the two cases (matching canView's own posture). A
+ * caller with no proof of access sees one neutral unavailable state, plus wallet and
+ * password recovery paths that only succeed when the task exists and the caller is
+ * authorized. Once either proof succeeds, this refetches the task client-side and renders
+ * the normal detail view in its place.
  *
  * Uses its own one-off `fetch` rather than the shared batched tRPC client
  * (api/client.tsx) -- that client's `httpBatchLink` isn't call-aware, so it can't
@@ -152,101 +151,125 @@ export function PrivateTaskAccessGate({
   }
 
   return (
-    <div className="mx-auto flex min-h-[60vh] w-full max-w-2xl flex-col items-center justify-center px-4 py-16 text-center sm:px-6 lg:px-8">
-      <div className="w-full rounded-lg border border-border/58 bg-card/58 p-8 shadow-none sm:p-12">
-        <p className="font-mono text-xs font-semibold uppercase tracking-tight text-primary">404</p>
-        <h1 className="mt-3 font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-          Page not found
-        </h1>
-        <p className="mt-3 text-sm text-muted-foreground">
-          We could not find what you were looking for. It may have been moved, removed, or never
-          existed. Browse the marketplace instead.
-        </p>
-        <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Button asChild>
-            <Link href={browseTasksHref as Route}>Browse tasks</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href={browseAgentsHref as Route}>Browse agents</Link>
-          </Button>
-        </div>
+    <div className="mx-auto flex min-h-[60vh] w-full max-w-xl flex-col justify-center px-4 py-12 sm:px-6 sm:py-16">
+      <section className="w-full overflow-hidden rounded-lg border border-border/58 bg-card/58">
+        <header className="grid gap-4 p-6 sm:p-8">
+          <div className="grid size-11 place-items-center rounded-lg border border-border/58 bg-muted/24 text-primary">
+            <LockKeyhole aria-hidden="true" className="size-5" />
+          </div>
+          <div className="grid gap-2">
+            <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              Task unavailable
+            </h1>
+            <p className="text-base leading-7 text-muted-foreground">
+              This link may be invalid, or the task may require access. Use an invited wallet or
+              task password to continue.
+            </p>
+          </div>
+        </header>
 
-        <div className="mt-8 grid gap-3 border-t border-border/58 pt-8 text-left">
-          <p className="text-sm text-muted-foreground">
-            If you were invited to a private task at this link, sign in, then choose the wallet that
-            received the invitation. You can also enter the task password below.
-          </p>
-          {!isConnected || !address ? (
-            <div className="grid gap-2">
-              <p className="text-xs leading-5 text-muted-foreground">
-                Sign in with email, Google, or a wallet. Access still requires the wallet that
-                received the invitation.
+        <div className="grid gap-6 border-t border-border/58 p-6 sm:p-8">
+          <section aria-labelledby="wallet-access-heading" className="grid gap-3">
+            <div className="grid gap-1">
+              <h2 className="font-display font-semibold text-foreground" id="wallet-access-heading">
+                Use an invited wallet
+              </h2>
+              <p className="text-sm leading-6 text-muted-foreground">
+                Sign in, then choose the wallet that received the invitation.
               </p>
+            </div>
+            {!isConnected || !address ? (
               <PrivyWalletAccessButton
                 className="min-h-11 w-fit"
                 returnTargetId="private-task-access"
               />
-            </div>
-          ) : (
-            <div className="grid gap-2">
-              {readAuth.status === 'ready' ? (
-                <p className="text-xs text-muted-foreground">
+            ) : (
+              <div className="grid gap-2">
+                {readAuth.status === 'ready' ? (
+                  <p className="text-sm text-muted-foreground">
+                    {checkingWallet
+                      ? 'Wallet verified. Checking task access...'
+                      : 'Wallet verified.'}
+                  </p>
+                ) : null}
+                {readAuth.error ? (
+                  <p className="text-sm leading-6 text-destructive">{readAuth.error}</p>
+                ) : null}
+                {walletAccessError ? (
+                  <p className="text-sm leading-6 text-destructive">{walletAccessError}</p>
+                ) : null}
+                <Button
+                  className="min-h-11 w-fit"
+                  disabled={
+                    readAuth.status === 'signing' ||
+                    checkingWallet ||
+                    (readAuth.status === 'ready' && !walletAccessError)
+                  }
+                  onClick={
+                    readAuth.status === 'ready' ? checkWalletAccess : readAuth.requestSignature
+                  }
+                  type="button"
+                  variant="outline"
+                >
                   {checkingWallet
-                    ? 'Wallet verified. Checking private task access...'
-                    : 'Wallet verified.'}
-                </p>
-              ) : null}
-              {readAuth.error ? (
-                <p className="text-xs leading-5 text-destructive">{readAuth.error}</p>
-              ) : null}
-              {walletAccessError ? (
-                <p className="text-xs leading-5 text-destructive">{walletAccessError}</p>
-              ) : null}
-              <Button
-                className="min-h-11 w-fit"
-                disabled={
-                  readAuth.status === 'signing' ||
-                  checkingWallet ||
-                  (readAuth.status === 'ready' && !walletAccessError)
-                }
-                onClick={
-                  readAuth.status === 'ready' ? checkWalletAccess : readAuth.requestSignature
-                }
-                type="button"
-                variant="outline"
-              >
-                {checkingWallet
-                  ? 'Checking private task access...'
-                  : readAuth.status === 'signing'
-                    ? 'Check your wallet...'
-                    : readAuth.status === 'ready' && walletAccessError
-                      ? 'Retry private task access'
-                      : readAuth.status === 'error'
-                        ? 'Retry wallet verification'
-                        : 'Verify wallet access'}
-              </Button>
-            </div>
-          )}
-          <div className="grid gap-1.5">
-            <Label htmlFor="unlock-password">Password</Label>
-            <Input
-              id="unlock-password"
-              onChange={(event) => setPassword(event.target.value)}
-              type="password"
-              value={password}
-            />
-          </div>
-          {error ? <p className="text-xs leading-5 text-destructive">{error}</p> : null}
-          <Button
-            className="w-fit"
-            disabled={unlocking || !password}
-            onClick={handleUnlock}
-            type="button"
+                    ? 'Checking task access...'
+                    : readAuth.status === 'signing'
+                      ? 'Check your wallet...'
+                      : readAuth.status === 'ready' && walletAccessError
+                        ? 'Retry task access'
+                        : readAuth.status === 'error'
+                          ? 'Retry wallet verification'
+                          : 'Verify wallet access'}
+                </Button>
+              </div>
+            )}
+          </section>
+
+          <section
+            aria-labelledby="password-access-heading"
+            className="grid gap-3 border-t border-border/58 pt-6"
           >
-            {unlocking ? 'Unlocking...' : 'Unlock'}
-          </Button>
+            <div className="grid gap-1">
+              <h2
+                className="font-display font-semibold text-foreground"
+                id="password-access-heading"
+              >
+                Enter a task password
+              </h2>
+              <p className="text-sm leading-6 text-muted-foreground">
+                Use the password supplied by the requester.
+              </p>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="unlock-password">Task password</Label>
+              <Input
+                id="unlock-password"
+                onChange={(event) => setPassword(event.target.value)}
+                type="password"
+                value={password}
+              />
+            </div>
+            {error ? <p className="text-sm leading-6 text-destructive">{error}</p> : null}
+            <Button
+              className="min-h-11 w-fit"
+              disabled={unlocking || !password}
+              onClick={handleUnlock}
+              type="button"
+            >
+              {unlocking ? 'Unlocking...' : 'Unlock task'}
+            </Button>
+          </section>
         </div>
-      </div>
+
+        <footer className="flex flex-wrap items-center gap-3 border-t border-border/58 px-6 py-4 sm:px-8">
+          <Button asChild variant="outline">
+            <Link href={browseTasksHref as Route}>Browse tasks</Link>
+          </Button>
+          <Button asChild variant="ghost">
+            <Link href={browseAgentsHref as Route}>Browse agents</Link>
+          </Button>
+        </footer>
+      </section>
     </div>
   );
 }

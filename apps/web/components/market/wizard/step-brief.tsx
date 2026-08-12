@@ -1,14 +1,22 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Controller, type UseFormReturn } from 'react-hook-form';
-import { IconSparkles } from '@tabler/icons-react';
+import { IconChevronDown, IconSparkles } from '@tabler/icons-react';
 import { TASK_DESCRIPTION_MAX_LENGTH } from '@taskmarket/shared';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -18,14 +26,13 @@ import {
   handleRadioGroupKeyDown,
 } from '@/lib/market/create-task-form';
 import {
-  composeBrief,
   composeBriefWithPreset,
   findTemplate,
-  type TaskTemplate,
-  taskTemplates,
+  isTemplateReadinessUrlValid,
+  type TaskTemplateSelection,
   VISUAL_PRESETS,
 } from '@/lib/market/task-templates';
-import { auctionTypeOptions, taskModeOptions } from '@/lib/market/task-mode-config';
+import { auctionTypeOptions } from '@/lib/market/task-mode-config';
 import {
   TASK_VISIBILITY_LABELS,
   TASK_VISIBILITY_DISCLAIMERS,
@@ -58,13 +65,15 @@ const TASK_VISIBILITY_VALUES: Array<'public' | 'unlisted' | 'private'> = [
 ];
 
 type StepBriefProps = {
-  campaignState?: WizardCampaignBriefState;
+  campaignState: WizardCampaignBriefState;
+  campaignReadinessError?: string | null;
+  campaignTitleError?: string | null;
   campaignTokenError?: string | null;
   form: UseFormReturn<WizardFormValues>;
-  templateId: TaskTemplate['id'];
+  templateId: TaskTemplateSelection;
   fieldErrors: CreateTaskFieldErrors;
   onChangeTemplate: () => void;
-  onCampaignStateChange?: (state: WizardCampaignBriefState) => void;
+  onCampaignStateChange: (state: WizardCampaignBriefState) => void;
   // When present, the template is fixed, the reward is fixed and hidden, and the
   // first token is seeded so a campaign flow (e.g. /try) cannot change vertical
   // or price.
@@ -73,6 +82,8 @@ type StepBriefProps = {
 
 export function StepBrief({
   campaignState,
+  campaignReadinessError,
+  campaignTitleError,
   campaignTokenError,
   fieldErrors,
   form,
@@ -82,27 +93,30 @@ export function StepBrief({
   templateId,
 }: StepBriefProps) {
   const { control, register, setValue, watch } = form;
-  const selectedTemplate: TaskTemplate = findTemplate(templateId) ?? taskTemplates[0];
-  const isCustom = selectedTemplate.id === 'custom';
+  const selectedTemplate = findTemplate(templateId);
+  const isBlank = !selectedTemplate;
   const isLocked = Boolean(lock);
 
   const mode = watch('mode');
+  const taskVisibility = watch('taskVisibility');
+  const submissionVisibility = watch('submissionVisibility');
   const auctionType = watch('auctionType');
   const tagsValue = watch('tags');
   const tagCount = countTags(tagsValue ?? '');
 
   const [advancedOpen, setAdvancedOpen] = useState(mode === 'auction');
-  const [localTokenValues, setLocalTokenValues] = useState<Record<string, string>>(() => {
-    if (lock?.prefillFirstToken && selectedTemplate.tokens[0]) {
-      return { [selectedTemplate.tokens[0].key]: lock.prefillFirstToken };
-    }
-    return {};
-  });
-  // Selected visual-direction preset (locked flow only). Undefined until the
-  // visitor picks a chip; toggling the active chip clears it back to undefined.
-  const [localPresetId, setLocalPresetId] = useState<string | undefined>(undefined);
-  const tokenValues = campaignState?.tokenValues ?? localTokenValues;
-  const presetId = campaignState ? campaignState.presetId : localPresetId;
+  const [publishingOpen, setPublishingOpen] = useState(
+    taskVisibility !== 'public' || submissionVisibility !== 'public'
+  );
+  const [pendingGuidedChange, setPendingGuidedChange] = useState<
+    | { key: string; type: 'readiness' | 'token'; value: string }
+    | { id: string; type: 'preset' }
+    | null
+  >(null);
+  const readinessValues = campaignState.readinessValues;
+  const readinessConfirmations = campaignState.readinessConfirmations;
+  const tokenValues = campaignState.tokenValues;
+  const presetId = campaignState.presetId;
   const descriptionValue = watch('description');
   const descriptionRegistration = register('description');
 
@@ -117,93 +131,145 @@ export function StepBrief({
     }
   }, [mode]);
 
-  // Reset personalize tokens only when the template id actually changes. A
-  // previous "skip first effect" flag cleared campaign prefills during React's
-  // development Strict Mode effect replay.
-  const previousTemplateIdRef = useRef(templateId);
-  useEffect(() => {
-    if (previousTemplateIdRef.current === templateId) {
-      return;
-    }
-    previousTemplateIdRef.current = templateId;
-    setLocalTokenValues({});
-  }, [templateId]);
-
-  const contextStripClassName = useMemo(
-    () =>
-      cn(
-        'flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4',
-        isCustom ? 'border-border/68 bg-surface/42' : 'border-primary/28 bg-primary/8'
-      ),
-    [isCustom]
-  );
-
   // Recompose the brief from current tokens plus the active preset. In the
   // locked flow the visitor never edits the textarea directly, so this is the
   // single source of truth for the composed description.
-  function recompose(nextTokens: Record<string, string>, nextPresetId: string | undefined) {
-    setValue('description', composeBriefWithPreset(selectedTemplate, nextTokens, nextPresetId), {
-      shouldDirty: true,
-    });
-  }
-
-  function confirmCampaignRegeneration() {
-    if (!campaignState?.hasManualEdits) {
-      return true;
+  function recompose(
+    nextTokens: Record<string, string>,
+    nextReadiness: Record<string, string>,
+    nextPresetId: string | undefined
+  ) {
+    if (!selectedTemplate) {
+      return;
     }
-
-    return window.confirm(
-      'Changing a guided answer will replace your manual brief edits. Continue?'
+    setValue(
+      'description',
+      composeBriefWithPreset(selectedTemplate, nextTokens, nextReadiness, nextPresetId),
+      { shouldDirty: true }
     );
   }
 
-  function handleTokenChange(key: string, value: string) {
-    if (isLocked && !confirmCampaignRegeneration()) {
+  function applyTokenChange(key: string, value: string) {
+    if (!selectedTemplate) {
       return;
     }
-
     const nextTokens = { ...tokenValues, [key]: value };
-    if (isLocked) {
-      onCampaignStateChange?.({
-        hasManualEdits: false,
-        presetId,
-        tokenValues: nextTokens,
-      });
-      recompose(nextTokens, presetId);
+    onCampaignStateChange({
+      hasManualEdits: false,
+      presetId,
+      readinessConfirmations,
+      readinessValues,
+      tokenValues: nextTokens,
+    });
+    recompose(nextTokens, readinessValues, presetId);
+  }
+
+  function handleTokenChange(key: string, value: string) {
+    if (campaignState.hasManualEdits) {
+      setPendingGuidedChange({ key, type: 'token', value });
       return;
     }
-    setLocalTokenValues(nextTokens);
-    setValue('description', composeBrief(selectedTemplate, nextTokens), {
-      shouldDirty: true,
+    applyTokenChange(key, value);
+  }
+
+  function applyReadinessChange(key: string, value: string) {
+    if (!selectedTemplate) {
+      return;
+    }
+    const nextReadiness = { ...readinessValues, [key]: value };
+    const nextConfirmations = { ...readinessConfirmations, [key]: false };
+    onCampaignStateChange({
+      hasManualEdits: false,
+      presetId,
+      readinessConfirmations: nextConfirmations,
+      readinessValues: nextReadiness,
+      tokenValues,
+    });
+    recompose(tokenValues, nextReadiness, presetId);
+  }
+
+  function handleReadinessConfirmation(key: string, confirmed: boolean) {
+    onCampaignStateChange({
+      ...campaignState,
+      readinessConfirmations: { ...readinessConfirmations, [key]: confirmed },
     });
   }
 
-  function handlePresetToggle(nextId: string) {
-    if (!confirmCampaignRegeneration()) {
+  function handleReadinessChange(key: string, value: string) {
+    if (campaignState.hasManualEdits) {
+      setPendingGuidedChange({ key, type: 'readiness', value });
       return;
     }
+    applyReadinessChange(key, value);
+  }
 
+  function applyPresetToggle(nextId: string) {
     const resolved = presetId === nextId ? undefined : nextId;
-    if (isLocked) {
-      onCampaignStateChange?.({
-        hasManualEdits: false,
-        presetId: resolved,
-        tokenValues,
-      });
-    } else {
-      setLocalPresetId(resolved);
+    onCampaignStateChange({
+      hasManualEdits: false,
+      presetId: resolved,
+      readinessConfirmations,
+      readinessValues,
+      tokenValues,
+    });
+    recompose(tokenValues, readinessValues, resolved);
+  }
+
+  function handlePresetToggle(nextId: string) {
+    if (campaignState.hasManualEdits) {
+      setPendingGuidedChange({ id: nextId, type: 'preset' });
+      return;
     }
-    recompose(tokenValues, resolved);
+    applyPresetToggle(nextId);
   }
 
   function handleManualBriefChange(event: ChangeEvent<HTMLTextAreaElement>) {
     descriptionRegistration.onChange(event);
-    if (campaignState) {
-      onCampaignStateChange?.({ ...campaignState, hasManualEdits: true });
-    }
+    onCampaignStateChange({ ...campaignState, hasManualEdits: true });
   }
 
-  if (isLocked) {
+  const guidedChangeDialog = (
+    <Dialog
+      onOpenChange={(open) => {
+        if (!open) setPendingGuidedChange(null);
+      }}
+      open={Boolean(pendingGuidedChange)}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Regenerate this brief?</DialogTitle>
+          <DialogDescription>
+            Changing a guided answer rebuilds the authored brief and replaces manual edits in the
+            description.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
+              Keep manual edits
+            </Button>
+          </DialogClose>
+          <Button
+            onClick={() => {
+              if (pendingGuidedChange?.type === 'token') {
+                applyTokenChange(pendingGuidedChange.key, pendingGuidedChange.value);
+              } else if (pendingGuidedChange?.type === 'readiness') {
+                applyReadinessChange(pendingGuidedChange.key, pendingGuidedChange.value);
+              } else if (pendingGuidedChange?.type === 'preset') {
+                applyPresetToggle(pendingGuidedChange.id);
+              }
+              setPendingGuidedChange(null);
+            }}
+            type="button"
+          >
+            Regenerate brief
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  if (isLocked && selectedTemplate) {
     const [topicToken, audienceToken] = selectedTemplate.tokens;
     // One-line helpers per primary input, indexed to the template tokens.
     const tokenHelp: Record<string, string> = {
@@ -214,6 +280,7 @@ export function StepBrief({
 
     return (
       <div className="grid gap-6">
+        {guidedChangeDialog}
         <div className="grid gap-4 rounded-xl border border-primary/28 bg-primary/8 p-4 sm:p-5">
           <p className="font-mono text-xs uppercase tracking-[0.08em] text-primary">
             Two quick answers
@@ -254,15 +321,31 @@ export function StepBrief({
               <div className="grid gap-2">
                 <Label htmlFor={`token-${audienceToken.key}`}>{audienceToken.label}</Label>
                 <Input
+                  aria-describedby={
+                    campaignTokenError === audienceToken.key
+                      ? `token-${audienceToken.key}-error`
+                      : undefined
+                  }
+                  aria-invalid={campaignTokenError === audienceToken.key || undefined}
                   aria-required={audienceToken.required || undefined}
                   id={`token-${audienceToken.key}`}
                   onChange={(event) => handleTokenChange(audienceToken.key, event.target.value)}
                   placeholder={audienceToken.placeholder}
                   value={tokenValues[audienceToken.key] ?? ''}
                 />
-                <p className="text-xs leading-5 text-muted-foreground">
-                  {tokenHelp[audienceToken.key] ?? ''}
-                </p>
+                {campaignTokenError === audienceToken.key ? (
+                  <p
+                    className="text-xs leading-5 text-destructive"
+                    id={`token-${audienceToken.key}-error`}
+                    role="alert"
+                  >
+                    Enter a target audience before reviewing and funding.
+                  </p>
+                ) : (
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {tokenHelp[audienceToken.key] ?? ''}
+                  </p>
+                )}
               </div>
             ) : null}
           </div>
@@ -359,277 +442,36 @@ export function StepBrief({
 
   return (
     <div className="grid gap-6">
-      <div className={contextStripClassName}>
-        <p className="text-sm leading-5 text-foreground">
-          {isCustom ? (
-            'Custom brief. Write every field yourself.'
-          ) : (
-            <>
-              Based on the <span className="font-semibold">{selectedTemplate.label}</span> template.
-            </>
-          )}
-        </p>
-        {isLocked ? null : (
+      {guidedChangeDialog}
+      <Card className="gap-0 overflow-hidden py-0">
+        <CardHeader className="flex flex-row items-center justify-between gap-4 border-b border-border/75 p-5 sm:px-6">
+          <p className="text-sm font-medium text-muted-foreground">
+            {isBlank ? 'Blank task' : selectedTemplate?.label}
+          </p>
           <Button onClick={onChangeTemplate} size="sm" type="button" variant="outline">
             Change template
           </Button>
-        )}
-      </div>
-
-      <Card>
-        <CardHeader className="border-b border-border/75">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <CardTitle>Brief</CardTitle>
-              <CardDescription className="mt-2">
-                Workers use this text to judge fit and completion.
-              </CardDescription>
-            </div>
-            <Badge variant="terminal">Required</Badge>
-          </div>
         </CardHeader>
-        <CardContent className="grid gap-5 pt-6">
-          <div className="grid gap-2">
-            <div className="flex items-center justify-between gap-3">
-              <Label htmlFor="description">
-                Description
-                <span aria-hidden="true" className="text-destructive">
-                  *
-                </span>
-              </Label>
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-xs text-muted-foreground" aria-hidden="true">
-                  {(descriptionValue ?? '').length} / {TASK_DESCRIPTION_MAX_LENGTH}
-                </span>
-                {AI_BRIEF_ENABLED ? (
-                  <Button size="sm" type="button" variant="outline">
-                    <IconSparkles className="size-4" />
-                    Generate with AI
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-            <Textarea
-              aria-describedby={fieldErrors.description ? 'description-error' : undefined}
-              aria-invalid={fieldErrors.description ? true : undefined}
-              aria-required="true"
-              className="min-h-48 resize-y text-base leading-6 md:text-sm"
-              id="description"
-              maxLength={TASK_DESCRIPTION_MAX_LENGTH}
-              placeholder="Define the goal, input materials, acceptance criteria, review process, and delivery format."
-              {...descriptionRegistration}
-            />
-            {fieldErrors.description ? (
-              <p className="text-xs leading-5 text-destructive" id="description-error">
-                {fieldErrors.description}
-              </p>
-            ) : (
-              <p className="text-xs leading-5 text-muted-foreground">
-                Include inputs, constraints, acceptance criteria, and delivery format.
-              </p>
-            )}
-          </div>
 
-          <Controller
-            control={control}
-            name="taskVisibility"
-            render={({ field }) => (
-              <div className="grid gap-2 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
-                <span className="text-sm font-semibold tracking-tight">Task visibility</span>
-                <div
-                  aria-label="Task visibility"
-                  className="grid grid-cols-3 gap-2"
-                  onKeyDown={(event) =>
-                    handleRadioGroupKeyDown(
-                      event,
-                      TASK_VISIBILITY_VALUES,
-                      field.value,
-                      field.onChange
-                    )
-                  }
-                  role="radiogroup"
-                >
-                  {TASK_VISIBILITY_VALUES.map((value) => {
-                    const selected = value === field.value;
-                    return (
-                      <button
-                        aria-checked={selected}
-                        className={cn(
-                          'rounded-lg border border-border/68 bg-background/46 px-3 py-2 text-center text-sm font-medium transition-[background-color,border-color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/48',
-                          selected &&
-                            'border-primary/56 bg-primary/10 shadow-[var(--shadow-control)]'
-                        )}
-                        key={value}
-                        onClick={() => field.onChange(value)}
-                        role="radio"
-                        tabIndex={selected ? 0 : -1}
-                        type="button"
-                      >
-                        {TASK_VISIBILITY_LABELS[value]}
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  {TASK_VISIBILITY_DISCLAIMERS[field.value]}
-                </p>
-                {field.value === 'private' ? (
-                  <div className="grid gap-3 pt-1">
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="allowed-viewers">Invite wallets (optional)</Label>
-                      <Controller
-                        control={control}
-                        name="allowedViewers"
-                        render={({ field: viewersField }) => (
-                          <Input
-                            id="allowed-viewers"
-                            onChange={viewersField.onChange}
-                            placeholder="0xabc..., 0xdef... (comma-separated)"
-                            value={viewersField.value}
-                          />
-                        )}
-                      />
-                      {fieldErrors.allowedViewers ? (
-                        <p className="text-xs leading-5 text-destructive">
-                          {fieldErrors.allowedViewers}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="access-password">Password (optional)</Label>
-                      <Controller
-                        control={control}
-                        name="accessPassword"
-                        render={({ field: passwordField }) => (
-                          <Input
-                            id="access-password"
-                            minLength={8}
-                            onChange={passwordField.onChange}
-                            placeholder="At least 8 characters"
-                            type="password"
-                            value={passwordField.value}
-                          />
-                        )}
-                      />
-                      {fieldErrors.accessPassword ? (
-                        <p className="text-xs leading-5 text-destructive">
-                          {fieldErrors.accessPassword}
-                        </p>
-                      ) : null}
-                    </div>
-                    <p className="text-xs leading-5 text-muted-foreground">
-                      At least one of invited wallets or a password is required for a private task.
-                      More wallets can be invited later from the task&apos;s dashboard.
-                    </p>
-                    {fieldErrors.taskVisibility ? (
-                      <p className="text-xs leading-5 text-destructive">
-                        {fieldErrors.taskVisibility}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            )}
-          />
-
-          <Controller
-            control={control}
-            name="submissionVisibility"
-            render={({ field }) => (
-              <div className="grid gap-2 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
-                <span className="text-sm font-semibold tracking-tight">Submission visibility</span>
-                <div
-                  aria-label="Submission visibility"
-                  className="grid grid-cols-2 gap-2 sm:grid-cols-4"
-                  onKeyDown={(event) =>
-                    handleRadioGroupKeyDown(
-                      event,
-                      SUBMISSION_VISIBILITY_VALUES,
-                      field.value,
-                      field.onChange
-                    )
-                  }
-                  role="radiogroup"
-                >
-                  {SUBMISSION_VISIBILITY_VALUES.map((value) => {
-                    const selected = value === field.value;
-                    return (
-                      <button
-                        aria-checked={selected}
-                        className={cn(
-                          'rounded-lg border border-border/68 bg-background/46 px-3 py-2 text-center text-sm font-medium transition-[background-color,border-color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/48',
-                          selected &&
-                            'border-primary/56 bg-primary/10 shadow-[var(--shadow-control)]'
-                        )}
-                        key={value}
-                        onClick={() => field.onChange(value)}
-                        role="radio"
-                        tabIndex={selected ? 0 : -1}
-                        type="button"
-                      >
-                        {SUBMISSION_VISIBILITY_LABELS[value]}
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  {SUBMISSION_VISIBILITY_DISCLAIMERS[field.value]}
-                </p>
-              </div>
-            )}
-          />
-
-          {selectedTemplate.tokens.length > 0 ? (
-            <div className="grid gap-3 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
-              <p className="font-mono text-xs uppercase tracking-[0.08em] text-muted-foreground">
-                Personalize
-              </p>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {selectedTemplate.tokens.map((token) => (
-                  <div className="grid gap-2" key={token.key}>
-                    <Label htmlFor={`token-${token.key}`}>{token.label}</Label>
-                    <Input
-                      id={`token-${token.key}`}
-                      onChange={(event) => handleTokenChange(token.key, event.target.value)}
-                      placeholder={token.placeholder}
-                      value={tokenValues[token.key] ?? ''}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {isLocked ? (
-              // Reward is fixed for a locked campaign flow. Keep the value in
-              // form state via a hidden input and surface it read-only so the
-              // cost breakdown on the publish step stays accurate.
-              <div className="grid gap-2">
-                <Label htmlFor="reward-locked">Reward</Label>
-                <div className="flex h-9 items-center rounded-md border border-border/68 bg-surface/42 px-3 font-mono text-sm text-foreground shadow-[var(--shadow-soft)]">
-                  ${lock?.reward}
-                </div>
-                <input id="reward-locked" type="hidden" {...register('reward')} />
-                <p className="text-xs leading-5 text-muted-foreground">Fixed for this flow.</p>
-              </div>
-            ) : (
+        <CardContent className="px-0">
+          <section className="p-5 sm:p-6">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="reward">
-                  Reward
+                  {mode === 'auction' ? 'Maximum budget' : 'Reward'}
                   <span aria-hidden="true" className="text-destructive">
                     *
                   </span>
                 </Label>
                 <div className="relative">
-                  <span className="pointer-events-none absolute top-1/2 left-1 -mt-1 flex h-8 w-8 -translate-y-1/2 items-center justify-center font-mono text-sm leading-none text-muted-foreground">
+                  <span className="pointer-events-none absolute top-1/2 left-3 flex -translate-y-1/2 items-center justify-center font-mono text-xl leading-none text-muted-foreground">
                     $
                   </span>
                   <Input
                     aria-describedby={fieldErrors.reward ? 'reward-error' : undefined}
                     aria-invalid={fieldErrors.reward ? true : undefined}
                     aria-required="true"
-                    className="pl-11 font-mono"
+                    className="h-20 rounded-xl border-input bg-background/70 pl-12 font-mono text-2xl md:text-2xl"
                     id="reward"
                     min="0.01"
                     placeholder="25.00"
@@ -644,31 +486,242 @@ export function StepBrief({
                   </p>
                 ) : null}
               </div>
-            )}
-            <div className="grid gap-2">
-              <Label htmlFor="duration">
-                Duration hours
-                <span aria-hidden="true" className="text-destructive">
-                  *
-                </span>
-              </Label>
-              <Input
-                aria-describedby={fieldErrors.duration ? 'duration-error' : undefined}
-                aria-invalid={fieldErrors.duration ? true : undefined}
-                aria-required="true"
-                className="font-mono"
-                id="duration"
-                min="1"
-                type="number"
-                {...register('duration')}
-              />
-              {fieldErrors.duration ? (
-                <p className="text-xs leading-5 text-destructive" id="duration-error">
-                  {fieldErrors.duration}
-                </p>
-              ) : null}
+              <div className="grid gap-2">
+                <Label htmlFor="duration">
+                  Duration
+                  <span aria-hidden="true" className="text-destructive">
+                    *
+                  </span>
+                </Label>
+                <div className="relative">
+                  <Input
+                    aria-describedby={
+                      fieldErrors.duration ? 'duration-unit duration-error' : 'duration-unit'
+                    }
+                    aria-invalid={fieldErrors.duration ? true : undefined}
+                    aria-required="true"
+                    className="h-20 rounded-xl border-input bg-background/70 pr-24 font-mono text-2xl md:text-2xl"
+                    id="duration"
+                    min="1"
+                    type="number"
+                    {...register('duration')}
+                  />
+                  <span
+                    className="pointer-events-none absolute top-1/2 right-5 -translate-y-1/2 text-sm font-medium text-muted-foreground"
+                    id="duration-unit"
+                  >
+                    hours
+                  </span>
+                </div>
+                {fieldErrors.duration ? (
+                  <p className="text-xs leading-5 text-destructive" id="duration-error">
+                    {fieldErrors.duration}
+                  </p>
+                ) : null}
+              </div>
             </div>
-            <div className="grid gap-2 sm:col-span-2 lg:col-span-1">
+          </section>
+
+          <section className="grid gap-5 border-t border-border/75 p-5 sm:p-6">
+            {selectedTemplate && selectedTemplate.tokens.length > 0 ? (
+              <div className="grid gap-3 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
+                <p className="font-mono text-xs uppercase tracking-[0.08em] text-muted-foreground">
+                  Personalize
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {selectedTemplate.tokens.map((token) => (
+                    <div className="grid gap-2" key={token.key}>
+                      <Label htmlFor={`token-${token.key}`}>{token.label}</Label>
+                      <Input
+                        aria-describedby={
+                          campaignTokenError === token.key || campaignTitleError === token.key
+                            ? `token-${token.key}-error`
+                            : undefined
+                        }
+                        aria-invalid={
+                          campaignTokenError === token.key || campaignTitleError === token.key
+                            ? true
+                            : undefined
+                        }
+                        aria-required={token.required || undefined}
+                        id={`token-${token.key}`}
+                        onChange={(event) => handleTokenChange(token.key, event.target.value)}
+                        placeholder={token.placeholder}
+                        value={tokenValues[token.key] ?? ''}
+                      />
+                      {campaignTitleError === token.key ? (
+                        <p
+                          className="text-xs leading-5 text-destructive"
+                          id={`token-${token.key}-error`}
+                          role="alert"
+                        >
+                          Shorten this value so the task title is 80 characters or fewer.
+                        </p>
+                      ) : campaignTokenError === token.key ? (
+                        <p
+                          className="text-xs leading-5 text-destructive"
+                          id={`token-${token.key}-error`}
+                        >
+                          {token.label} is required.
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {selectedTemplate && selectedTemplate.readiness.length > 0 ? (
+              <section
+                aria-labelledby="public-task-context-heading"
+                className="grid gap-4 rounded-xl border border-primary/28 bg-primary/8 p-4 shadow-[var(--shadow-soft)]"
+              >
+                <div className="grid gap-1">
+                  <h3
+                    className="text-sm font-semibold tracking-tight text-foreground"
+                    id="public-task-context-heading"
+                  >
+                    Public task context
+                  </h3>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    These details are published in the worker brief. Use only public or sanitized
+                    sources that open without requester follow-up.
+                  </p>
+                </div>
+                {taskVisibility === 'private' ? (
+                  <p className="rounded-lg border border-warning/46 bg-warning/12 p-3 text-xs leading-5 text-foreground">
+                    This template remains public-safe. Private limits who can read it on Taskmarket,
+                    but does not hide onchain activity or grant access to external systems. Keep
+                    secrets out of the description.
+                  </p>
+                ) : null}
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {selectedTemplate.readiness.map((item) => {
+                    const value = readinessValues[item.key] ?? '';
+                    const hasError = campaignReadinessError === item.key;
+                    const validUrl = item.input === 'url' && isTemplateReadinessUrlValid(value);
+                    const errorMessage = !value.trim()
+                      ? `${item.label} is required.`
+                      : validUrl && !readinessConfirmations[item.key]
+                        ? 'Confirm that this link opens without signing in.'
+                        : 'Enter a complete public URL that opens without sign-in.';
+                    const describedBy = [
+                      `readiness-${item.key}-help`,
+                      hasError ? `readiness-${item.key}-error` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' ');
+                    const sharedProps = {
+                      'aria-describedby': describedBy,
+                      'aria-invalid': hasError || undefined,
+                      'aria-required': item.required || undefined,
+                      id: `readiness-${item.key}`,
+                      onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+                        handleReadinessChange(item.key, event.target.value),
+                      placeholder: item.placeholder,
+                      value,
+                    };
+
+                    return (
+                      <div className="grid gap-2" key={item.key}>
+                        <Label htmlFor={`readiness-${item.key}`}>
+                          {item.label}
+                          {item.required ? (
+                            <span aria-hidden="true" className="text-destructive">
+                              *
+                            </span>
+                          ) : null}
+                        </Label>
+                        {item.input === 'longText' ? (
+                          <Textarea className="min-h-24 resize-y" {...sharedProps} />
+                        ) : (
+                          <Input type={item.input === 'url' ? 'url' : 'text'} {...sharedProps} />
+                        )}
+                        <p
+                          className="text-xs leading-5 text-muted-foreground"
+                          id={`readiness-${item.key}-help`}
+                        >
+                          {item.help}
+                          {item.defaultValue ? ` Default: ${item.defaultValue}` : ''}
+                        </p>
+                        {item.publicAccess === 'required' ? (
+                          <div className="flex items-start gap-2 rounded-lg border border-border/68 bg-surface/42 p-3">
+                            <Checkbox
+                              checked={readinessConfirmations[item.key] ?? false}
+                              id={`readiness-${item.key}-public-confirmation`}
+                              onCheckedChange={(checked) =>
+                                handleReadinessConfirmation(item.key, checked === true)
+                              }
+                            />
+                            <Label
+                              className="text-xs leading-5 font-normal text-foreground"
+                              htmlFor={`readiness-${item.key}-public-confirmation`}
+                            >
+                              I confirmed this link opens without signing in.
+                            </Label>
+                          </div>
+                        ) : null}
+                        {hasError ? (
+                          <p
+                            className="text-xs leading-5 text-destructive"
+                            id={`readiness-${item.key}-error`}
+                            role="alert"
+                          >
+                            {errorMessage}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
+
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="description">
+                  Description
+                  <span aria-hidden="true" className="text-destructive">
+                    *
+                  </span>
+                </Label>
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-xs text-muted-foreground" aria-hidden="true">
+                    {(descriptionValue ?? '').length} / {TASK_DESCRIPTION_MAX_LENGTH}
+                  </span>
+                  {AI_BRIEF_ENABLED ? (
+                    <Button size="sm" type="button" variant="outline">
+                      <IconSparkles className="size-4" />
+                      Generate with AI
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              <Textarea
+                aria-describedby={
+                  fieldErrors.description ? 'description-error' : 'description-hint'
+                }
+                aria-invalid={fieldErrors.description ? true : undefined}
+                aria-required="true"
+                className="min-h-56 resize-y text-base leading-6 md:text-sm"
+                id="description"
+                maxLength={TASK_DESCRIPTION_MAX_LENGTH}
+                placeholder="Describe the outcome, inputs, deliverables, acceptance criteria, evidence, and boundaries."
+                {...descriptionRegistration}
+                onChange={handleManualBriefChange}
+              />
+              {fieldErrors.description ? (
+                <p className="text-xs leading-5 text-destructive" id="description-error">
+                  {fieldErrors.description}
+                </p>
+              ) : (
+                <p className="text-xs leading-5 text-muted-foreground" id="description-hint">
+                  Published exactly as written. Link every public input workers need.
+                </p>
+              )}
+            </div>
+
+            <div className="grid max-w-xl gap-2">
               <Label htmlFor="tags">Tags</Label>
               <Input
                 aria-describedby={fieldErrors.tags ? 'tags-error' : 'tags-hint'}
@@ -684,406 +737,522 @@ export function StepBrief({
                 </p>
               ) : (
                 <p className="text-xs leading-5 text-muted-foreground" id="tags-hint">
-                  {tagCount}/10 tags
+                  Add up to 10 comma-separated tags to help workers find the task. {tagCount}/10
+                  used.
                 </p>
               )}
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </section>
 
-      {isLocked ? null : (
-        <Card>
-          <CardHeader className="border-b border-border/75">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <CardTitle>Mode &amp; advanced settings</CardTitle>
-                <CardDescription className="mt-2">
-                  Choose how a worker is selected and paid, plus optional hook and evaluator
-                  settings.
-                </CardDescription>
-              </div>
+          <section className="border-t border-border/75">
+            <div className="flex items-center justify-between gap-4 p-5 sm:p-6">
+              <p className="text-sm font-medium text-foreground">
+                {TASK_VISIBILITY_LABELS[taskVisibility]} task <span aria-hidden="true">/</span>{' '}
+                {SUBMISSION_VISIBILITY_LABELS[submissionVisibility]} submissions
+              </p>
               <Button
+                aria-controls="publishing-options"
+                aria-expanded={publishingOpen}
+                aria-label={`${publishingOpen ? 'Hide' : 'Change'} publishing visibility`}
+                onClick={() => setPublishingOpen((value) => !value)}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                {publishingOpen ? 'Done' : 'Change'}
+                <IconChevronDown
+                  className={cn(
+                    'size-4 motion-reduce:transition-none',
+                    publishingOpen && 'rotate-180'
+                  )}
+                  aria-hidden="true"
+                />
+              </Button>
+            </div>
+
+            <div
+              className={cn(
+                'grid items-start gap-6 border-t border-border/75 bg-surface/24 p-5 sm:p-6 lg:grid-cols-2',
+                !publishingOpen && 'hidden'
+              )}
+              id="publishing-options"
+            >
+              <Controller
+                control={control}
+                name="taskVisibility"
+                render={({ field }) => (
+                  <fieldset className="grid content-start gap-3">
+                    <legend className="text-sm font-semibold tracking-tight">
+                      Task visibility
+                    </legend>
+                    <div
+                      aria-label="Task visibility"
+                      className="grid grid-cols-3 gap-2"
+                      onKeyDown={(event) =>
+                        handleRadioGroupKeyDown(
+                          event,
+                          TASK_VISIBILITY_VALUES,
+                          field.value,
+                          field.onChange
+                        )
+                      }
+                      role="radiogroup"
+                    >
+                      {TASK_VISIBILITY_VALUES.map((value) => {
+                        const selected = value === field.value;
+                        return (
+                          <button
+                            aria-checked={selected}
+                            className={cn(
+                              'rounded-lg border border-border/68 bg-background/46 px-3 py-2 text-center text-sm font-medium transition-[background-color,border-color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/48',
+                              selected &&
+                                'border-primary/56 bg-primary/10 shadow-[var(--shadow-control)]'
+                            )}
+                            key={value}
+                            onClick={() => field.onChange(value)}
+                            role="radio"
+                            tabIndex={selected ? 0 : -1}
+                            type="button"
+                          >
+                            {TASK_VISIBILITY_LABELS[value]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      {TASK_VISIBILITY_DISCLAIMERS[field.value]}
+                    </p>
+                    {field.value === 'private' ? (
+                      <div className="grid gap-4 border-l-2 border-warning/46 pl-4 sm:grid-cols-2">
+                        <div className="grid gap-1.5">
+                          <Label htmlFor="allowed-viewers">Invite wallets (optional)</Label>
+                          <Controller
+                            control={control}
+                            name="allowedViewers"
+                            render={({ field: viewersField }) => (
+                              <Input
+                                id="allowed-viewers"
+                                onChange={viewersField.onChange}
+                                placeholder="0xabc..., 0xdef..."
+                                value={viewersField.value}
+                              />
+                            )}
+                          />
+                          {fieldErrors.allowedViewers ? (
+                            <p className="text-xs leading-5 text-destructive">
+                              {fieldErrors.allowedViewers}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="grid gap-1.5">
+                          <Label htmlFor="access-password">Password (optional)</Label>
+                          <Controller
+                            control={control}
+                            name="accessPassword"
+                            render={({ field: passwordField }) => (
+                              <Input
+                                autoComplete="new-password"
+                                id="access-password"
+                                minLength={8}
+                                onChange={passwordField.onChange}
+                                placeholder="At least 8 characters"
+                                type="password"
+                                value={passwordField.value}
+                              />
+                            )}
+                          />
+                          {fieldErrors.accessPassword ? (
+                            <p className="text-xs leading-5 text-destructive">
+                              {fieldErrors.accessPassword}
+                            </p>
+                          ) : null}
+                        </div>
+                        <p className="text-xs leading-5 text-muted-foreground sm:col-span-2">
+                          Add at least one wallet or a password. Private access does not hide the
+                          task&apos;s onchain activity.
+                        </p>
+                        {fieldErrors.taskVisibility ? (
+                          <p className="text-xs leading-5 text-destructive sm:col-span-2">
+                            {fieldErrors.taskVisibility}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </fieldset>
+                )}
+              />
+
+              <Controller
+                control={control}
+                name="submissionVisibility"
+                render={({ field }) => (
+                  <fieldset className="grid content-start gap-3">
+                    <legend className="text-sm font-semibold tracking-tight">
+                      Submission visibility
+                    </legend>
+                    <div
+                      aria-label="Submission visibility"
+                      className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+                      onKeyDown={(event) =>
+                        handleRadioGroupKeyDown(
+                          event,
+                          SUBMISSION_VISIBILITY_VALUES,
+                          field.value,
+                          field.onChange
+                        )
+                      }
+                      role="radiogroup"
+                    >
+                      {SUBMISSION_VISIBILITY_VALUES.map((value) => {
+                        const selected = value === field.value;
+                        return (
+                          <button
+                            aria-checked={selected}
+                            className={cn(
+                              'rounded-lg border border-border/68 bg-background/46 px-3 py-2 text-center text-sm font-medium transition-[background-color,border-color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/48',
+                              selected &&
+                                'border-primary/56 bg-primary/10 shadow-[var(--shadow-control)]'
+                            )}
+                            key={value}
+                            onClick={() => field.onChange(value)}
+                            role="radio"
+                            tabIndex={selected ? 0 : -1}
+                            type="button"
+                          >
+                            {SUBMISSION_VISIBILITY_LABELS[value]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      {SUBMISSION_VISIBILITY_DISCLAIMERS[field.value]}
+                    </p>
+                    {selectedTemplate?.mode === 'bounty' ? (
+                      <p className="text-xs leading-5 text-muted-foreground">
+                        Winner only can protect losing creative entries after the task closes.
+                      </p>
+                    ) : null}
+                  </fieldset>
+                )}
+              />
+            </div>
+          </section>
+        </CardContent>
+
+        {isLocked ? null : (
+          <section className="border-t border-border/75">
+            <div
+              className={cn(
+                'flex items-center justify-between gap-4 p-5 sm:p-6',
+                advancedOpen && 'border-b border-border/75'
+              )}
+            >
+              <CardTitle>Advanced settings</CardTitle>
+              <Button
+                aria-label={`${advancedOpen ? 'Hide' : 'Show'} advanced settings`}
                 aria-expanded={advancedOpen}
                 onClick={() => setAdvancedOpen((value) => !value)}
                 size="sm"
                 type="button"
-                variant="outline"
+                variant="ghost"
               >
                 {advancedOpen ? 'Hide' : 'Show'}
               </Button>
             </div>
-          </CardHeader>
-          <CardContent className={cn('grid gap-5 pt-6', !advancedOpen && 'hidden')}>
-            <Controller
-              control={control}
-              name="mode"
-              render={({ field }) => (
-                <div
-                  aria-label="Task mode"
-                  className="grid gap-3 sm:grid-cols-2"
-                  onKeyDown={(event) =>
-                    handleRadioGroupKeyDown(
-                      event,
-                      taskModeOptions.map((option) => option.value),
-                      field.value,
-                      field.onChange
-                    )
-                  }
-                  role="radiogroup"
-                >
-                  {taskModeOptions.map((taskMode) => {
-                    const Icon = taskMode.icon;
-                    const selected = taskMode.value === field.value;
-
-                    return (
-                      <button
-                        aria-checked={selected}
-                        className={cn(
-                          'grid min-h-32 gap-3 rounded-xl border border-border/68 bg-background/46 p-4 text-left shadow-[var(--shadow-soft)] transition-[background-color,border-color,box-shadow,transform] duration-300 ease-[var(--ease-premium)] hover:-translate-y-0.5 hover:border-primary/48 hover:bg-surface-2/52 active:scale-[0.99]',
-                          selected &&
-                            'border-primary/56 bg-primary/10 shadow-[var(--shadow-control)]'
-                        )}
-                        key={taskMode.value}
-                        onClick={() => field.onChange(taskMode.value)}
-                        role="radio"
-                        tabIndex={selected ? 0 : -1}
-                        type="button"
-                      >
-                        <span className="flex items-center justify-between gap-3">
-                          <span
-                            className={cn(
-                              'flex size-9 items-center justify-center rounded-full border border-border/68 text-muted-foreground transition-colors',
-                              selected && 'border-primary/70 bg-primary text-primary-foreground'
-                            )}
-                          >
-                            <Icon className="size-4" />
-                          </span>
-                          <span className="font-mono text-[0.65rem] uppercase text-muted-foreground">
-                            {selected ? 'Selected' : 'Mode'}
-                          </span>
-                        </span>
-                        <span>
-                          <span className="block font-sans text-sm font-semibold tracking-tight">
-                            {taskMode.label}
-                          </span>
-                          <span className="mt-2 block text-sm leading-5 text-muted-foreground">
-                            {taskMode.createDescription}
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            />
-
-            <div
-              className={cn(
-                'grid gap-4 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)] sm:grid-cols-2',
-                mode !== 'claim' && 'hidden'
-              )}
-            >
-              <Controller
-                control={control}
-                name="stakeRequired"
-                render={({ field }) => (
-                  <label className="flex min-h-20 items-center gap-3 rounded-xl border border-border/68 bg-background/52 p-4 text-sm font-semibold tracking-tight">
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={(checked) => field.onChange(checked === true)}
-                    />
-                    Require stake
-                  </label>
+            <CardContent className={cn('grid gap-5 p-5 sm:p-6', !advancedOpen && 'hidden')}>
+              <div
+                className={cn(
+                  'grid gap-4 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)] sm:grid-cols-2',
+                  mode !== 'claim' && 'hidden'
                 )}
-              />
-              <div className="grid gap-2">
-                <Label htmlFor="stakeBps">Stake percent</Label>
+              >
+                <Controller
+                  control={control}
+                  name="stakeRequired"
+                  render={({ field }) => (
+                    <label className="flex min-h-20 items-center gap-3 rounded-xl border border-border/68 bg-background/52 p-4 text-sm font-semibold tracking-tight">
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={(checked) => field.onChange(checked === true)}
+                      />
+                      Require stake
+                    </label>
+                  )}
+                />
+                <div className="grid gap-2">
+                  <Label htmlFor="stakeBps">Stake percent</Label>
+                  <Input
+                    className="font-mono"
+                    id="stakeBps"
+                    max="100"
+                    min="0"
+                    step="0.01"
+                    type="number"
+                    {...register('stakeBps')}
+                  />
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    Enter the percent of the reward a claimant must stake.
+                  </p>
+                </div>
+              </div>
+
+              <div
+                className={cn(
+                  'grid gap-2 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]',
+                  mode !== 'pitch' && 'hidden'
+                )}
+              >
+                <Label htmlFor="pitchDeadline">Pitch deadline hours</Label>
                 <Input
                   className="font-mono"
-                  id="stakeBps"
-                  max="100"
-                  min="0"
-                  step="0.01"
+                  id="pitchDeadline"
+                  min="1"
+                  placeholder="24"
                   type="number"
-                  {...register('stakeBps')}
+                  {...register('pitchDeadline')}
                 />
                 <p className="text-xs leading-5 text-muted-foreground">
-                  Enter the percent of the reward a claimant must stake.
+                  How long workers have to submit a pitch before the window closes.
                 </p>
               </div>
-            </div>
 
-            <div
-              className={cn(
-                'grid gap-2 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]',
-                mode !== 'pitch' && 'hidden'
-              )}
-            >
-              <Label htmlFor="pitchDeadline">Pitch deadline hours</Label>
-              <Input
-                className="font-mono"
-                id="pitchDeadline"
-                min="1"
-                placeholder="24"
-                type="number"
-                {...register('pitchDeadline')}
-              />
-              <p className="text-xs leading-5 text-muted-foreground">
-                How long workers have to submit a pitch before the window closes.
-              </p>
-            </div>
-
-            <div
-              className={cn(
-                'grid gap-4 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)] sm:grid-cols-2',
-                mode !== 'benchmark' && 'hidden'
-              )}
-            >
-              <div className="grid gap-2">
-                <Label htmlFor="metricDescription">Metric</Label>
-                <Input
-                  id="metricDescription"
-                  placeholder="Test suite pass rate"
-                  {...register('metricDescription')}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="metricTarget">Target</Label>
-                <Input
-                  className="font-mono"
-                  id="metricTarget"
-                  placeholder="98"
-                  {...register('metricTarget')}
-                />
-              </div>
-            </div>
-
-            <div
-              className={cn(
-                'grid gap-4 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]',
-                mode !== 'auction' && 'hidden'
-              )}
-            >
-              <Controller
-                control={control}
-                name="auctionType"
-                render={({ field }) => (
-                  <div
-                    aria-label="Auction type"
-                    className="grid gap-3 sm:grid-cols-2"
-                    onKeyDown={(event) =>
-                      handleRadioGroupKeyDown(
-                        event,
-                        auctionTypeOptions.map((option) => option.value),
-                        field.value,
-                        field.onChange
-                      )
-                    }
-                    role="radiogroup"
-                  >
-                    {auctionTypeOptions.map((type) => {
-                      const selected = type.value === field.value;
-
-                      return (
-                        <button
-                          aria-checked={selected}
-                          className={cn(
-                            'grid gap-2 rounded-xl border border-border/68 bg-background/52 p-3 text-left transition-[background-color,border-color,box-shadow,transform] duration-300 ease-[var(--ease-premium)] hover:-translate-y-0.5 hover:border-primary/48 hover:bg-surface-2/52 active:scale-[0.99]',
-                            selected &&
-                              'border-primary/56 bg-primary/10 shadow-[var(--shadow-control)]'
-                          )}
-                          key={type.value}
-                          onClick={() => field.onChange(type.value)}
-                          role="radio"
-                          tabIndex={selected ? 0 : -1}
-                          type="button"
-                        >
-                          <span className="font-sans text-xs font-semibold tracking-tight">
-                            {type.label}
-                          </span>
-                          <span className="text-xs leading-5 text-muted-foreground">
-                            {type.description}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+              <div
+                className={cn(
+                  'grid gap-4 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)] sm:grid-cols-2',
+                  mode !== 'benchmark' && 'hidden'
                 )}
-              />
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="maxPrice">
-                    Max price
-                    <span aria-hidden="true" className="text-destructive">
-                      *
-                    </span>
-                  </Label>
-                  <Input
-                    aria-describedby={fieldErrors.maxPrice ? 'maxPrice-error' : undefined}
-                    aria-invalid={fieldErrors.maxPrice ? true : undefined}
-                    aria-required="true"
-                    className="font-mono"
-                    id="maxPrice"
-                    min="0.01"
-                    step="0.01"
-                    type="number"
-                    {...register('maxPrice')}
-                  />
-                  {fieldErrors.maxPrice ? (
-                    <p className="text-xs leading-5 text-destructive" id="maxPrice-error">
-                      {fieldErrors.maxPrice}
-                    </p>
-                  ) : null}
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="bidDeadline">Bid deadline hours</Label>
-                  <Input
-                    className="font-mono"
-                    id="bidDeadline"
-                    min="1"
-                    type="number"
-                    {...register('bidDeadline')}
-                  />
-                </div>
-                <div className={cn('grid gap-2', auctionType !== 'dutch' && 'hidden')}>
-                  <Label htmlFor="auctionFloorPrice">
-                    Floor price
-                    <span aria-hidden="true" className="text-destructive">
-                      *
-                    </span>
-                  </Label>
-                  <Input
-                    aria-describedby={
-                      fieldErrors.auctionFloorPrice ? 'auctionFloorPrice-error' : undefined
-                    }
-                    aria-invalid={fieldErrors.auctionFloorPrice ? true : undefined}
-                    aria-required="true"
-                    className="font-mono"
-                    id="auctionFloorPrice"
-                    min="0.01"
-                    step="0.01"
-                    type="number"
-                    {...register('auctionFloorPrice')}
-                  />
-                  {fieldErrors.auctionFloorPrice ? (
-                    <p className="text-xs leading-5 text-destructive" id="auctionFloorPrice-error">
-                      {fieldErrors.auctionFloorPrice}
-                    </p>
-                  ) : null}
-                </div>
-                <div className={cn('grid gap-2', auctionType !== 'reverse_dutch' && 'hidden')}>
-                  <Label htmlFor="auctionStartPrice">
-                    Start price
-                    <span aria-hidden="true" className="text-destructive">
-                      *
-                    </span>
-                  </Label>
-                  <Input
-                    aria-describedby={
-                      fieldErrors.auctionStartPrice ? 'auctionStartPrice-error' : undefined
-                    }
-                    aria-invalid={fieldErrors.auctionStartPrice ? true : undefined}
-                    aria-required="true"
-                    className="font-mono"
-                    id="auctionStartPrice"
-                    min="0.01"
-                    step="0.01"
-                    type="number"
-                    {...register('auctionStartPrice')}
-                  />
-                  {fieldErrors.auctionStartPrice ? (
-                    <p className="text-xs leading-5 text-destructive" id="auctionStartPrice-error">
-                      {fieldErrors.auctionStartPrice}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-5 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
-              <p className="font-mono text-xs uppercase tracking-[0.08em] text-muted-foreground">
-                Hook &amp; evaluator (optional)
-              </p>
-              <p
-                className="text-xs leading-5 text-muted-foreground"
-                id="reviewer-evidence-access-disclosure"
               >
-                Assigning an evaluator or dispute resolver grants that address confidential access
-                to private task details and every submission until the role is cleared. It does not
-                make the task discoverable or grant other task actions.
-              </p>
-              <div className="grid gap-2">
-                <Label htmlFor="hookContract">Hook contract</Label>
-                <Input
-                  className="font-mono"
-                  id="hookContract"
-                  placeholder="0x..."
-                  type="text"
-                  {...register('hookContract')}
-                />
+                <div className="grid gap-2">
+                  <Label htmlFor="metricDescription">Metric</Label>
+                  <Input
+                    id="metricDescription"
+                    placeholder="Test suite pass rate"
+                    {...register('metricDescription')}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="metricTarget">Target</Label>
+                  <Input
+                    className="font-mono"
+                    id="metricTarget"
+                    placeholder="98"
+                    {...register('metricTarget')}
+                  />
+                </div>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="evaluator">Evaluator address</Label>
-                <Input
-                  aria-describedby="reviewer-evidence-access-disclosure"
-                  className="font-mono"
-                  id="evaluator"
-                  placeholder="0x..."
-                  type="text"
-                  {...register('evaluator')}
+
+              <div
+                className={cn(
+                  'grid gap-4 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]',
+                  mode !== 'auction' && 'hidden'
+                )}
+              >
+                <Controller
+                  control={control}
+                  name="auctionType"
+                  render={({ field }) => (
+                    <div
+                      aria-label="Auction type"
+                      className="grid gap-3 sm:grid-cols-2"
+                      onKeyDown={(event) =>
+                        handleRadioGroupKeyDown(
+                          event,
+                          auctionTypeOptions.map((option) => option.value),
+                          field.value,
+                          field.onChange
+                        )
+                      }
+                      role="radiogroup"
+                    >
+                      {auctionTypeOptions.map((type) => {
+                        const selected = type.value === field.value;
+
+                        return (
+                          <button
+                            aria-checked={selected}
+                            className={cn(
+                              'grid gap-2 rounded-xl border border-border/68 bg-background/52 p-3 text-left transition-[background-color,border-color,box-shadow,transform] duration-300 ease-[var(--ease-premium)] hover:-translate-y-0.5 hover:border-primary/48 hover:bg-surface-2/52 active:scale-[0.99]',
+                              selected &&
+                                'border-primary/56 bg-primary/10 shadow-[var(--shadow-control)]'
+                            )}
+                            key={type.value}
+                            onClick={() => field.onChange(type.value)}
+                            role="radio"
+                            tabIndex={selected ? 0 : -1}
+                            type="button"
+                          >
+                            <span className="font-sans text-xs font-semibold tracking-tight">
+                              {type.label}
+                            </span>
+                            <span className="text-xs leading-5 text-muted-foreground">
+                              {type.description}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="bidDeadline">Bid deadline hours</Label>
+                    <Input
+                      className="font-mono"
+                      id="bidDeadline"
+                      min="1"
+                      type="number"
+                      {...register('bidDeadline')}
+                    />
+                  </div>
+                  <div className="rounded-xl border border-border/68 bg-surface/42 p-3 text-xs leading-5 text-muted-foreground">
+                    The maximum budget is the auction ceiling. Workers compete below that amount
+                    using the selected mechanism.
+                  </div>
+                  <div className={cn('grid gap-2', auctionType !== 'dutch' && 'hidden')}>
+                    <Label htmlFor="auctionFloorPrice">
+                      Floor price
+                      <span aria-hidden="true" className="text-destructive">
+                        *
+                      </span>
+                    </Label>
+                    <Input
+                      aria-describedby={
+                        fieldErrors.auctionFloorPrice ? 'auctionFloorPrice-error' : undefined
+                      }
+                      aria-invalid={fieldErrors.auctionFloorPrice ? true : undefined}
+                      aria-required="true"
+                      className="font-mono"
+                      id="auctionFloorPrice"
+                      min="0.01"
+                      step="0.01"
+                      type="number"
+                      {...register('auctionFloorPrice')}
+                    />
+                    {fieldErrors.auctionFloorPrice ? (
+                      <p
+                        className="text-xs leading-5 text-destructive"
+                        id="auctionFloorPrice-error"
+                      >
+                        {fieldErrors.auctionFloorPrice}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className={cn('grid gap-2', auctionType !== 'reverse_dutch' && 'hidden')}>
+                    <Label htmlFor="auctionStartPrice">
+                      Start price
+                      <span aria-hidden="true" className="text-destructive">
+                        *
+                      </span>
+                    </Label>
+                    <Input
+                      aria-describedby={
+                        fieldErrors.auctionStartPrice ? 'auctionStartPrice-error' : undefined
+                      }
+                      aria-invalid={fieldErrors.auctionStartPrice ? true : undefined}
+                      aria-required="true"
+                      className="font-mono"
+                      id="auctionStartPrice"
+                      min="0.01"
+                      step="0.01"
+                      type="number"
+                      {...register('auctionStartPrice')}
+                    />
+                    {fieldErrors.auctionStartPrice ? (
+                      <p
+                        className="text-xs leading-5 text-destructive"
+                        id="auctionStartPrice-error"
+                      >
+                        {fieldErrors.auctionStartPrice}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="evaluatorFeeBps">Evaluator fee %</Label>
-                <Input
-                  className="font-mono"
-                  id="evaluatorFeeBps"
-                  max="100"
-                  min="0"
-                  placeholder="0"
-                  step="0.1"
-                  type="number"
-                  {...register('evaluatorFeeBps')}
-                />
+
+              <div className="grid gap-5 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
+                <p className="font-mono text-xs uppercase tracking-[0.08em] text-muted-foreground">
+                  Hook &amp; evaluator (optional)
+                </p>
+                <p
+                  className="text-xs leading-5 text-muted-foreground"
+                  id="reviewer-evidence-access-disclosure"
+                >
+                  Assigning an evaluator or dispute resolver grants that address confidential access
+                  to private task details and every submission until the role is cleared. It does
+                  not make the task discoverable or grant other task actions.
+                </p>
+                <div className="grid gap-2">
+                  <Label htmlFor="hookContract">Hook contract</Label>
+                  <Input
+                    className="font-mono"
+                    id="hookContract"
+                    placeholder="0x..."
+                    type="text"
+                    {...register('hookContract')}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="evaluator">Evaluator address</Label>
+                  <Input
+                    aria-describedby="reviewer-evidence-access-disclosure"
+                    className="font-mono"
+                    id="evaluator"
+                    placeholder="0x..."
+                    type="text"
+                    {...register('evaluator')}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="evaluatorFeeBps">Evaluator fee %</Label>
+                  <Input
+                    className="font-mono"
+                    id="evaluatorFeeBps"
+                    max="100"
+                    min="0"
+                    placeholder="0"
+                    step="0.1"
+                    type="number"
+                    {...register('evaluatorFeeBps')}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="evaluationWindow">Evaluation window (hours)</Label>
+                  <Input
+                    className="font-mono"
+                    id="evaluationWindow"
+                    min="1"
+                    placeholder="24"
+                    type="number"
+                    {...register('evaluationWindow')}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="appealWindow">Appeal window (hours)</Label>
+                  <Input
+                    className="font-mono"
+                    id="appealWindow"
+                    min="1"
+                    placeholder="24"
+                    type="number"
+                    {...register('appealWindow')}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="disputeResolver">Dispute resolver address</Label>
+                  <Input
+                    aria-describedby="reviewer-evidence-access-disclosure"
+                    className="font-mono"
+                    id="disputeResolver"
+                    placeholder="0x..."
+                    type="text"
+                    {...register('disputeResolver')}
+                  />
+                </div>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="evaluationWindow">Evaluation window (hours)</Label>
-                <Input
-                  className="font-mono"
-                  id="evaluationWindow"
-                  min="1"
-                  placeholder="24"
-                  type="number"
-                  {...register('evaluationWindow')}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="appealWindow">Appeal window (hours)</Label>
-                <Input
-                  className="font-mono"
-                  id="appealWindow"
-                  min="1"
-                  placeholder="24"
-                  type="number"
-                  {...register('appealWindow')}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="disputeResolver">Dispute resolver address</Label>
-                <Input
-                  aria-describedby="reviewer-evidence-access-disclosure"
-                  className="font-mono"
-                  id="disputeResolver"
-                  placeholder="0x..."
-                  type="text"
-                  {...register('disputeResolver')}
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            </CardContent>
+          </section>
+        )}
+      </Card>
     </div>
   );
 }
