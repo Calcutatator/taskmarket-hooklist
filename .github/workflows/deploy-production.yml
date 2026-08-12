@@ -47,14 +47,27 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
-      - name: Deploy backend to Railway production
+      # `--detach` is deliberately absent here, unlike before: it returns as soon as Railway
+      # accepts the upload, so this job went green whether the build then succeeded, failed, or
+      # never started. A "Failed to snapshot repository" on Railway's side left the previous
+      # version serving with a green tick over it. Without `--detach` the step waits for the
+      # build and fails when it fails.
+      #
+      # COMMIT_SHA is stamped first (with --skip-deploys, so it does not trigger its own deploy)
+      # so the running process can prove which build it is. Same pattern the Discord production
+      # workflow already uses.
+      - name: Stamp and deploy backend to Railway production
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          railway up \
+          railway variable set \
+            "COMMIT_SHA=${{ github.sha }}" \
             --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
             --environment PRODUCTION \
-            --detach
+            --skip-deploys
+          railway up \
+            --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
+            --environment PRODUCTION
 
       - name: Deploy web to Railway production
         env:
@@ -62,8 +75,7 @@ jobs:
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
-            --environment PRODUCTION \
-            --detach
+            --environment PRODUCTION
 
       - name: Deploy docs to Railway production
         env:
@@ -71,8 +83,28 @@ jobs:
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_DOCS_SERVICE_NAME }}" \
-            --environment PRODUCTION \
-            --detach
+            --environment PRODUCTION
+
+      # The deploy steps above prove the build succeeded. This proves the *running* process is
+      # the one that was just built -- a successful build that never became the live version is
+      # indistinguishable from a good deploy by a health check alone, because the old version
+      # answers `ok` perfectly happily.
+      - name: Verify production is serving this commit
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          for i in $(seq 1 40); do
+            SERVING=$(curl -sf --max-time 20 https://api.taskmarket.dev/api/health \
+              | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{process.stdout.write(JSON.parse(d).commitSha??"")}catch{process.stdout.write("")}})' || true)
+            if [ "$SERVING" = "$EXPECTED_COMMIT_SHA" ]; then
+              echo "Production is serving $EXPECTED_COMMIT_SHA"
+              exit 0
+            fi
+            echo "waiting for production to report $EXPECTED_COMMIT_SHA (currently: ${SERVING:-unreachable})"
+            sleep 15
+          done
+          echo "Production never reported $EXPECTED_COMMIT_SHA -- the build may have succeeded without becoming live" >&2
+          exit 1
 
       - name: Report deployment
         run: echo "Deployed ${{ github.ref_name }} to Railway production (backend + web + docs)"

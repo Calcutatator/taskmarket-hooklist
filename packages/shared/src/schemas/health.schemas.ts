@@ -5,6 +5,20 @@ export const HealthResponseSchema = z.object({
   timestamp: z.string(),
   environment: z.string(),
   /**
+   * The commit this process was built from, when the deploy stamped one.
+   *
+   * Reported so a deploy can prove it actually replaced what was running. The production
+   * deploy workflow uploads with `railway up` and previously did so with `--detach`, which
+   * returns as soon as the upload is accepted -- so the job went green whether the build
+   * succeeded, failed, or never started, and a failed build left the previous version
+   * serving with nothing to say so. A health check cannot distinguish that either: the old
+   * version answers `ok` perfectly happily.
+   *
+   * Absent rather than a placeholder when unstamped, so a local or unstamped process cannot
+   * be mistaken for a verified one.
+   */
+  commitSha: z.string().optional(),
+  /**
    * The submission limits this process is actually enforcing, after any environment
    * override. Reported because a limit a caller cannot observe is a limit a test can only
    * guess at: smoke-rate-limit.ts asserted against its own copy of the ceiling and had no

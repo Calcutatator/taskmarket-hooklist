@@ -29,9 +29,8 @@ const db = new Proxy(
 vi.mock('../../../src/db/client', () => ({ db }));
 
 const { healthRouter } = await import('../../../src/routers/health.router');
-const { clearStaleIntentSnapshot, publishStaleIntentSnapshot } = await import(
-  '../../../src/services/intent-health-snapshot'
-);
+const { clearStaleIntentSnapshot, publishStaleIntentSnapshot } =
+  await import('../../../src/services/intent-health-snapshot');
 
 afterAll(restoreServerEnvironment);
 
@@ -41,6 +40,33 @@ function check() {
 
 describe('health', () => {
   beforeEach(clearStaleIntentSnapshot);
+
+  it('omits commitSha when no deploy stamped one', async () => {
+    // Absence rather than a placeholder. The deploy verification looks for a specific commit,
+    // and a local or unstamped process must not be able to satisfy it.
+    const body = await check();
+
+    expect(body).not.toHaveProperty('commitSha');
+  });
+
+  it('reports the stamped commit so a deploy can prove it replaced what was running', async () => {
+    // The production deploy uploads with `railway up`, which used to pass `--detach` and so
+    // returned before the build finished -- green whether the build succeeded, failed, or never
+    // started, leaving the previous version serving underneath. A health check cannot tell those
+    // apart on its own: the old process answers `ok` exactly like the new one. The commit is what
+    // makes them distinguishable.
+    // `getServerConfig()` re-parses process.env on every call, so stubbing is enough -- no
+    // module reset, which would also discard the database double this suite depends on.
+    vi.stubEnv('COMMIT_SHA', 'abc123def456');
+
+    const body = await check();
+
+    expect(body.commitSha).toBe('abc123def456');
+
+    // Cleared by stubbing empty rather than `vi.unstubAllEnvs()`, which would also discard the
+    // suite-level server environment and leave every later test failing config validation.
+    vi.stubEnv('COMMIT_SHA', '');
+  });
 
   it('answers without doing any database work', async () => {
     publishStaleIntentSnapshot({ staleNonTerminal: 2 });

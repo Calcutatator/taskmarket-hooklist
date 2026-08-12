@@ -85,6 +85,13 @@ const optionalHardSubmissionCeilingEnvironmentSchema = z.object({
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+    // Stamped by the deploy so the running process can prove which build it is. Optional:
+    // absent locally, and absent is reported as absent rather than as a placeholder, so an
+    // unstamped process is never mistaken for a verified one. `RAILWAY_GIT_COMMIT_SHA` is the
+    // fallback Railway injects when a service builds from a connected repo; this deploy uploads
+    // source with `railway up`, so it is normally the explicit value that is set.
+    COMMIT_SHA: z.string().optional(),
+    RAILWAY_GIT_COMMIT_SHA: z.string().optional(),
     PORT: z.coerce.number().default(3000),
     DATABASE_URL: databaseUrlSchema,
     BASE_RPC_URL: z.string().url('BASE_RPC_URL must be a valid URL'),

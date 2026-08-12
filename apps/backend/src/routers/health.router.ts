@@ -38,6 +38,10 @@ export const healthRouter = router({
         status: 'ok' as const,
         timestamp: new Date().toISOString(),
         environment: config.NODE_ENV,
+        // Present only when the deploy stamped it -- see the schema for why absence matters.
+        ...((config.COMMIT_SHA ?? config.RAILWAY_GIT_COMMIT_SHA)
+          ? { commitSha: (config.COMMIT_SHA ?? config.RAILWAY_GIT_COMMIT_SHA) as string }
+          : {}),
         // The effective values, after any environment override -- what this process is
         // actually enforcing, not what the source defaults say. Reported so a caller can
         // tell whether the backend agrees with what they expect, which is the check
