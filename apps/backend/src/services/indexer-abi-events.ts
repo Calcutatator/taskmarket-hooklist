@@ -206,6 +206,20 @@ export const REWARD_HOOK_UNINDEXED_EVENTS: Partial<Record<RewardHookEventName, s
   // Hook ownership is an operator concern tracked on the Diamond, whose own
   // OwnershipTransferred/OwnershipTransferStarted pair is indexed.
   OwnershipTransferred: 'hook ownership changes are operational, not protocol state',
+  // Upgrade authorization, not protocol state. Worth watching operationally -- it is the
+  // event that says the logic governing every claimable balance was replaced -- but nothing
+  // in the indexer's task model changes when it fires.
+  Upgraded: 'proxy implementation changes are operational, not protocol state',
+  Initialized: 'one-time proxy initialization, not protocol state',
+  // Moderation and migration, both owner-only. They exist so the actions are visible on
+  // chain at all -- bans used to be invisible in the logs, which made them impossible to
+  // carry across a hook replacement -- rather than because the indexer needs them.
+  WalletBanned: 'moderation is operational, not protocol state',
+  WalletUnbanned: 'moderation is operational, not protocol state',
+  WalletHistorySeeded: 'one-time migration record, not protocol state',
+  WalletHistorySealed: 'one-time migration record, not protocol state',
+  RewardStateSeeded: 'one-time migration record, not protocol state',
+  RewardStateSealed: 'one-time migration record, not protocol state',
 };
 
 export const REWARD_HOOK_EVENT_ITEMS: AbiEvent[] = resolve(

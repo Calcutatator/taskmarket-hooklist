@@ -21,6 +21,12 @@ export type WalletWithdrawDreamsIntentPayload = {
   destination: string;
   nonce: string;
   workerAddress: string;
+  // The wallet's own authorization, replayed verbatim to the hook, which verifies it on-chain.
+  // Carried on the payload rather than re-derived because a retry must present the same
+  // authorization the user signed -- the same reasoning as the EIP-3009 case below. Optional
+  // only so intents recorded before the hook required it still deserialize.
+  validBefore?: string;
+  signature?: string;
 };
 
 /**
@@ -62,9 +68,19 @@ export function broadcastWalletWithdrawDreams(context: {
   payload: WalletWithdrawDreamsIntentPayload;
 }): Promise<`0x${string}`> {
   const { payload } = context;
+  if (!payload.signature || !payload.validBefore) {
+    // An intent recorded before the hook verified authorizations on-chain. It cannot be
+    // broadcast now: the wallet's signature was never captured, and inventing one is exactly
+    // what this check exists to prevent.
+    throw new Error('Withdraw intent predates on-chain authorization and cannot be replayed');
+  }
+
   return contractWithdrawDreamsRewards(
     payload.workerAddress as `0x${string}`,
-    payload.destination as `0x${string}`
+    payload.destination as `0x${string}`,
+    payload.nonce,
+    BigInt(payload.validBefore),
+    payload.signature as `0x${string}`
   );
 }
 

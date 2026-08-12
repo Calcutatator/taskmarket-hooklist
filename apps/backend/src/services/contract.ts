@@ -160,7 +160,7 @@ const MARKET_ABI = parseAbi([
 const FORWARDER_ABI = TaskMarketForwarderABI;
 const IDENTITY_REGISTRY_ABI = parseAbi(['function register() external returns (uint256)']);
 const HOOK_ABI = parseAbi([
-  'function withdrawFor(address worker, address destination) external',
+  'function withdrawFor(address worker, address destination, string nonce, uint256 validBefore, bytes signature) external',
   'function claimable(address wallet) external view returns (uint256)',
   'function dreamsPerUsdc() external view returns (uint256)',
   'function workerSplitBps() external view returns (uint16)',
@@ -1404,7 +1404,10 @@ export async function contractRegisterIdentity(): Promise<bigint> {
 
 export async function contractWithdrawDreamsRewards(
   worker: `0x${string}`,
-  destination: `0x${string}`
+  destination: `0x${string}`,
+  nonce: string,
+  validBefore: bigint,
+  signature: `0x${string}`
 ): Promise<`0x${string}`> {
   const config = getServerConfig();
   if (!config.DREAMS_HOOK_ADDRESS) {
@@ -1421,7 +1424,9 @@ export async function contractWithdrawDreamsRewards(
     address: config.DREAMS_HOOK_ADDRESS as `0x${string}`,
     abi: HOOK_ABI,
     functionName: 'withdrawFor' as const,
-    args: [worker, destination] as const,
+    // The wallet's own authorization, verified by the hook. The backend relays and pays gas,
+    // so `msg.sender` proves nothing about who the money belongs to.
+    args: [worker, destination, nonce, validBefore, signature] as const,
   };
   const { hash, receipt } = await dispatchServerWalletTransaction({
     // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).

@@ -361,7 +361,16 @@ describe('wallet router', () => {
         validBefore,
         signature: '0x' + 'aa'.repeat(65),
       });
-      expect(contractWithdrawDreamsRewards).toHaveBeenCalledWith(WALLET, WITHDRAWAL);
+      // The wallet's own authorization is forwarded to the hook verbatim, which verifies it
+      // on-chain. Asserted in full rather than on the addresses alone: dropping any one of
+      // these silently returns the hook to trusting the relayer.
+      expect(contractWithdrawDreamsRewards).toHaveBeenCalledWith(
+        WALLET,
+        WITHDRAWAL,
+        dreamsNonce,
+        BigInt(validBefore),
+        '0x' + 'aa'.repeat(65)
+      );
       expect(ctx.intents[0]!.operation).toBe('wallet.withdrawDreams');
       expect(result.txHash).toBe('0xcafebabe');
       expect(result.destination).toBe(WITHDRAWAL);

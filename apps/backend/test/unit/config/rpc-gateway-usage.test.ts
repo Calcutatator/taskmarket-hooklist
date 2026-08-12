@@ -26,6 +26,8 @@ const STANDALONE_CLIENT_ALLOWLIST: Record<string, string> = {
   'scripts/smoke-token-reward-hook.ts':
     'Reward-hook smoke test deploys fixtures with an isolated deployer.',
   'scripts/smoke-upgrade.ts': 'Upgrade smoke test owns isolated proxy owner clients.',
+  'scripts/migrate-reward-hook-state.ts':
+    'Reward-hook state migration is a one-shot operator process that must target one explicitly chosen network. It picks its RPC from NETWORK and asserts the connected chain ID before reading, precisely so it cannot inherit whichever chain the backend happens to be configured for.',
 };
 
 function sourceFiles(directory: string): string[] {

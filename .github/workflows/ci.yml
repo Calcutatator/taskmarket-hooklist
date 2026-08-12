@@ -282,6 +282,12 @@ jobs:
       - name: Gas snapshot check
         run: make contract snapshot-check
 
+      # TaskTokenRewardHook sits behind a proxy, so a sequential state variable would be
+      # repointed by any later insertion above it. Its state lives in a fixed-slot struct
+      # instead; this fails if one ever leaks back out into sequential storage.
+      - name: Storage layout check
+        run: make contract storage-check
+
       - name: Slither static analysis
         run: make contract audit
 

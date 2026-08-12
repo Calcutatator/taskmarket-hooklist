@@ -383,3 +383,8 @@ adrs:
     title: "The action queue is an agent-facing surface, not a web feature"
     status: Accepted
     date: "2026-08-11"
+  - number: "0081"
+    file: "0081-the-reward-hook-verifies-the-wallets-own-withdrawal-authorization.md"
+    title: "The reward hook verifies the wallet's own withdrawal authorization"
+    status: Accepted
+    date: "2026-08-11"

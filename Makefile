@@ -39,14 +39,14 @@ help:
 	@echo "  make adr-audit            - Regenerate ADR/RFC indexes and embodiment audit reports"
 	@echo "  make lint-check specs     - Check docs/specs/ follow the Spec-lite structural template"
 	@echo "  make test adr             - Run the adr package's own unit test suite (also covers spec-lint)"
-	@echo "  make contract <cmd>       - Contract tools (audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci)"
+	@echo "  make contract <cmd>       - Contract tools (audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|storage-check|doc|test|test-ci)"
 	@echo "  make contract <owner-cmd> <testnet|mainnet> - Owner actions (pause|unpause|accept-ownership)"
 	@echo "  make ci-quality-js        - Run the non-contract CI quality shard"
 	@echo "  make ui-ci                - Run the full Storybook and production web UI gate"
 	@echo "  make ui-ci-e2e            - Build and run the CI E2E shard (UI_CI_PROJECT optional)"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
 	@echo "  make clean                - Clean build artifacts"
-	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-agent-registry-chain|retry-orphaned-refunds)"
+	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-agent-registry-chain|retry-orphaned-refunds|migrate-reward-hook-state)"
 	@echo "  make smoke <mode> [testnet] - Run smoke test against localhost (or testnet with 'testnet' flag)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
@@ -604,7 +604,7 @@ docs-og-check:
 contract:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci"; \
+		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|storage-check|doc|test|test-ci"; \
 		echo "       make contract <pause|unpause|accept-ownership> <testnet|mainnet>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "audit" ]; then \
@@ -624,6 +624,31 @@ contract:
 		cd packages/contracts && forge snapshot -j 1; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot-check" ]; then \
 		cd packages/contracts && forge snapshot --check --tolerance 1 -j 1; \
+	elif [ "$(word 1,$(ARGS))" = "storage-check" ]; then \
+		forge build --root packages/contracts && \
+		cd packages/contracts && \
+		for c in TaskTokenRewardHook; do \
+			OUT=$$(forge inspect $$c storageLayout 2>&1) || { \
+				echo "Error: could not read $$c's storage layout:"; \
+				echo "$$OUT"; \
+				echo "If this says the layout is missing from the artifact, run 'forge clean' --"; \
+				echo "a failed read must not be mistaken for an empty layout."; \
+				exit 1; \
+			}; \
+			case "$$OUT" in \
+				*"missing from artifact"*|*Error*|*error*) \
+					echo "Error: reading $$c's storage layout failed:"; echo "$$OUT"; exit 1;; \
+			esac; \
+			SLOTS=$$(printf '%s' "$$OUT" | awk -F'|' '$$4 ~ /^ *[0-9]+ *$$/ {n++} END {print n+0}'); \
+			if [ "$$SLOTS" != "0" ]; then \
+				echo "Error: $$c declares sequential storage."; \
+				echo "It sits behind a proxy, so its state must live in its fixed-slot struct:"; \
+				echo "a sequential variable is repointed by any later insertion above it."; \
+				printf '%s\n' "$$OUT"; \
+				exit 1; \
+			fi; \
+			echo "$$c: no sequential storage (all state at its fixed slot)"; \
+		done; \
 	elif [ "$(word 1,$(ARGS))" = "abi-check" ]; then \
 		forge build --root packages/contracts && \
 		cd packages/contracts && pnpm generate-abi && \
@@ -674,7 +699,7 @@ contract:
 			--rpc-url $$OWNER_RPC; \
 	else \
 		echo "Unknown command: $(word 1,$(ARGS))"; \
-		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci"; \
+		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|storage-check|doc|test|test-ci"; \
 		echo "       make contract <pause|unpause|accept-ownership> <testnet|mainnet>"; \
 		exit 1; \
 	fi
@@ -763,6 +788,13 @@ db:
 			cd apps/backend && pnpm db:backfill-agent-registry-chain -- --registry "$$REGISTRY" --chain-id "$$CHAIN_ID" --dry-run; \
 		else \
 			cd apps/backend && pnpm db:backfill-agent-registry-chain -- --registry "$$REGISTRY" --chain-id "$$CHAIN_ID"; \
+		fi; \
+	elif [ "$(word 1,$(ARGS))" = "migrate-reward-hook-state" ]; then \
+		if [ "$(word 2,$(ARGS))" = "execute" ]; then \
+			cd apps/backend && pnpm migrate-reward-hook-state -- --execute; \
+		else \
+			echo "Dry run. Pass 'execute' to send transactions."; \
+			cd apps/backend && pnpm migrate-reward-hook-state; \
 		fi; \
 	elif [ "$(word 1,$(ARGS))" = "retry-orphaned-refunds" ]; then \
 		if [ "$(word 2,$(ARGS))" = "dry-run" ]; then \

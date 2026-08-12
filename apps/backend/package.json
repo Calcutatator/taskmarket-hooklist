@@ -15,6 +15,7 @@
     "db:backfill-task-awards": "tsx src/scripts/backfill-task-awards.ts",
     "db:backfill-agent-registry-chain": "tsx src/scripts/backfill-agent-registry-chain.ts",
     "db:retry-orphaned-refunds": "tsx src/scripts/retry-orphaned-refunds.ts",
+    "migrate-reward-hook-state": "tsx src/scripts/migrate-reward-hook-state.ts",
     "clean": "rm -rf dist",
     "lint:check": "eslint src/",
     "lint:write": "eslint src/ --fix",

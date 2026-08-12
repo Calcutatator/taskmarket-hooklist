@@ -293,6 +293,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0078 — An idempotency key is unique within a chain, not globally](0078-an-idempotency-key-is-unique-within-a-chain-not-globally.md)
 - [0079 — Action queues derive from canonical pending actions](0079-action-queue-derives-from-canonical-pending-actions.md)
 - [0080 — The action queue is an agent-facing surface, not a web feature](0080-the-action-queue-is-an-agent-facing-surface.md)
+- [0081 — The reward hook verifies the wallet's own withdrawal authorization](0081-the-reward-hook-verifies-the-wallets-own-withdrawal-authorization.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

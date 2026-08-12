@@ -360,12 +360,17 @@ export const walletRouter = router({
         payload: {
           destination: input.destination,
           nonce: input.nonce,
+          signature: input.signature,
+          validBefore: input.validBefore,
           workerAddress: input.workerAddress,
         } satisfies WalletWithdrawDreamsIntentPayload,
         send: () =>
           contractWithdrawDreamsRewards(
             input.workerAddress as `0x${string}`,
-            input.destination as `0x${string}`
+            input.destination as `0x${string}`,
+            input.nonce,
+            BigInt(input.validBefore),
+            input.signature as `0x${string}`
           ),
       });
 
