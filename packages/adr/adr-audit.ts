@@ -91,6 +91,7 @@ import {
   computeEmbodiment,
   fieldValue,
   findCommentAdrRefs,
+  findAnyAdrRefs,
   findImplementsRefs,
   findVerifiesRefs,
   formatRealizedByLocators,
@@ -161,6 +162,15 @@ interface AdrToolConfig {
   // of these paths never counts as embodiment evidence, but is flagged as its own
   // convention violation — see scanCode below.
   commentForbiddenPaths?: string[];
+  // Current name for the key above. Paths that publish beyond this repo — a public mirror, a
+  // released package. Any ADR-NNNN reference under one of these is a pointer the published
+  // artifact's readers cannot resolve, so the boundary check is deliberately wider than the
+  // Implements:/Verifies: evidence matcher (see scanCode).
+  publishedPaths?: string[];
+  // Whether a reference found under publishedPaths fails the run. Severity belongs to the
+  // boundary declaration: a boundary whose violations reach a public artifact is not a
+  // warn-only concern, and before this key there was no way to say so.
+  publishedPathViolationsBlock?: boolean;
 }
 
 // Checked-in tool config (`.adrrc.json` at repo root) — a reviewable, versioned override for
@@ -180,14 +190,24 @@ const REQUIRE_ATTESTATION_FOR_REFRESH = CONFIG.requireAttestationForRefresh ?? t
 // and a curated allowlist of directories is exactly the kind of fixed scan-root gap this
 // tool's own Realized-by mechanism exists to work around (see the module doc comment).
 const CODE_ROOTS = (CONFIG.codeScanRoots ?? ['.']).map((r) => path.join(REPO_ROOT, r));
-const COMMENT_FORBIDDEN_PATHS = CONFIG.commentForbiddenPaths ?? [];
+// Paths that publish beyond this repo (a public mirror, a released package). A decision
+// reference inside one is a pointer its readers cannot resolve. `publishedPaths` is the current
+// name; `commentForbiddenPaths` is kept as a deprecated alias because the policy was never
+// really about comments, and renaming a key in a committed config shouldn't break a branch
+// that is already in flight.
+const PUBLISHED_PATHS = CONFIG.publishedPaths ?? CONFIG.commentForbiddenPaths ?? [];
+// Severity is part of the boundary declaration: a boundary whose violations reach a public
+// artifact should be able to say that failing is correct. Defaults false so that turning the
+// key on is a deliberate, reviewable act rather than a silent behaviour change for callers who
+// have not cleaned up yet.
+const PUBLISHED_PATH_VIOLATIONS_BLOCK = CONFIG.publishedPathViolationsBlock === true;
 
 // `trackedFiles` scopes the walk to what git tracks or has staged under the
 // root this call started at (see resolveGitTrackedOrStagedFiles in lib.ts);
 // null (git unavailable) falls back to the raw filesystem walk unchanged.
 // Passed through the recursion rather than recomputed per-directory since
 // it's already scoped to the whole root subtree. A file matching
-// COMMENT_FORBIDDEN_PATHS is walked regardless of extension — it needs to be inspected for
+// PUBLISHED_PATHS is walked regardless of extension — it needs to be inspected for
 // a stray comment even when its language (e.g. .sol, .yml) isn't one this repo's normal
 // back-pointer convention scans.
 function walkFiles(root: string, trackedFiles: Set<string> | null): string[] {
@@ -198,7 +218,7 @@ function walkFiles(root: string, trackedFiles: Set<string> | null): string[] {
     const full = path.join(root, entry.name);
     if (entry.isDirectory()) {
       out.push(...walkFiles(full, trackedFiles));
-    } else if (SOURCE_EXT.has(path.extname(entry.name)) || matchesAnyGlob(path.relative(REPO_ROOT, full), COMMENT_FORBIDDEN_PATHS)) {
+    } else if (SOURCE_EXT.has(path.extname(entry.name)) || matchesAnyGlob(path.relative(REPO_ROOT, full), PUBLISHED_PATHS)) {
       if (trackedFiles === null || trackedFiles.has(full)) out.push(full);
     }
   }
@@ -297,8 +317,13 @@ function scanCode(entries: Map<string, AdrAuditEntry>): Map<string, string[]> {
 
       // A comment under a forbidden path never counts as embodiment evidence — flag it as
       // its own convention violation instead of feeding it into codeRefs/testRefs below.
-      if (matchesAnyGlob(rel, COMMENT_FORBIDDEN_PATHS)) {
-        const nums = findCommentAdrRefs(content);
+      if (matchesAnyGlob(rel, PUBLISHED_PATHS)) {
+        // Wide on purpose, and wider than the evidence matcher one line below. The config's
+        // own stated reason is that decision references "don't belong in published source at
+        // all" — a prose "(see ADR-0026)" is exactly as unresolvable to a mirror's readers as
+        // a structured marker, so the boundary asks findAnyAdrRefs while embodiment evidence
+        // keeps asking findCommentAdrRefs. Same text, two questions, two matchers.
+        const nums = findAnyAdrRefs(content);
         if (nums.length > 0) violations.set(rel, nums);
         continue;
       }
@@ -663,7 +688,14 @@ function main(): void {
     console.error(`Realized-by hash mismatches still in grace: ${staleByNum.size} (run --refresh once confirmed fine)`);
   }
   if (commentViolations.size > 0) {
-    console.error(`Comment-convention violations: ${commentViolations.size} (see docs/adr-audit/report.md)`);
+    console.error(`Published-path decision references: ${commentViolations.size} file(s) (see docs/adr-audit/report.md)`);
+    if (PUBLISHED_PATH_VIOLATIONS_BLOCK) {
+      console.error(
+        'publishedPathViolationsBlock is set: failing. These files publish beyond this repo, so ' +
+          'an ADR-NNNN reference in them is a pointer their readers cannot resolve.'
+      );
+      process.exitCode = 1;
+    }
   }
 
   // --fail-on-drift is opt-in, not the default: the plain run stays exit-0/informational for

@@ -19,6 +19,8 @@ user to restate it.
    ls docs/rfc/[0-9]*.md 2>/dev/null | sort -V | tail -1
    ```
    Increment the highest existing number by 1, zero-padded to 4 digits (e.g. `0005` → `0006`).
+   **This is a local view** — another in-flight branch may already have claimed that number, which
+   only shows up once both are in one tree. Check open PRs before assuming it is free.
 
 3. **Write `docs/rfc/NNNN-slug.md`** using `docs/rfc/_template.md`'s exact section shape:
    ```markdown
@@ -47,12 +49,26 @@ user to restate it.
      turns out not to exist is worse than no reference — RFCs have no structural lint (unlike
      ADRs), so nothing else will ever catch a dangling citation here.
 
-4. **Do not write to `docs/specs/`** — that directory holds already-decided, being-built specs,
-   not proposals. `docs/rfc/` is a proposal awaiting comment; see `docs/rfc/README.md`.
+4. **Don't cite an ADR or RFC from a published path.** Per ADR-0084, a decision reference under a
+   path in `.adrrc.json`'s `publishedPaths` is a pointer that package's external readers cannot
+   resolve, and it fails the audit.
 
-5. **Stage the new file, then regenerate the index** — in that order:
+5. **Stage the file, then validate it — in that order:**
    ```bash
    git add docs/rfc/NNNN-slug.md
+   cd packages/adr && npx tsx adr-lint.ts && npx tsx citation-check.ts
+   ```
+   **Order matters and the failure is silent.** Discovery is git-scoped: an untracked file is
+   invisible to these tools, so running them first reports clean against a corpus that never
+   included the new file. RFCs get no structural lint of their own beyond index freshness, so the
+   citation check is the only thing standing between a dangling reference and a merged document —
+   run it rather than leaving it to CI, and confirm it actually examined the new file.
+
+6. **Do not write to `docs/specs/`** — that directory holds already-decided, being-built specs,
+   not proposals. `docs/rfc/` is a proposal awaiting comment; see `docs/rfc/README.md`.
+
+7. **Regenerate the index** (the file is already staged from step 5):
+   ```bash
    cd packages/adr && npx tsx adr-audit.ts
    ```
    The index tool only discovers files that are git-tracked *or staged*
@@ -63,7 +79,7 @@ user to restate it.
    from the repo root fails with `tsx: command not found`, not a useful error about the real
    problem. Never hand-edit the list between the `RFC-INDEX:START`/`RFC-INDEX:END` markers.
 
-6. **Report back**, don't just silently write the file: state the file path, and summarize the
+8. **Report back**, don't just silently write the file: state the file path, and summarize the
    Summary/Proposal so the user can immediately tell you whether it captured the discussion
    correctly before they read the full document.
 

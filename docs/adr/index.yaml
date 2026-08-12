@@ -82,7 +82,7 @@ adrs:
     file: "0018-devices-register-requires-signature-proof-of-address.md"
     title: "`devices.register` requires a signature proving address ownership before minting a token"
     status: Accepted
-    date: "2026-07-21"
+    date: "2026-07-20"
   - number: "0019"
     file: "0019-server-wallet-nonce-manager-for-concurrent-relayed-calls.md"
     title: Server wallet uses a nonce manager to serialize concurrent relayed calls
@@ -388,3 +388,23 @@ adrs:
     title: "The reward hook verifies the wallet's own withdrawal authorization"
     status: Accepted
     date: "2026-08-11"
+  - number: "0082"
+    file: "0082-an-adr-records-when-it-was-accepted.md"
+    title: "An ADR records when it was accepted, separately from when it was written"
+    status: Accepted
+    date: "2026-08-11"
+  - number: "0083"
+    file: "0083-the-adr-header-is-a-closed-structure.md"
+    title: "The ADR header is a closed structure, validated as a whole"
+    status: Accepted
+    date: "2026-08-11"
+  - number: "0084"
+    file: "0084-published-paths-carry-no-decision-references.md"
+    title: "A published path carries no decision references, and declares its own severity"
+    status: Accepted
+    date: "2026-08-11"
+  - number: "0085"
+    file: "0085-the-header-region-is-bounded-by-its-section-heading.md"
+    title: "The header region is bounded by its section heading, not by contiguity"
+    status: Accepted
+    date: "2026-08-12"

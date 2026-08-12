@@ -10,6 +10,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-05
+- **Accepted:** 2026-08-10
 - **Embodiment:** Inactive
 - **Last audited:** 2026-08-10
 - **Author:** Claude Code (drafted for review)

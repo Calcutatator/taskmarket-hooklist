@@ -13,6 +13,7 @@
 
 - **Status:** Superseded
 - **Date:** 2026-07-21
+- **Accepted:** 2026-07-29
 - **Embodiment:** Deprecated
 - **Last audited:** 2026-08-03 (implementation replaced by ADR-0040)
 - **Author:** Agent — drafted per docs/adr/README.md's agent workflow

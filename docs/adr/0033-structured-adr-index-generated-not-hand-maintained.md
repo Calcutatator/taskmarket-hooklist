@@ -14,6 +14,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-30
+- **Accepted:** 2026-07-30
 - **Embodiment:** Verified
 - **Last audited:** 2026-07-30 (added an `Implements: ADR-0033` comment to
   packages/adr/adr-audit.ts's regeneration logic — it had no back-pointer of any kind despite

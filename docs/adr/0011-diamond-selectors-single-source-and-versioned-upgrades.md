@@ -13,6 +13,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-20
+- **Accepted:** 2026-07-20
 - **Embodiment:** Implemented
 - **Last audited:** 2026-07-30
 - **Author:** Beau Williams

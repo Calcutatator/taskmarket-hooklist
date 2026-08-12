@@ -140,12 +140,31 @@ function main(): void {
     }
   }
   if (issues.length === 0) {
-    console.error(`${targets.length} document(s) checked, no citation issues.`);
+    console.error(
+      targets.length === 0
+        ? 'No documents to check — nothing was examined. This is not the same as a clean corpus.'
+        : `${targets.length} document(s) checked, no citation issues.`
+    );
   }
 
   // Warn-only by design (see file header) -- never exits 1. stdout carries the same pure-data
   // JSON convention as adr-lint.ts/adr-audit.ts/scope-check.ts for an agent/script consumer.
-  console.log(JSON.stringify({ status: issues.length > 0 ? 'warn' : 'ok', warnCount: issues.length, issues }, null, 2));
+  // filesExamined/scope so a zero-finding result is evidence the check ran rather than a
+  // statement that could equally mean it examined nothing. 'not-run' is deliberately not 'ok':
+  // an agent must not read "there was nothing to check" as "I checked and it was fine".
+  console.log(
+    JSON.stringify(
+      {
+        status: issues.length > 0 ? 'warn' : targets.length === 0 ? 'not-run' : 'ok',
+        warnCount: issues.length,
+        filesExamined: targets.length,
+        scope: { source: 'tracked-sweep', base: null },
+        issues,
+      },
+      null,
+      2
+    )
+  );
 }
 
 main();

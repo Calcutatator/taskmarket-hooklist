@@ -9,6 +9,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-13
+- **Accepted:** 2026-07-13
 - **Embodiment:** Inactive
 - **Last audited:** 2026-07-29
 - **Author:** Beau

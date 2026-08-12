@@ -12,6 +12,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-06
+- **Accepted:** 2026-08-06
 - **Embodiment:** Verified
 - **Last audited:** `[unaudited]`
 - **Author:** Claude (agent), directed by Beau Williams

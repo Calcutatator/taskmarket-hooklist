@@ -9,6 +9,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-10
+- **Accepted:** 2026-08-10
 - **Embodiment:** Verified
 - **Last audited:** `[unaudited]`
 - **Author:** Claude Code (drafted for review)

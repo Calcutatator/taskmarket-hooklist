@@ -7,7 +7,7 @@
 
 import { describe, test, expect } from 'vitest';
 import fc from 'fast-check';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, realpathSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,7 +43,9 @@ import {
   globToRegExp,
   matchesAnyGlob,
   findCommentAdrRefs,
+  findAnyAdrRefs,
   stripIgnoredLines,
+  ADR_SCAN_IGNORE_MARKER,
   statedEmbodimentClean,
   type SpecFile,
   checkSpec,
@@ -54,6 +56,13 @@ import {
   findDuplicateNumbers,
   checkStatusField,
   checkDateField,
+  checkAcceptedField,
+  checkStatusEmbodimentConsistency,
+  checkHeaderStructure,
+  parseHeader,
+  headerText,
+  KNOWN_HEADER_KEYS,
+  ACCEPTANCE_BEARING_STATUSES,
   checkRequiredSections,
   checkYStatement,
   checkConsideredOptionsMinimum,
@@ -1042,6 +1051,383 @@ describe('checkDateField', () => {
   });
 });
 
+// Verifies: ADR-0082
+describe('checkAcceptedField', () => {
+  const hdr = (status: string, accepted: string | null, date = '2026-07-01') =>
+    `- **Status:** ${status}\n- **Date:** ${date}\n` +
+    (accepted === null ? '' : `- **Accepted:** ${accepted}\n`) +
+    '- **Embodiment:** Not started\n';
+
+  test('an Accepted ADR with a well-formed date produces no issues', () => {
+    expect(checkAcceptedField(hdr('Accepted', '2026-07-05'), 'x.md', 'Accepted')).toEqual([]);
+  });
+
+  test('an Accepted ADR with no Accepted field is a blocking error', () => {
+    const issues = checkAcceptedField(hdr('Accepted', null), 'x.md', 'Accepted');
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe('ERROR');
+  });
+
+  test('a Proposed ADR with no Accepted field produces no issues', () => {
+    expect(checkAcceptedField(hdr('Proposed', null), 'x.md', 'Proposed')).toEqual([]);
+  });
+
+  // The self-approval case: an agent drafting an ADR must not assert an approval date.
+  test('a Proposed ADR carrying an acceptance date is a blocking error', () => {
+    const issues = checkAcceptedField(hdr('Proposed', '2026-07-05'), 'x.md', 'Proposed');
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe('ERROR');
+    expect(issues[0].message).toContain('have been accepted');
+  });
+
+  test('Rejected and Withdrawn are treated the same way — the field is wrong, not optional', () => {
+    for (const status of ['Rejected', 'Withdrawn']) {
+      expect(checkAcceptedField(hdr(status, '2026-07-05'), 'x.md', status)).toHaveLength(1);
+      expect(checkAcceptedField(hdr(status, null), 'x.md', status)).toEqual([]);
+    }
+  });
+
+  // Superseded/Deprecated ADRs were Accepted first; losing the date on the way out would
+  // delete history exactly when the record becomes historical.
+  test('Superseded and Deprecated still require an acceptance date', () => {
+    for (const status of ['Superseded', 'Deprecated']) {
+      expect(checkAcceptedField(hdr(status, null), 'x.md', status)).toHaveLength(1);
+      expect(checkAcceptedField(hdr(status, '2026-07-05'), 'x.md', status)).toEqual([]);
+    }
+  });
+
+  test('a blank or placeholder value is treated as missing, not as present', () => {
+    for (const value of ['', 'TBD', 'pending', '—']) {
+      const issues = checkAcceptedField(hdr('Accepted', value), 'x.md', 'Accepted');
+      expect(issues).toHaveLength(1);
+      expect(issues[0].message).toContain('missing or blank');
+    }
+  });
+
+  test('a non-ISO date is a blocking error', () => {
+    for (const value of ['2026/07/05', '05-07-2026', 'July 5 2026', '2026-7-5']) {
+      const issues = checkAcceptedField(hdr('Accepted', value), 'x.md', 'Accepted');
+      expect(issues).toHaveLength(1);
+      expect(issues[0].message).toContain('malformed');
+    }
+  });
+
+  test('an acceptance date earlier than Date is warn-only, not blocking', () => {
+    const issues = checkAcceptedField(hdr('Accepted', '2026-06-01', '2026-07-01'), 'x.md', 'Accepted');
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe('WARN');
+  });
+
+  // The field is anchored to the list-item form: prose or a table cell mentioning
+  // "Accepted:" must not be read as the field. This is the bug class that bit the corpus
+  // this field was added for — a header key invented in prose that no parser could see.
+  test('an "Accepted:" mention outside the header list is not read as the field', () => {
+    const content =
+      '- **Status:** Proposed\n- **Date:** 2026-07-01\n\n' +
+      '## Context\n\nThe prior RFC was Accepted: 2026-06-01, which is prose, not a field.\n';
+    expect(checkAcceptedField(content, 'x.md', 'Proposed')).toEqual([]);
+  });
+
+  test('a null status (missing Status field) raises no acceptance-date issue of its own', () => {
+    expect(checkAcceptedField(hdr('Accepted', null), 'x.md', null)).toEqual([]);
+  });
+
+  test('property: every acceptance-bearing status demands the field, every other status forbids it', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...VALID_STATUSES),
+        fc.boolean(),
+        (status, withDate) => {
+          const issues = checkAcceptedField(
+            hdr(status, withDate ? '2026-07-05' : null),
+            'x.md',
+            status
+          );
+          const wanted = ACCEPTANCE_BEARING_STATUSES.has(status);
+          expect(issues.length === 0).toBe(wanted === withDate);
+        }
+      )
+    );
+  });
+
+  // A body list item must not satisfy a header field. The body is made of list items too, so
+  // anchoring to the list-item shape alone was not enough — field lookup is scoped to the
+  // header block above the first "## " heading.
+  test('an "- **Accepted:**" bullet in the body does not satisfy the header field', () => {
+    const content =
+      '- **Status:** Accepted\n- **Date:** 2026-07-01\n\n' +
+      '## Consequences\n\n- **Accepted:** 2026-07-05 — an example of the new field, in prose\n';
+    const issues = checkAcceptedField(content, 'x.md', 'Accepted');
+    expect(issues).toHaveLength(1);
+    expect(issues[0].message).toContain('missing or blank');
+  });
+
+  test('a body bullet does not trip the forbidden direction on a Proposed ADR either', () => {
+    const content =
+      '- **Status:** Proposed\n- **Date:** 2026-07-01\n\n' +
+      '## Context\n\n- **Accepted:** 2026-07-05 is what the field will look like\n';
+    expect(checkAcceptedField(content, 'x.md', 'Proposed')).toEqual([]);
+  });
+
+  // Duplicate/unknown keys are checkHeaderStructure's job — closure is asked once, centrally,
+  // rather than re-implemented by each field check. checkAcceptedField reads the first value and
+  // trusts the structure check to have flagged the duplication.
+  test('a duplicated Accepted field is reported by the structure check, not this one', () => {
+    const content =
+      '- **Status:** Accepted\n- **Date:** 2026-07-01\n' +
+      '- **Accepted:** 2026-07-05\n- **Accepted:** 2026-07-09\n\n## Context\n';
+    expect(checkAcceptedField(content, 'x.md', 'Accepted')).toEqual([]);
+    const structural = checkHeaderStructure(content, 'x.md');
+    expect(structural).toHaveLength(1);
+    expect(structural[0].type).toBe('ERROR');
+    expect(structural[0].message).toContain('appears 2 times');
+  });
+
+  // Shape-valid but impossible dates: the historical values were machine-derived in bulk, where
+  // an arithmetic slip yields a day that never existed rather than merely the wrong one.
+  test('a well-shaped but impossible calendar date is a blocking error', () => {
+    for (const value of ['2026-02-30', '2026-13-01', '2026-00-10', '2026-04-31', '2025-02-29']) {
+      const issues = checkAcceptedField(hdr('Accepted', value), 'x.md', 'Accepted');
+      expect(issues).toHaveLength(1);
+      expect(issues[0].message).toContain('malformed');
+    }
+  });
+
+  test('a leap day in an actual leap year is accepted', () => {
+    expect(checkAcceptedField(hdr('Accepted', '2028-02-29', '2028-01-01'), 'x.md', 'Accepted')).toEqual([]);
+  });
+
+  test('property: a real calendar date always passes, an impossible one never does', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1970, max: 2999 }),
+        fc.integer({ min: 1, max: 12 }),
+        fc.integer({ min: 1, max: 31 }),
+        (y, m, d) => {
+          const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          const real = new Date(Date.UTC(y, m - 1, d)).getUTCDate() === d;
+          const issues = checkAcceptedField(hdr('Accepted', iso, `${y}-01-01`), 'x.md', 'Accepted');
+          expect(issues.filter((i) => i.type === 'ERROR')).toHaveLength(real ? 0 : 1);
+        }
+      )
+    );
+  });
+});
+
+// Verifies: ADR-0083
+describe('parseHeader / checkHeaderStructure', () => {
+  test('the header is the contiguous run of field lines, anchored at the first one', () => {
+    const content = '# 0001 — T\n\n> Y-statement prose\n\n- **Status:** Accepted\n- **Date:** 2026-07-01\n\n## Context\n\n- **Cost:** a body bullet\n';
+    const parsed = parseHeader(content);
+    expect(parsed.found).toBe(true);
+    expect(parsed.fields.map((f) => f.key)).toEqual(['Status', 'Date']);
+  });
+
+  // Verifies: ADR-0085
+  // Five records in this corpus wrap a header value over two or more lines. A rule that attached
+  // only the first continuation dropped the rest, silently — and for a Realized by value that
+  // means the audit computes embodiment from a locator set it never knew was incomplete.
+  test('a value wrapped across several continuation lines is captured in full', () => {
+    const content =
+      '- **Status:** Accepted\n- **Realized by:** a.sol,\n  b.sol,\n  c.sol\n- **Date:** 2026-07-01\n\n## C\n';
+    const parsed = parseHeader(content);
+    expect(parsed.fields.find((f) => f.key === 'Realized by')?.value).toBe('a.sol, b.sol, c.sol');
+    expect(parsed.fields.map((f) => f.key)).toEqual(['Status', 'Realized by', 'Date']);
+  });
+
+  // Verifies: ADR-0085
+  test('a blank line or blockquote inside the header does not end it', () => {
+    const content =
+      '- **Status:** Accepted\n- **Date:** 2026-07-01\n\n> **Correction:** prose\n\n- **Deciders:** Beau\n\n## Context\n';
+    expect(parseHeader(content).fields.map((f) => f.key)).toEqual(['Status', 'Date', 'Deciders']);
+  });
+
+  // Verifies: ADR-0085
+  test('an indented line after a gap does not attach to the field above the gap', () => {
+    const content =
+      '- **Status:** Accepted\n- **Date:** 2026-07-01\n\n> quote\n\n  stray indented line\n\n- **Deciders:** Beau\n\n## Context\n';
+    const parsed = parseHeader(content);
+    expect(parsed.fields.find((f) => f.key === 'Date')?.value).toBe('2026-07-01');
+    expect(parsed.fields.map((f) => f.key)).toEqual(['Status', 'Date', 'Deciders']);
+  });
+
+  test('an indented continuation line attaches to the field above it', () => {
+    const content = '- **Status:** Accepted\n- **Last audited:** 2026-07-01 (added an\n  Implements comment)\n- **Date:** 2026-07-01\n\n## Context\n';
+    const parsed = parseHeader(content);
+    expect(parsed.fields.map((f) => f.key)).toEqual(['Status', 'Last audited', 'Date']);
+    expect(parsed.fields[1].value).toBe('2026-07-01 (added an Implements comment)');
+  });
+
+  // The regression that motivated abandoning the positional slice: a heading above the metadata
+  // must not truncate the header to nothing. Under slice-at-first-"##" this found no fields at
+  // all, and every check scoped to it silently passed.
+  test('a heading ABOVE the metadata does not truncate the header', () => {
+    const content = '# 0001 — T\n\n## Update 2026-08-11\n\nA dated supplement on top.\n\n- **Status:** Accepted\n- **Date:** 2026-07-01\n\n## Context\n';
+    const parsed = parseHeader(content);
+    expect(parsed.fields.map((f) => f.key)).toEqual(['Status', 'Date']);
+    expect(checkStatusField(content, 'x.md').status).toBe('Accepted');
+    expect(checkDateField(content, 'x.md')).toEqual([]);
+  });
+
+  // The decoy-text failure a whole-document search invites.
+  test('a Status label in body prose is not the field', () => {
+    const content = '- **Status:** Proposed\n- **Date:** 2026-07-01\n\n## Context\n\nThe pipeline reports **Status:** Accepted when it finishes.\n';
+    expect(checkStatusField(content, 'x.md').status).toBe('Proposed');
+  });
+
+  // A preamble bullet in the header's shape must not be mistaken for the header. Anchoring on
+  // "first metadata-shaped run" alone selected it, which read as a record with no Status — loud
+  // for Status itself, but silently skipping every check keyed off the status value.
+  test('a metadata-shaped bullet before the header does not become the header', () => {
+    const content =
+      '# 0099 — T\n\n- **Note:** an aside in the preamble\n\n' +
+      '- **Status:** Accepted\n- **Date:** 2026-07-01\n- **Accepted:** 2026-07-01\n\n## Context\n';
+    const parsed = parseHeader(content);
+    expect(parsed.fields.map((f) => f.key)).toEqual(['Status', 'Date', 'Accepted']);
+    expect(checkStatusField(content, 'x.md').status).toBe('Accepted');
+    expect(checkAcceptedField(content, 'x.md', 'Accepted')).toEqual([]);
+  });
+
+  test('a run without the signature key is still reported when no better run exists', () => {
+    const issues = checkHeaderStructure('# T\n\n- **Note:** no status anywhere\n\n## Context\n', 'x.md');
+    expect(issues.some((i) => /unknown header field "Note"/.test(i.message))).toBe(true);
+  });
+
+  test('a document with no metadata run has no header, and that is an error', () => {
+    const issues = checkHeaderStructure('# 0001 — T\n\nJust prose.\n', 'x.md');
+    expect(issues).toHaveLength(1);
+    expect(issues[0].message).toContain('no header field block found');
+  });
+
+  test('an unknown header key is a blocking error', () => {
+    const issues = checkHeaderStructure('- **Status:** Accepted\n- **Approved:** 2026-07-01\n\n## Context\n', 'x.md');
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe('ERROR');
+    expect(issues[0].message).toContain('unknown header field "Approved"');
+  });
+
+  test('an "x-" prefixed key is the declared extension escape hatch', () => {
+    expect(checkHeaderStructure('- **Status:** Accepted\n- **x-team:** payments\n\n## Context\n', 'x.md')).toEqual([]);
+  });
+
+  test('every known key passes closure', () => {
+    const header = [...KNOWN_HEADER_KEYS].map((k) => `- **${k}:** v`).join('\n');
+    expect(checkHeaderStructure(`${header}\n\n## Context\n`, 'x.md')).toEqual([]);
+  });
+
+  test('headerText excludes the body, so body bullets cannot satisfy a field regex', () => {
+    const content = '- **Status:** Accepted\n- **Date:** 2026-07-01\n\n## Context\n\n- **Author:** Someone In The Body\n';
+    expect(headerText(content)).not.toContain('Someone In The Body');
+  });
+
+  test('the real corpus is closed: every header key is known and unique', () => {
+    const files = readdirSync(ADR_DIR).filter((f) => /^\d{4}-.*\.md$/.test(f));
+    expect(files.length).toBeGreaterThan(0);
+    const issues = files.flatMap((f) =>
+      checkHeaderStructure(readFileSync(join(ADR_DIR, f), 'utf8'), f)
+    );
+    expect(issues).toEqual([]);
+  });
+});
+
+// Verifies: ADR-0084
+describe('findAnyAdrRefs (published-path boundary matcher)', () => {
+  // The whole point of the wider matcher: every real violation found in the mirrored package
+  // was prose, and none of them was a structured marker. The narrow evidence matcher reported
+  // a confident zero for years against a corpus that was not clean.
+  test('prose citation forms are found, and the marker matcher misses all of them', () => {
+    for (const line of [
+      'a parenthetical (ADR-0026) in a doc comment',
+      '// see ADR-0028 for why this is split',
+      'per ADR-0028, the reservation happens first',
+      "ADR-0029's own chosen option was the second one",
+    ]) {
+      expect(findAnyAdrRefs(line)).toHaveLength(1);
+      expect(findCommentAdrRefs(line)).toEqual([]);
+    }
+  });
+
+  test('structured markers are found too — the wide matcher is a superset', () => {
+    expect(findAnyAdrRefs('// Implements: ADR-0002')).toEqual(['0002']); // adr-scan:ignore-line
+  });
+
+  test('references are deduped and sorted', () => {
+    expect(findAnyAdrRefs('ADR-0011 and ADR-0002 and ADR-0011 again')).toEqual(['0002', '0011']);
+  });
+
+  test('text that is not a reference is not matched', () => {
+    expect(findAnyAdrRefs('ADR-12 ADR-123 ADRS-0001 adr-0001')).toEqual([]);
+  });
+
+  // The two questions must not collapse: widening the boundary matcher into the evidence
+  // matcher would mark a decision Implemented because someone wrote "see ADR-0042".
+  test('a prose citation is never embodiment evidence', () => {
+    const prose = '// this mirrors the shape chosen in ADR-0042\n';
+    expect(findAnyAdrRefs(prose)).toEqual(['0042']);
+    expect(findCommentAdrRefs(prose)).toEqual([]);
+  });
+
+  test('the ignore marker still applies, so a fixture that looks like a reference is exempt', () => {
+    const fixture = `const example = 'ADR-0042'; // ${ADR_SCAN_IGNORE_MARKER}\n`;
+    expect(findAnyAdrRefs(stripIgnoredLines(fixture))).toEqual([]);
+  });
+});
+
+// Verifies: ADR-0083
+describe('checkStatusEmbodimentConsistency', () => {
+  const rec = (status: string, embodiment: string) =>
+    `- **Status:** ${status}\n- **Date:** 2026-07-01\n- **Embodiment:** ${embodiment}\n\n## Context\n`;
+
+  test('an unapproved record claiming realization is a blocking error', () => {
+    for (const status of ['Proposed', 'Rejected', 'Withdrawn']) {
+      for (const embodiment of ['Implemented', 'Verified']) {
+        const issues = checkStatusEmbodimentConsistency(rec(status, embodiment), 'x.md', status);
+        expect(issues).toHaveLength(1);
+        expect(issues[0].type).toBe('ERROR');
+      }
+    }
+  });
+
+  test('an accepted record may claim anything', () => {
+    for (const status of ['Accepted', 'Superseded', 'Deprecated']) {
+      expect(checkStatusEmbodimentConsistency(rec(status, 'Verified'), 'x.md', status)).toEqual([]);
+    }
+  });
+
+  test('an unapproved record that claims no realization is fine', () => {
+    for (const embodiment of ['Not started', 'Specified', 'Inactive']) {
+      expect(checkStatusEmbodimentConsistency(rec('Proposed', embodiment), 'x.md', 'Proposed')).toEqual([]);
+    }
+  });
+
+  test('a trailing annotation on the embodiment value does not defeat the check', () => {
+    const issues = checkStatusEmbodimentConsistency(
+      rec('Proposed', 'Verified (see the migration note)'),
+      'x.md',
+      'Proposed'
+    );
+    expect(issues).toHaveLength(1);
+  });
+
+  // Header-scoped like every other field read: a body bullet must not decide this.
+  test('an Embodiment line in the body does not trigger the check', () => {
+    const content =
+      '- **Status:** Proposed\n- **Date:** 2026-07-01\n- **Embodiment:** Not started\n\n' +
+      '## Context\n\n- **Embodiment:** Verified is what this will become.\n';
+    expect(checkStatusEmbodimentConsistency(content, 'x.md', 'Proposed')).toEqual([]);
+  });
+
+  test('the real corpus has no unapproved record claiming realization', () => {
+    const files = readdirSync(ADR_DIR).filter((f) => /^\d{4}-.*\.md$/.test(f));
+    const issues = files.flatMap((f) => {
+      const content = readFileSync(join(ADR_DIR, f), 'utf8');
+      const { status } = checkStatusField(content, f);
+      return checkStatusEmbodimentConsistency(content, f, status);
+    });
+    expect(issues).toEqual([]);
+  });
+});
+
 describe('checkRequiredSections', () => {
   const ALL_HEADINGS = REQUIRED_SECTIONS.map((a) => a[0]);
   const VALID = ALL_HEADINGS.map((h) => `## ${h}\n`).join('\n');
@@ -1818,12 +2204,16 @@ function makeAdr({
   author,
   reviewers,
   deciders,
+  accepted,
 }: {
   num: string;
   status: string;
   author?: string;
   reviewers?: string;
   deciders?: string;
+  // Defaults to a valid date for acceptance-bearing statuses so every existing fixture stays
+  // lint-clean; pass null to build a fixture that deliberately omits the field.
+  accepted?: string | null;
 }): string {
   return [
     `# ${num} — Fixture ADR`,
@@ -1834,6 +2224,11 @@ function makeAdr({
     '',
     `- **Status:** ${status}`,
     '- **Date:** 2026-07-28',
+    ...(accepted === null
+      ? []
+      : ACCEPTANCE_BEARING_STATUSES.has(status)
+        ? [`- **Accepted:** ${accepted ?? '2026-07-28'}`]
+        : []),
     ...(author !== undefined ? [`- **Author:** ${author}`] : []),
     ...(reviewers !== undefined ? [`- **Reviewers:** ${reviewers}`] : []),
     ...(deciders !== undefined ? [`- **Deciders:** ${deciders}`] : []),

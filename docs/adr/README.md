@@ -294,6 +294,10 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0079 — Action queues derive from canonical pending actions](0079-action-queue-derives-from-canonical-pending-actions.md)
 - [0080 — The action queue is an agent-facing surface, not a web feature](0080-the-action-queue-is-an-agent-facing-surface.md)
 - [0081 — The reward hook verifies the wallet's own withdrawal authorization](0081-the-reward-hook-verifies-the-wallets-own-withdrawal-authorization.md)
+- [0082 — An ADR records when it was accepted, separately from when it was written](0082-an-adr-records-when-it-was-accepted.md)
+- [0083 — The ADR header is a closed structure, validated as a whole](0083-the-adr-header-is-a-closed-structure.md)
+- [0084 — A published path carries no decision references, and declares its own severity](0084-published-paths-carry-no-decision-references.md)
+- [0085 — The header region is bounded by its section heading, not by contiguity](0085-the-header-region-is-bounded-by-its-section-heading.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

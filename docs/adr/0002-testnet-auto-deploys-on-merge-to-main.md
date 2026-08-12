@@ -12,6 +12,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-15
+- **Accepted:** 2026-07-15
 - **Embodiment:** Implemented
 - **Last audited:** 2026-07-30
 - **Author:** Beau

@@ -94,7 +94,7 @@ function getChangedFiles(): string[] {
 // annotations, the summary line -- goes to stderr instead, so `pnpm lint:check` piped through
 // `| jq` (or read by an agent) gets clean JSON with no prose mixed in, while a human running it
 // directly in a terminal still sees everything (stdout and stderr both render there).
-function runCli(adrDir: string, changedFiles: string[], gateFiles: string[]): void {
+function runCli(adrDir: string, changedFiles: string[], gateFiles: string[], scope: LintScope): void {
   const { issues: adrIssues, adrFiles } = lintAdrDir(adrDir, changedFiles, REPO_ROOT, gateFiles, ALLOW_AUTHOR_SELF_REVIEW);
   // RFCs are not structurally linted (see lintRfcDir's own doc comment) -- only index
   // freshness is checked here, the same mechanical property enforced for ADRs.
@@ -124,8 +124,31 @@ function runCli(adrDir: string, changedFiles: string[], gateFiles: string[]): vo
   }
   console.error(`  ${rfcFiles.length} RFC(s) checked (index freshness only)`);
 
-  const status = errorCount > 0 ? 'error' : warnCount > 0 ? 'warn' : 'ok';
-  console.log(JSON.stringify({ status, errorCount, warnCount, adrCount: adrFiles.length, rfcCount: rfcFiles.length, issues }, null, 2));
+  // filesExamined/scope so a zero-error result is evidence the linter ran against a corpus,
+  // not a statement that could equally mean it matched no files. 'not-run' is deliberately not
+  // 'ok': an agent must not read "I examined nothing" as "I checked and it was fine".
+  const filesExamined = adrFiles.length + rfcFiles.length;
+  const status =
+    errorCount > 0 ? 'error' : warnCount > 0 ? 'warn' : filesExamined === 0 ? 'not-run' : 'ok';
+  console.log(
+    JSON.stringify(
+      {
+        status,
+        errorCount,
+        warnCount,
+        filesExamined,
+        scope: {
+          source: scope === 'whole-corpus' ? 'tracked-sweep' : 'git-diff',
+          base: scope === 'whole-corpus' ? null : process.env.ADR_LINT_BASE ?? null,
+        },
+        adrCount: adrFiles.length,
+        rfcCount: rfcFiles.length,
+        issues,
+      },
+      null,
+      2
+    )
+  );
 
   process.exit(errorCount > 0 ? 1 : 0);
 }
@@ -136,4 +159,4 @@ const changedFiles = getChangedFiles();
 // this push's diff; in diff mode it scans only the changed files. The coverage
 // warning always keys off the actual changed files, so it is unaffected.
 const gateFiles = scope === 'whole-corpus' ? resolveTrackedSourceFiles(REPO_ROOT) : changedFiles;
-runCli(ADR_DIR, changedFiles, gateFiles);
+runCli(ADR_DIR, changedFiles, gateFiles, scope);

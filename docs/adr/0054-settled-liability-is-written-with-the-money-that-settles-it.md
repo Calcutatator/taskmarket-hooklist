@@ -11,6 +11,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-03
+- **Accepted:** 2026-08-03
 - **Embodiment:** Verified
 - **Last audited:** 2026-08-04
 - **Author:** Claude (agent)

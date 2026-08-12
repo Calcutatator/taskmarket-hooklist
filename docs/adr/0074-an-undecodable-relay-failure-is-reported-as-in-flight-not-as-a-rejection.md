@@ -9,6 +9,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-08
+- **Accepted:** 2026-08-08
 - **Embodiment:** Verified
 - **Last audited:** `[unaudited]`
 - **Author:** Claude (agent), directed by Beau

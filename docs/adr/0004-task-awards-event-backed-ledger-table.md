@@ -12,6 +12,7 @@
 
 - **Status:** Superseded
 - **Date:** 2026-07-16
+- **Accepted:** 2026-07-18
 - **Embodiment:** Inactive
 - **Last audited:** 2026-07-29
 - **Author:** Loaf

@@ -8,6 +8,7 @@
 
 - **Status:** Superseded
 - **Date:** 2026-08-03
+- **Accepted:** 2026-08-03
 - **Embodiment:** Deprecated
 - **Last audited:** 2026-08-03
 - **Author:** Claude Code (drafted for review); decision made directly by Beau in conversation

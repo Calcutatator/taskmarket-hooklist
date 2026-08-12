@@ -18,6 +18,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-23
+- **Accepted:** 2026-07-23
 - **Embodiment:** Implemented
 - **Last audited:** 2026-07-30 (Realized-by hash refresh attested by Claude (removed forbidden ADR comments from packages/contracts))
 - **Author:** Beau

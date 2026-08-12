@@ -9,6 +9,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-06
+- **Accepted:** 2026-08-10
 - **Embodiment:** Verified
 - **Last audited:** 2026-08-06
 - **Author:** Codex, drafting the approved Action Inbox architecture

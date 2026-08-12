@@ -14,6 +14,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-30
+- **Accepted:** 2026-07-30
 - **Embodiment:** Implemented
 - **Last audited:** 2026-07-30 (Realized-by hash refresh attested by beauwilliams (via gh))
 - **Author:** Beau

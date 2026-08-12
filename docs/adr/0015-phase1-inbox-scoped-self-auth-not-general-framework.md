@@ -12,6 +12,7 @@
 
 - **Status:** Superseded
 - **Date:** 2026-07-20
+- **Accepted:** 2026-07-20
 - **Embodiment:** Deprecated
 - **Last audited:** 2026-07-30
 - **Author:** Beau

@@ -23,12 +23,29 @@ import { checkScopeMismatch, resolveGitDiffChangedFiles, formatIssueLine } from 
 const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(PACKAGE_DIR, '..', '..');
 
+// What the run actually compared, so a clean result can be told apart from a run that had
+// nothing to compare. Both currently report status 'ok' on stdout, which is the agent-facing
+// channel -- a "0 findings" that isn't evidence the check ran is the failure mode this repo's
+// own spec singles out, and it applies to a check's machine-readable output as much as to its
+// prose. `source` names where the file list came from; `base` is the ref diffed against.
+type Scope = { source: 'argv' | 'git-diff' | 'none'; base: string | null };
+let scope: Scope = { source: 'none', base: null };
+
 function getChangedFiles(): string[] {
   const argvFiles = process.argv.slice(2);
-  if (argvFiles.length > 0) return argvFiles;
+  if (argvFiles.length > 0) {
+    scope = { source: 'argv', base: null };
+    return argvFiles;
+  }
 
   const base = process.env.SCOPE_CHECK_BASE;
-  if (!base) return [];
+  if (!base) {
+    // Expected on a push event, where there is no PR base to compare against. Not a failure --
+    // but not a clean bill of health either, and the output must say which it is.
+    scope = { source: 'none', base: null };
+    return [];
+  }
+  scope = { source: 'git-diff', base };
 
   try {
     return resolveGitDiffChangedFiles(REPO_ROOT, base);
@@ -52,12 +69,30 @@ function runCli(changedFiles: string[]): void {
   }
 
   if (issues.length === 0) {
-    console.error(changedFiles.length > 0 ? 'No governance/application-source scope mismatch.' : 'No changed files to check.');
+    console.error(
+      changedFiles.length > 0
+        ? `No governance/application-source scope mismatch (${changedFiles.length} changed file(s) examined against ${scope.base ?? 'the given file list'}).`
+        : 'No changed files to check — SCOPE_CHECK_BASE is unset, so nothing was compared. This is not the same as a clean diff.'
+    );
   }
 
   // Warn-only by design (see file header) -- never exits 1. stdout carries the same pure-data
   // JSON convention as adr-lint.ts/adr-audit.ts for an agent/script consumer.
-  console.log(JSON.stringify({ status: issues.length > 0 ? 'warn' : 'ok', warnCount: issues.length, issues }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        // 'not-run' rather than 'ok' when nothing was compared: an agent reading this must not
+        // treat "I had no base" as "I checked and it was fine".
+        status: issues.length > 0 ? 'warn' : scope.source === 'none' ? 'not-run' : 'ok',
+        warnCount: issues.length,
+        filesExamined: changedFiles.length,
+        scope,
+        issues,
+      },
+      null,
+      2
+    )
+  );
 }
 
 runCli(getChangedFiles());

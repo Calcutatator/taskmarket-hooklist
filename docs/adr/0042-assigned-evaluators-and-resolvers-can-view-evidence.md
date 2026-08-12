@@ -9,6 +9,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-07
+- **Accepted:** 2026-08-07
 - **Embodiment:** Verified
 - **Last audited:** 2026-08-07
 - **Author:** Codex

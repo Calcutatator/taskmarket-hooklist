@@ -14,7 +14,8 @@
 > (`init.ts`, `wallet/import.ts`) to sign before registering in the same change.
 
 - **Status:** Accepted
-- **Date:** 2026-07-21
+- **Date:** 2026-07-20
+- **Accepted:** 2026-07-20
 - **Embodiment:** Verified
 - **Last audited:** 2026-07-29
 - **Author:** Beau

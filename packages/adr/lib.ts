@@ -112,11 +112,13 @@ export function formatGithubAnnotation(issue: Issue, normalizedFile: string): st
   return `::${cmd} file=${escapeAnnotationProperty(normalizedFile)}::${escapeAnnotationData(issue.message)}`;
 }
 
-// Reads a field value up to the next "- **" item or "##" heading, so a
-// wrapped multi-line value (e.g. Supersedes / Superseded-by) is captured
-// in full instead of truncating at the first newline.
+// Reads a field value up to the next "- **" item, "##" heading, or end of input, so a
+// wrapped multi-line value (e.g. Supersedes / Superseded-by) is captured in full instead
+// of truncating at the first newline. End-of-input terminates a field so these regexes
+// work against a header block in isolation (see headerText) and not only against a whole
+// document that happens to have a section heading after the header.
 function fieldRegex(label: string): RegExp {
-  return new RegExp(`\\*\\*${label}:\\*\\*([\\s\\S]*?)(?=\\n- \\*\\*|\\n##)`, 'i');
+  return new RegExp(`\\*\\*${label}:\\*\\*([\\s\\S]*?)(?=\\n- \\*\\*|\\n##|$)`, 'i');
 }
 
 export const AUTHOR_RE = fieldRegex('Author');
@@ -143,6 +145,209 @@ export const PENDING_AMENDS_RE = fieldRegex('Pending Amends \\/ Amended-by');
 // says may no longer match the decision. See REALIZED_BY_STALE_GRACE_DAYS.
 export const REALIZED_BY_RE = fieldRegex('Realized by');
 export const LAST_AUDITED_RE = fieldRegex('Last audited');
+
+// Implements: ADR-0082
+// "**Accepted:** YYYY-MM-DD" — when this ADR's Status became Accepted, which is a different
+// fact from "**Date:**" (when the ADR was last meaningfully written). An ADR accepted later
+// than it was drafted is the normal case, not the edge case, and before this field the
+// acceptance date existed only in git history. Anchored to the list-item form so the word
+// "Accepted:" appearing in prose or a table can't be misread as the field.
+export const ACCEPTED_RE = /^-[ \t]+\*\*Accepted:\*\*[ \t]*(.*)$/m;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Implements: ADR-0083
+// ── The header as a structure, not a slice ──────────────────────────────────
+//
+// Two positional heuristics for "where is the header" are known to fail, and both failures are
+// silent:
+//
+//   1. Search the whole document. A "- **Status:** ..." bullet in the body — a status-tracking
+//      list, a migration note, a documentation example — satisfies the field. This corpus
+//      contains body bullets in exactly the header's shape (Precedent:, Location:, Cost:).
+//   2. Slice at the first "## " heading. A record with any heading above its metadata (a dated
+//      supplement on top, say) gets a near-empty header slice, and every check scoped to it
+//      quietly finds nothing. That is worse than (1): it produces zero findings on a record
+//      nothing validated.
+//
+// So the region is not defined positionally at all. The header is the maximal contiguous run of
+// metadata-shaped lines, anchored at the first one: field lines, plus indented continuation
+// lines belonging to the field above them (6 records here wrap a value onto a second line).
+// Anything else — a blank line, a heading, unindented prose — ends the region. A document with
+// no such run has NO header, which is a reportable finding rather than an empty string.
+const HEADER_FIELD_LINE_RE = /^-[ \t]+\*\*([^*]+?):\*\*[ \t]*(.*)$/;
+const HEADER_CONTINUATION_RE = /^[ \t]+\S/;
+
+export type HeaderField = { key: string; value: string; line: number };
+export type ParsedHeader = { found: boolean; fields: HeaderField[]; raw: string };
+
+// A run of metadata-shaped lines is not automatically the header — a bullet list in a preamble,
+// or a body list that happens to use the same shape, produces a run too. The header is the first
+// run that carries the signature key every record must have; anchoring on "first run" alone lets
+// a stray "- **Note:** ..." above the metadata be selected instead, which reads as a record with
+// no Status at all and silently skips every check keyed off it.
+const HEADER_SIGNATURE_KEY = 'Status';
+
+export function parseHeader(content: string): ParsedHeader {
+  const lines = content.split('\n');
+
+  // Anchor on the signature key, not on position and not on "the first metadata-shaped run": a
+  // run is not automatically the header (a preamble bullet forms one too), and a positional slice
+  // truncates a header that sits below a heading.
+  const signature = lines.findIndex(
+    (l) => HEADER_FIELD_LINE_RE.exec(l)?.[1]?.trim() === HEADER_SIGNATURE_KEY
+  );
+  if (signature === -1) {
+    // No signature key anywhere: fall back to the first metadata-shaped line so a malformed
+    // document still reports against something real rather than claiming it has no header.
+    const first = lines.findIndex((l) => HEADER_FIELD_LINE_RE.test(l));
+    if (first === -1) return { found: false, fields: [], raw: '' };
+    return collectHeader(lines, first, headerBoundary(lines, first));
+  }
+
+  // Walk back over the contiguous metadata lines above the signature, so a header whose first
+  // field is not Status still starts where it actually starts.
+  let start = signature;
+  while (
+    start > 0 &&
+    (HEADER_FIELD_LINE_RE.test(lines[start - 1]) || HEADER_CONTINUATION_RE.test(lines[start - 1]))
+  ) {
+    start -= 1;
+  }
+
+  return collectHeader(lines, start, headerBoundary(lines, signature));
+}
+
+// Implements: ADR-0085
+// The header ends at the first section heading below the signature key. A blank line or a
+// blockquote inside it does NOT end it: a record may carry a dated correction block in the middle
+// of its header, with roles and relationship fields below the gap, and a rule that stopped at the
+// first blank line would drop them — reporting, for instance, that an Accepted record recorded no
+// Decider, which is a true-looking error about a record that is fine.
+function headerBoundary(lines: string[], from: number): number {
+  const offset = lines.slice(from).findIndex((l) => /^##\s/.test(l));
+  return offset === -1 ? lines.length : from + offset;
+}
+
+function collectHeader(lines: string[], start: number, end: number): ParsedHeader {
+  const fields: HeaderField[] = [];
+  let last = start;
+  let inField = false;
+
+  for (let i = start; i < end; i += 1) {
+    const match = HEADER_FIELD_LINE_RE.exec(lines[i]);
+    if (match) {
+      fields.push({ key: match[1].trim(), value: match[2].trim(), line: i + 1 });
+      last = i;
+      inField = true;
+      continue;
+    }
+    // A continuation attaches while we are still inside a field's value, which a wrapped value
+    // may extend over several lines. Anything else — a blank line, a blockquote, prose — closes
+    // the current field without ending the header, so an indented line after such a gap does not
+    // get swallowed into the field above it.
+    if (inField && HEADER_CONTINUATION_RE.test(lines[i])) {
+      const previous = fields[fields.length - 1];
+      previous.value = `${previous.value} ${lines[i].trim()}`.trim();
+      last = i;
+      continue;
+    }
+    inField = false;
+  }
+
+  return { found: fields.length > 0, fields, raw: lines.slice(start, last + 1).join('\n') };
+}
+
+// The header block as text, for the field regexes that parse structured values (supersession
+// entries, realized-by locators) out of a raw string. Scoping them here rather than to the whole
+// document is what stops a body bullet from satisfying them; fieldRegex terminates on
+// end-of-input so the last field in the block still matches.
+export function headerText(content: string): string {
+  return parseHeader(content).raw;
+}
+
+// Keys this corpus's header is allowed to contain. The set is closed on purpose: an unrecognized
+// key is the failure mode where someone adds a sensible-looking field that no tool reads and
+// every reader trusts. An "x-" prefix is the declared escape hatch for a deliberate local
+// extension, so the closure can be widened explicitly rather than by accident.
+export const KNOWN_HEADER_KEYS = new Set([
+  'Status',
+  'Date',
+  'Accepted',
+  'Embodiment',
+  'Last audited',
+  'Author',
+  'Reviewers',
+  'Deciders',
+  'Supersedes / Superseded-by',
+  'Pending Supersedes / Superseded-by',
+  'Amends / Amended-by',
+  'Pending Amends / Amended-by',
+  'Realized by',
+]);
+
+// Closure checks: the questions a per-field presence check cannot ask, because each is about the
+// header as a whole rather than about any one field.
+export function checkHeaderStructure(content: string, file: string): Issue[] {
+  const issues: Issue[] = [];
+  const header = parseHeader(content);
+
+  if (!header.found) {
+    return [
+      {
+        type: 'ERROR',
+        file,
+        message:
+          'no header field block found — every ADR must open with a run of "- **Key:** value" metadata lines',
+      },
+    ];
+  }
+
+  const seen = new Map<string, number>();
+  for (const field of header.fields) {
+    seen.set(field.key, (seen.get(field.key) ?? 0) + 1);
+    if (!KNOWN_HEADER_KEYS.has(field.key) && !field.key.startsWith('x-')) {
+      issues.push({
+        type: 'ERROR',
+        file,
+        message: `unknown header field "${field.key}" (line ${field.line}) — not part of the ADR schema. Add it to KNOWN_HEADER_KEYS with an ADR, or prefix it "x-" if it is a deliberate local extension`,
+      });
+    }
+  }
+
+  for (const [key, count] of seen) {
+    if (count > 1) {
+      issues.push({
+        type: 'ERROR',
+        file,
+        message: `header field "${key}" appears ${count} times — exactly one occurrence of each key`,
+      });
+    }
+  }
+
+  return issues;
+}
+
+// ISO_DATE_RE checks shape only, so "2026-02-30" and "2026-13-01" pass it. Round-tripping
+// through Date catches a value that looks like a date but names a day that never existed —
+// worth checking for this field specifically because its historical values were machine-derived
+// in bulk, where an arithmetic slip yields impossible dates rather than merely wrong ones.
+function isRealCalendarDate(iso: string): boolean {
+  const [year, month, day] = iso.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
+// Statuses meaning this ADR was accepted at some point, and therefore must carry an
+// acceptance date. Superseded and Deprecated are included deliberately: an ADR reaches
+// either only by having been Accepted first, so dropping the requirement when it leaves
+// Accepted would discard history at exactly the moment the record becomes historical.
+// Proposed/Rejected/Withdrawn never were accepted, so for them the field is not merely
+// optional but wrong — see checkAcceptedField.
+export const ACCEPTANCE_BEARING_STATUSES = new Set(['Accepted', 'Superseded', 'Deprecated']);
 
 // A not-yet-Accepted ADR's supersession claim isn't binding yet, so its
 // reciprocity is checked against the peer's Pending field instead (warn,
@@ -208,7 +413,10 @@ export function findDuplicateNumbers(files: string[]): Issue[] {
 
 export function checkStatusField(content: string, file: string): { issues: Issue[]; status: string | null } {
   const issues: Issue[] = [];
-  const statusMatch = STATUS_RE.exec(content);
+  // Header-scoped: a "Status:" label in body prose (a status-tracking bullet list, a worked
+  // example) must never be mistaken for the field. This is the decoy-text failure that a
+  // whole-document search invites.
+  const statusMatch = STATUS_RE.exec(headerText(content));
   const status = statusMatch ? statusMatch[1] : null;
   if (!statusMatch) {
     issues.push({ type: 'ERROR', file, message: 'missing **Status:** field' });
@@ -223,10 +431,101 @@ export function checkStatusField(content: string, file: string): { issues: Issue
 }
 
 export function checkDateField(content: string, file: string): Issue[] {
-  if (!DATE_RE.test(content)) {
+  if (!DATE_RE.test(headerText(content))) {
     return [{ type: 'ERROR', file, message: 'missing or malformed **Date:** YYYY-MM-DD' }];
   }
   return [];
+}
+
+// The acceptance date is required exactly when the status says the ADR was accepted, and
+// forbidden when it says it wasn't. Both directions block: a missing date on an Accepted ADR
+// loses the fact permanently (it is only otherwise recoverable by git archaeology, which
+// dates the commit rather than the decision — see ADR-0082), and an acceptance date on a
+// still-Proposed ADR is an agent or author asserting an approval that never happened, which
+// is the same self-approval this repo's ADR command already forbids by instruction.
+//
+// Ordering against **Date:** is warn-only on purpose. Date means last-meaningfully-updated,
+// not created, so an ADR whose Date was legitimately bumped after acceptance has
+// Accepted < Date without anything being wrong. It is still worth surfacing, because the
+// common cause of a large gap is a mistyped year.
+export function checkAcceptedField(content: string, file: string, status: string | null): Issue[] {
+  const issues: Issue[] = [];
+  // Duplicate and unknown keys are checkHeaderStructure's job — closure is asked once, centrally,
+  // rather than re-implemented by every field check.
+  const field = parseHeader(content).fields.find((f) => f.key === 'Accepted');
+  const raw = field ? field.value : null;
+  const shouldHave = status !== null && ACCEPTANCE_BEARING_STATUSES.has(status);
+
+  if (!shouldHave) {
+    if (raw !== null && !isPlaceholder(raw)) {
+      issues.push({
+        type: 'ERROR',
+        file,
+        message: `Status is "${status}" but **Accepted:** records an acceptance date (${raw}) — only ${[...ACCEPTANCE_BEARING_STATUSES].join('/')} ADRs have been accepted`,
+      });
+    }
+    return issues;
+  }
+
+  if (raw === null || isPlaceholder(raw)) {
+    issues.push({
+      type: 'ERROR',
+      file,
+      message: `Status is "${status}" but **Accepted:** is missing or blank — record the date this ADR was accepted (YYYY-MM-DD), which is a different fact from **Date:**`,
+    });
+    return issues;
+  }
+
+  if (!ISO_DATE_RE.test(raw) || !isRealCalendarDate(raw)) {
+    issues.push({
+      type: 'ERROR',
+      file,
+      message: `malformed **Accepted:** "${raw}" — must be a real calendar date in YYYY-MM-DD form`,
+    });
+    return issues;
+  }
+
+  const dateMatch = /\*\*Date:\*\*\s+(\d{4}-\d{2}-\d{2})/.exec(headerText(content));
+  if (dateMatch && raw < dateMatch[1]) {
+    issues.push({
+      type: 'WARN',
+      file,
+      message: `**Accepted:** ${raw} precedes **Date:** ${dateMatch[1]} — legitimate if Date was bumped by a later revision, but check for a typo`,
+    });
+  }
+
+  return issues;
+}
+
+// Status and Embodiment are orthogonal axes — one is the decision lifecycle, the other is whether
+// the decision was built — but not every combination is coherent. A record that has not been
+// approved cannot legitimately claim its decision is already realized: that combination means code
+// shipped for a decision nobody accepted, which is the one pairing worth blocking on. It is cheap
+// to check, needs no evidence beyond the two fields the record already carries, and no single-field
+// check can express it.
+const REALIZED_EMBODIMENTS = new Set(['Implemented', 'Verified']);
+
+export function checkStatusEmbodimentConsistency(
+  content: string,
+  file: string,
+  status: string | null
+): Issue[] {
+  if (status === null || ACCEPTANCE_BEARING_STATUSES.has(status)) return [];
+
+  const field = parseHeader(content).fields.find((f) => f.key === 'Embodiment');
+  if (!field) return [];
+  // The value can carry a trailing annotation (e.g. "Verified (see ...)"), so compare the leading
+  // token rather than the whole string.
+  const embodiment = field.value.split(/[\s(]/)[0];
+  if (!REALIZED_EMBODIMENTS.has(embodiment)) return [];
+
+  return [
+    {
+      type: 'ERROR',
+      file,
+      message: `Status is "${status}" but Embodiment is "${embodiment}" — a decision that has not been accepted cannot already be realized. Either the decision was accepted and Status is stale, or code shipped ahead of the decision`,
+    },
+  ];
 }
 
 export function hasSection(content: string, aliases: string[]): boolean {
@@ -478,9 +777,9 @@ export function checkAuthorReviewersDeciders(
   allowAuthorSelfReview = false,
 ): Issue[] {
   const issues: Issue[] = [];
-  const author = fieldValue(content, AUTHOR_RE);
-  const reviewers = fieldValue(content, REVIEWERS_RE);
-  const deciders = fieldValue(content, DECIDERS_RE);
+  const author = fieldValue(headerText(content), AUTHOR_RE);
+  const reviewers = fieldValue(headerText(content), REVIEWERS_RE);
+  const deciders = fieldValue(headerText(content), DECIDERS_RE);
 
   if (status === 'Accepted' && isPlaceholder(deciders)) {
     issues.push({
@@ -577,9 +876,12 @@ const DOC_DATE_VALUE_RE = /\*\*Date:\*\*\s+(\d{4}-\d{2}-\d{2})/;
 
 export function parseDocIndexEntry(file: string, content: string): DocIndexEntry {
   const number = file.slice(0, 4);
+  // Header fields come from the header, not the document: a body bullet or a quoted example in
+  // the same shape would otherwise decide what the generated index says this record's status is.
+  const header = headerText(content);
   const title = DOC_TITLE_RE.exec(content)?.[1] ?? 'unknown';
-  const status = STATUS_RE.exec(content)?.[1] ?? 'unknown';
-  const date = DOC_DATE_VALUE_RE.exec(content)?.[1] ?? 'unknown';
+  const status = STATUS_RE.exec(header)?.[1] ?? 'unknown';
+  const date = DOC_DATE_VALUE_RE.exec(header)?.[1] ?? 'unknown';
   return { number, file, title, status, date };
 }
 
@@ -1115,12 +1417,15 @@ export function lintAdrDir(
     seenNumbers.add(file.slice(0, 4));
 
     issues.push(...checkFilenameFormat(file));
+    issues.push(...checkHeaderStructure(content, file));
 
     const { issues: statusIssues, status } = checkStatusField(content, file);
     issues.push(...statusIssues);
     statusByFile.set(file.slice(0, 4), status);
 
     issues.push(...checkDateField(content, file));
+    issues.push(...checkAcceptedField(content, file, status));
+    issues.push(...checkStatusEmbodimentConsistency(content, file, status));
     issues.push(...checkRequiredSections(content, file));
     issues.push(...checkYStatement(content, file));
     issues.push(...checkConsideredOptionsMinimum(content, file));
@@ -1136,11 +1441,11 @@ export function lintAdrDir(
     const content = contentsByFile.get(file)!;
     const num = file.slice(0, 4);
 
-    const entries = extractSupersessionEntries(fieldValue(content, SUPERSEDES_RE) ?? '');
+    const entries = extractSupersessionEntries(fieldValue(headerText(content), SUPERSEDES_RE) ?? '');
     if (entries.length > 0) supersessionMap.set(num, entries);
 
     const pendingEntries = extractSupersessionEntries(
-      fieldValue(content, PENDING_SUPERSEDES_RE) ?? ''
+      fieldValue(headerText(content), PENDING_SUPERSEDES_RE) ?? ''
     );
     if (pendingEntries.length > 0) pendingSupersessionMap.set(num, pendingEntries);
   }
@@ -1159,10 +1464,10 @@ export function lintAdrDir(
     const content = contentsByFile.get(file)!;
     const num = file.slice(0, 4);
 
-    const entries = extractAmendmentEntries(fieldValue(content, AMENDS_RE) ?? '');
+    const entries = extractAmendmentEntries(fieldValue(headerText(content), AMENDS_RE) ?? '');
     if (entries.length > 0) amendmentMap.set(num, entries);
 
-    const pendingEntries = extractAmendmentEntries(fieldValue(content, PENDING_AMENDS_RE) ?? '');
+    const pendingEntries = extractAmendmentEntries(fieldValue(headerText(content), PENDING_AMENDS_RE) ?? '');
     if (pendingEntries.length > 0) pendingAmendmentMap.set(num, pendingEntries);
   }
 
@@ -1357,10 +1662,13 @@ export function parseAdrFilenameNumber(name: string): string | null {
 export function parseAdrHeaderFields(
   content: string
 ): { status: string; statedEmbodiment: string; realizedByLocators: RealizedByLocator[]; lastAudited: string | null } {
-  const status = STATUS_RE.exec(content)?.[1] ?? 'unknown';
-  const statedEmbodiment = EMBODIMENT_RE.exec(content)?.[1]?.trim() ?? 'unknown';
-  const realizedByLocators = parseRealizedByLocators(fieldValue(content, REALIZED_BY_RE));
-  const lastAudited = fieldValue(content, LAST_AUDITED_RE);
+  // All four read from the header. Two of them did not, which is the shape of miss that
+  // reintroduces the body-prose match one field at a time.
+  const header = headerText(content);
+  const status = STATUS_RE.exec(header)?.[1] ?? 'unknown';
+  const statedEmbodiment = EMBODIMENT_RE.exec(header)?.[1]?.trim() ?? 'unknown';
+  const realizedByLocators = parseRealizedByLocators(fieldValue(header, REALIZED_BY_RE));
+  const lastAudited = fieldValue(header, LAST_AUDITED_RE);
   return { status, statedEmbodiment, realizedByLocators, lastAudited };
 }
 
@@ -1517,6 +1825,20 @@ export function matchesAnyGlob(relPath: string, globs: string[]): boolean {
 // violation — these are two different questions, not the same check reused.
 export function findCommentAdrRefs(content: string): string[] {
   return [...new Set([...findImplementsRefs(content), ...findVerifiesRefs(content)])];
+}
+
+// Implements: ADR-0084
+// Every ADR referenced *in any form* — a structured marker, a prose aside, a parenthetical.
+// Deliberately NOT part of findCommentAdrRefs and never fed into embodiment evidence: a file
+// saying "see ADR-0042" has cited a decision, not implemented one, and widening the evidence
+// matcher to catch prose would mark decisions Implemented on the strength of a comment.
+//
+// This exists for one question only — "does this file reference a decision record at all" —
+// which is what a published-path boundary needs to ask, because the readers of a mirrored
+// package cannot resolve any of these forms. Callers are expected to have run
+// stripIgnoredLines first, so a fixture that merely looks like a reference is already blanked.
+export function findAnyAdrRefs(content: string): string[] {
+  return [...new Set([...content.matchAll(/ADR-(\d{4})/g)].map((m) => m[1]))].sort();
 }
 
 export interface AdrAuditEntry {

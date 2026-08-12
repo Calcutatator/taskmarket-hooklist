@@ -10,6 +10,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-03
+- **Accepted:** 2026-08-03
 - **Embodiment:** Verified
 - **Last audited:** 2026-08-03
 - **Author:** Codex (drafted for review); revised to an Engine-style architecture

@@ -9,6 +9,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-31
+- **Accepted:** 2026-07-31
 - **Embodiment:** Verified
 - **Last audited:** 2026-07-31
 - **Author:** Beau (drafted by Claude Code from already-shipped implementation, for review)

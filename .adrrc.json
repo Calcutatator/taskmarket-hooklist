@@ -2,6 +2,8 @@
   "$comment": "Configuration for packages/adr/adr-audit.ts (the ADR Embodiment audit). Checked into git so tolerance/scan policy is reviewable and versioned like everything else, not a hardcoded constant only visible by reading the tool's source. Every key here is optional -- omit to take the tool's built-in default.",
   "realizedByStaleGraceDays": 28,
   "requireAttestationForRefresh": true,
-  "commentForbiddenPathsReason": "packages/contracts is publicly mirrored -- internal governance/decision references (ADR comments, revNNN aside) don't belong in published source at all.",
-  "commentForbiddenPaths": ["packages/contracts/**"]
+  "publishedPathsReason": "packages/contracts is publicly mirrored -- internal governance/decision references (ADR comments, revNNN aside) don't belong in published source at all.",
+  "publishedPaths": ["packages/contracts/**"],
+  "publishedPathViolationsBlockReason": "Blocking because these files publish beyond this repo: a decision reference in them is a pointer their readers cannot resolve, which is not a warn-only concern. Note this fails until the separate citation-cleanup branch lands on main -- main still carries 25 such references -- so this PR merges after that one.",
+  "publishedPathViolationsBlock": true
 }

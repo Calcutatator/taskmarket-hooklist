@@ -5,6 +5,8 @@
 
 - **Status:** Proposed
 - **Date:** YYYY-MM-DD
+- **Accepted:** (omit entirely while Status is Proposed — add the date only when a Decider
+  accepts this ADR. An agent must never fill this in; doing so is self-approval.)
 - **Embodiment:** Not started
 - **Last audited:** YYYY-MM-DD or `[unaudited]`
 - **Author:** (human or agent name — who drafted this ADR)
