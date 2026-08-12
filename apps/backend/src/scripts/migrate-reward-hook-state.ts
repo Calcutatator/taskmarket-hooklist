@@ -247,12 +247,15 @@ async function main() {
   // have to be resolved through the Diamond, one task at a time, or every requester silently
   // fails to carry over and loses their entire wallet age.
   const diamondAddress = DIAMOND;
+  // Declared out here because the reward-state carry below needs the same set: a task is
+  // configured from the moment it is funded, not from when it is claimed.
+  const configuredTaskIds = new Set<string>();
   if (diamondAddress) {
     const configured = READ_ABI.find((e) => e.type === 'event' && e.name === 'RewardConfigured');
     const logs = configured
       ? await collectLogs(publicClient, oldHook, configured, deployBlock, latest)
       : [];
-    const taskIds = new Set<string>();
+    const taskIds = configuredTaskIds;
     for (const log of logs) {
       const taskId = (log as { args?: { taskId?: string } }).args?.taskId;
       if (taskId) taskIds.add(taskId);
@@ -361,7 +364,7 @@ async function main() {
       }
     }
     for (const taskId of reserved) if (!settled.has(taskId)) inFlight.push(taskId);
-    console.log(`in-flight reservations to carry: ${inFlight.length}`);
+    console.log(`in-flight reservations: ${inFlight.length}`);
     if (Number(totalReserved) === 0 && inFlight.length > 0) {
       console.warn('  WARNING: totalReserved is 0 but unsettled Reserved events exist.');
       console.warn('  These are likely orphaned by an EARLIER swap and cannot be carried.');
@@ -371,13 +374,59 @@ async function main() {
     console.log('Set it, or confirm totalReserved() is 0 before cutting over.');
   }
 
+  /**
+   * Everything the new hook must know about, which is broader than "currently reserved".
+   *
+   * `rewardStates[taskId]` is written when a task is FUNDED, not when it is claimed. A task
+   * funded but not yet claimed therefore holds a real configured reward and appears in no
+   * vault reservation at all. Carrying only the reserved set leaves those tasks with an empty
+   * state on the new hook, and `_reserveForWorker` then computes
+   * `bonusUsd = state.rewardUsd * bonusBps / 10000` = 0 and takes its `rate == 0 || bonusUsd == 0`
+   * branch: it emits `RewardReserved(taskId, worker, rate, 0)` and returns true. No revert, no
+   * error, USDC still settles -- the worker simply never receives a token reward.
+   *
+   * On the mainnet hook this is 58 tasks holding $608.78 of configured reward, against zero
+   * in-flight reservations, so the narrow filter would have carried nothing and reported success.
+   *
+   * `paid` states are excluded because `seedRewardStates` rejects them, and empty ones because
+   * there is nothing to carry -- that also drops reservations orphaned by an earlier swap, whose
+   * state lives on a hook that is no longer readable.
+   */
+  const toCarry: string[] = [];
+  let carriedReserved = 0;
+  let carriedConfigured = 0;
+  const candidates = new Set<string>([...configuredTaskIds, ...inFlight]);
+  for (const taskId of candidates) {
+    const state = (await withRetry(
+      () =>
+        publicClient.readContract({
+          abi: READ_ABI,
+          address: oldHook,
+          args: [taskId as `0x${string}`],
+          functionName: 'rewardStates',
+        }),
+      `rewardStates(${taskId})`
+    )) as readonly unknown[];
+    const rewardUsd = state[0] as bigint;
+    const isReserved = state[6] as boolean;
+    const isPaid = state[7] as boolean;
+    if (isPaid || rewardUsd === 0n) continue;
+    toCarry.push(taskId);
+    if (isReserved) carriedReserved += 1;
+    else carriedConfigured += 1;
+  }
+  console.log(
+    `reward states to carry: ${toCarry.length} ` +
+      `(${carriedReserved} reserved, ${carriedConfigured} funded but unclaimed)`
+  );
+
   // ── write ──────────────────────────────────────────────────────────────────
   if (!EXECUTE) {
     console.log('\nDry run. Re-run with --execute to send.');
     console.log(`Would send ${Math.ceil(rows.length / BATCH_SIZE)} seedWalletHistory batch(es)`);
-    if (inFlight.length) {
+    if (toCarry.length) {
       console.log(
-        `Would send ${Math.ceil(inFlight.length / BATCH_SIZE)} seedRewardStates batch(es)`
+        `Would send ${Math.ceil(toCarry.length / BATCH_SIZE)} seedRewardStates batch(es)`
       );
     }
     console.log('\nBans are only discoverable here from WalletBanned/WalletUnbanned events.');
@@ -399,6 +448,22 @@ async function main() {
   } as const;
   const walletClient = createWalletClient({ account, chain, transport: http(rpcUrl) });
 
+  /**
+   * Allocate nonces locally rather than asking the node per send.
+   *
+   * viem otherwise resolves each transaction's nonce with `eth_getTransactionCount(pending)`,
+   * and the node's mempool view can still lag a transaction we have already received a receipt
+   * for. Two consecutive batches then claim the same nonce and the second is rejected with
+   * `replacement transaction underpriced` -- which is what happened on the testnet rehearsal,
+   * between the wallet batch and the reward-state batch. Waiting longer would only make the
+   * race less likely; counting locally removes it. A migration with three sends has two chances
+   * to hit it, and the failure lands mid-migration with part of the state already written.
+   */
+  let nextNonce = await publicClient.getTransactionCount({
+    address: account.address,
+    blockTag: 'pending',
+  });
+
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const batch = rows.slice(i, i + BATCH_SIZE);
     const hash = await walletClient.writeContract({
@@ -411,6 +476,7 @@ async function main() {
         batch.map((r) => r.isBanned),
       ],
       functionName: 'seedWalletHistory',
+      nonce: nextNonce++,
     });
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
     if (receipt.status !== 'success') {
@@ -420,8 +486,8 @@ async function main() {
     console.log(`  seeded wallets ${i + 1}..${i + batch.length}  ${hash}`);
   }
 
-  for (let i = 0; i < inFlight.length; i += BATCH_SIZE) {
-    const batch = inFlight.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < toCarry.length; i += BATCH_SIZE) {
+    const batch = toCarry.slice(i, i + BATCH_SIZE);
     const states = await Promise.all(
       batch.map((taskId) =>
         publicClient.readContract({
@@ -438,6 +504,7 @@ async function main() {
       address: newHook,
       args: [batch as `0x${string}`[], states as never],
       functionName: 'seedRewardStates',
+      nonce: nextNonce++,
     });
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
     if (receipt.status !== 'success') {
