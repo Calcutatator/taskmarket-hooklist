@@ -120,7 +120,11 @@ export async function payX402Post<T = unknown>(
     onStep?.('payment');
     const probeRes = await fetch(`${deps.apiUrl}${path}`, {
       body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await getLegalRequestHeaders()),
+        [IDEMPOTENCY_KEY_HEADER]: idempotencyKey,
+      },
       method: 'POST',
     });
     if (probeRes.status !== 402) {
@@ -263,12 +267,17 @@ export async function payX402Post<T = unknown>(
 export async function probeX402Cost(
   path: string,
   body: Record<string, unknown>,
-  apiUrl: string
+  apiUrl: string,
+  idempotencyKey: string = newIdempotencyKey()
 ): Promise<string | null> {
   try {
     const probeRes = await fetch(`${apiUrl}${path}`, {
       body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(await getLegalRequestHeaders()),
+        [IDEMPOTENCY_KEY_HEADER]: idempotencyKey,
+      },
       method: 'POST',
     });
     if (probeRes.status !== 402) return null;

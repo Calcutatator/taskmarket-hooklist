@@ -1005,6 +1005,14 @@ describe('CreateTaskWizard', () => {
     );
     expect(onFunnelEvent).toHaveBeenCalledWith({ name: 'payment_started' });
     expect(onFunnelEvent).toHaveBeenCalledWith({ name: 'task_published' });
+    const taskRequests = fetchMock.mock.calls.filter(([url]) => url === '/api/tasks');
+    expect(taskRequests).toHaveLength(2);
+    const challengeHeaders = (taskRequests[0]?.[1] as { headers: Record<string, string> }).headers;
+    const paymentHeaders = (taskRequests[1]?.[1] as { headers: Record<string, string> }).headers;
+    expect(challengeHeaders['X-Taskmarket-Idempotency-Key']).toBeTruthy();
+    expect(challengeHeaders['X-Taskmarket-Idempotency-Key']).toBe(
+      paymentHeaders['X-Taskmarket-Idempotency-Key']
+    );
   });
 
   it('navigates once after publication when draft cleanup fails', async () => {
