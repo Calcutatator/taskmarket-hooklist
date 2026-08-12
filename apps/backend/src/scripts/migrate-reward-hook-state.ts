@@ -68,7 +68,10 @@ const VAULT_ABI = RewardVaultABI;
 const EXECUTE = process.argv.includes('--execute');
 
 const NETWORK = (process.env.NETWORK ?? 'mainnet').toLowerCase();
-const SUFFIX = NETWORK === 'mainnet' ? '_MAINNET' : '_SEPOLIA';
+// `_TESTNET`, not `_SEPOLIA`: that is the suffix every other FORGE_* variable in this repo uses.
+// Guessing the wrong one is quiet rather than loud -- each address resolves to undefined, the
+// Diamond lookup is skipped with a warning, and the run seeds an incomplete wallet set.
+const SUFFIX = NETWORK === 'mainnet' ? '_MAINNET' : '_TESTNET';
 
 function fromEnv(override: string | undefined, forgeName: string): string | undefined {
   return override ?? process.env[`FORGE_${forgeName}${SUFFIX}`];
