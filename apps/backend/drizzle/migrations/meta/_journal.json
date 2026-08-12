@@ -337,6 +337,13 @@
       "when": 1786380547000,
       "tag": "0047_relayed_intents_chain_scoped_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1786482576000,
+      "tag": "0048_email_sender_verification",
+      "breakpoints": true
     }
   ]
 }

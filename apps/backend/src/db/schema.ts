@@ -466,6 +466,10 @@ export const emails = pgTable(
     subject: text('subject'),
     bodyText: text('body_text'),
     bodyHtml: text('body_html'),
+    // What authenticated the sender, per the receiving MTA: 'pass' | 'fail' | 'unverified'.
+    // `fromAddress` is a header the sender writes, and inbound mail is accepted from any
+    // unauthenticated sender, so this is the field that says whether that address means anything.
+    senderVerification: text('sender_verification').notNull().default('unverified'),
     isRead: integer('is_read').notNull().default(0),
     receivedAt: timestamp('received_at').defaultNow().notNull(),
   },

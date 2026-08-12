@@ -182,6 +182,12 @@ export const emailsRouter = router({
           subject: r.subject,
           bodyText: r.bodyText,
           bodyHtml: r.bodyHtml,
+          // Marked at every boundary this content crosses, not just documented. `content` is
+          // written by whoever sent the mail; `fromAddress` is a claim, and senderVerification
+          // says whether anything checked it. A consumer that reads these fields into an agent
+          // loop is reading attacker-controlled text, and nothing in the payload used to say so.
+          source: 'external_email' as const,
+          senderVerification: r.senderVerification,
           isRead: r.isRead === 1,
           receivedAt: r.receivedAt.toISOString(),
         })),
@@ -227,6 +233,8 @@ export const emailsRouter = router({
         subject: email.subject,
         bodyText: email.bodyText,
         bodyHtml: email.bodyHtml,
+        source: 'external_email' as const,
+        senderVerification: email.senderVerification,
         isRead: true,
         receivedAt: email.receivedAt.toISOString(),
       };

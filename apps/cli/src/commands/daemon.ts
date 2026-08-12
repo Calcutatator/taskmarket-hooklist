@@ -46,6 +46,8 @@ interface EmailRow {
   subject: string | null;
   bodyText: string | null;
   receivedAt: string;
+  source?: string;
+  senderVerification?: string;
 }
 
 interface EmailListResult {
@@ -438,6 +440,15 @@ export const daemonCommand = new Command('daemon')
                       subject: email.subject,
                       bodyText: email.bodyText,
                       receivedAt: email.receivedAt,
+                      // Carried onto the event, not left in the API response. This stdout stream
+                      // is the documented machine-readable interface an agent framework consumes,
+                      // so it is the last boundary where anything can say what this content is:
+                      // text written by an unauthenticated sender, whose `fromAddress` is a claim
+                      // rather than an identity unless senderVerification says 'pass'. Defaulted
+                      // rather than omitted so a consumer never has to distinguish "old backend"
+                      // from "verified".
+                      source: email.source ?? 'external_email',
+                      senderVerification: email.senderVerification ?? 'unverified',
                     });
 
                     try {
