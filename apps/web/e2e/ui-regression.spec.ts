@@ -708,9 +708,8 @@ test('runs submitted HTML inline while isolating it from the platform and networ
 
   const dialog = page.getByRole('dialog');
   const frameTitle = 'Interactive preview of candidate-a-calculator.html';
-  // The gallery windows up to 3 adjacent panes (prev/current/next) at once, but only
-  // one entry in this fixture is the HTML artifact, so exactly one iframe with this
-  // title can ever be mounted regardless of how many panes are in the window.
+  // Neighboring panes may preload inert media, but executable HTML is mounted only
+  // while current so scripts, timers, and audio cannot survive a slide handoff.
   await expect(page.locator(`iframe[title="${frameTitle}"]`)).toHaveCount(1);
 
   const frameElement = dialog.getByTitle(frameTitle);
@@ -729,8 +728,13 @@ test('runs submitted HTML inline while isolating it from the platform and networ
   await expect(frame.getByRole('status')).toHaveText('15');
   expect(blockedNetworkRequests).toBe(0);
 
-  await closeArtifactDialog(page, dialog);
+  await dialog.focus();
+  await expect(dialog).toBeFocused();
+  await page.keyboard.press('ArrowRight');
   await expect(frameElement).toHaveCount(0);
+  await expect(dialog.locator('[data-gallery-current="true"] iframe')).toHaveCount(0);
+
+  await closeArtifactDialog(page, dialog);
 });
 
 test('opens a shared HTML result directly and returns to the stable task URL on close', async ({

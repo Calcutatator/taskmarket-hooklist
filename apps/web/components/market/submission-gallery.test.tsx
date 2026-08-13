@@ -1146,12 +1146,12 @@ describe('SubmissionGalleryDialog', () => {
     const currentFrame = dialog.querySelector(
       '[data-gallery-current="true"] iframe'
     ) as HTMLIFrameElement;
-    const neighborFrame = dialog.querySelector('[aria-hidden="true"] iframe') as HTMLIFrameElement;
+    expect(dialog.querySelector('[aria-hidden="true"] iframe')).not.toBeInTheDocument();
     fireEvent(
       window,
       new MessageEvent('message', {
         data: INTERACTIVE_HTML_ESCAPE_MESSAGE,
-        source: neighborFrame.contentWindow,
+        source: window,
       })
     );
     expect(dialog).toHaveAttribute('data-full-viewport', 'true');
@@ -1164,6 +1164,48 @@ describe('SubmissionGalleryDialog', () => {
       })
     );
     expect(dialog).toHaveAttribute('data-full-viewport', 'false');
+
+    fetchMock.mockRestore();
+  });
+
+  it('unmounts the previous interactive HTML document when advancing to another HTML slide', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      text: async () => '<html><body><button>Interactive control</button></body></html>',
+    } as Response);
+    const nextHtml = artifact({
+      ...gameHtml,
+      fileName: 'next-game.html',
+      id: 'artifact-html-next',
+      previewUrl: 'https://files.example.com/next-game.html',
+      submissionId: 'sub-html-next',
+    });
+    const user = userEvent.setup();
+
+    renderPanel([
+      submission(
+        'sub-html',
+        '0x7777777777777777777777777777777777777777',
+        [gameHtml],
+        '2026-01-02T00:00:00.000Z'
+      ),
+      submission(
+        'sub-html-next',
+        '0x8888888888888888888888888888888888888888',
+        [nextHtml],
+        '2026-01-01T00:00:00.000Z'
+      ),
+    ]);
+
+    await user.click(screen.getByRole('button', { name: /gallery/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    const firstFrame = await within(dialog).findByTitle('Interactive preview of game.html');
+    await user.click(within(dialog).getByRole('button', { name: /next artifact/i }));
+
+    await within(dialog).findByTitle('Interactive preview of next-game.html');
+    expect(firstFrame).not.toBeInTheDocument();
+    expect(dialog.querySelectorAll('iframe')).toHaveLength(1);
 
     fetchMock.mockRestore();
   });
@@ -1199,7 +1241,7 @@ describe('SubmissionGalleryDialog', () => {
     fetchMock.mockRestore();
   });
 
-  it('mounts at most 3 panes even with 150 entries (windowed mounting)', async () => {
+  it('mounts only the current HTML document even with 150 entries', async () => {
     const htmlContent = '<html><body><output>ready</output></body></html>';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
@@ -1232,12 +1274,12 @@ describe('SubmissionGalleryDialog', () => {
     const dialog = await screen.findByRole('dialog');
     await within(dialog).findAllByTitle(/Interactive preview of/i);
 
-    expect(dialog.querySelectorAll('iframe')).toHaveLength(3);
+    expect(dialog.querySelectorAll('iframe')).toHaveLength(1);
 
     fetchMock.mockRestore();
   });
 
-  it('recenters the mounted window on the new index after advancing', async () => {
+  it('replaces the active HTML document after advancing in a large gallery', async () => {
     const htmlContent = '<html><body><output>ready</output></body></html>';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
@@ -1271,21 +1313,16 @@ describe('SubmissionGalleryDialog', () => {
     await user.click(screen.getByRole('button', { name: /gallery/i }));
 
     const dialog = await screen.findByRole('dialog');
-    await within(dialog).findAllByTitle(/Interactive preview of/i);
-    expect(dialog.querySelectorAll('iframe')).toHaveLength(3);
-    // Starting at index 0, the window holds entries 5 (wrap), 0, and 1.
+    await within(dialog).findByTitle('Interactive preview of game-0.html');
+    expect(dialog.querySelectorAll('iframe')).toHaveLength(1);
     expect(dialog.querySelectorAll('[title="Interactive preview of game-2.html"]')).toHaveLength(0);
 
     await user.click(within(dialog).getByRole('button', { name: /next artifact/i }));
-    await within(dialog).findByTitle('Interactive preview of game-2.html');
+    await within(dialog).findByTitle('Interactive preview of game-1.html');
 
-    // The window recenters on index 1: entries 0, 1, and 2 are now mounted, and the
-    // far entry (5) that fell outside the new window is unmounted.
-    expect(dialog.querySelectorAll('iframe')).toHaveLength(3);
-    expect(dialog.querySelectorAll('[title="Interactive preview of game-5.html"]')).toHaveLength(0);
-    expect(within(dialog).getByTitle('Interactive preview of game-0.html')).toBeInTheDocument();
-    expect(within(dialog).getByTitle('Interactive preview of game-1.html')).toBeInTheDocument();
-    expect(within(dialog).getByTitle('Interactive preview of game-2.html')).toBeInTheDocument();
+    expect(dialog.querySelectorAll('iframe')).toHaveLength(1);
+    expect(dialog.querySelector('[title="Interactive preview of game-0.html"]')).toBeNull();
+    expect(dialog.querySelector('[title="Interactive preview of game-2.html"]')).toBeNull();
 
     fetchMock.mockRestore();
   });
@@ -1750,7 +1787,7 @@ describe('SubmissionGalleryDialog mobile surface', () => {
     expect(next).not.toHaveClass('opacity-0');
   });
 
-  it('mounts at most 3 panes even with 50 entries on mobile (windowed mounting regression)', async () => {
+  it('mounts only the current HTML document on mobile even with 50 entries', async () => {
     setupMatchMedia(390);
     const htmlContent = '<html><body><output>ready</output></body></html>';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
@@ -1784,7 +1821,7 @@ describe('SubmissionGalleryDialog mobile surface', () => {
     const dialog = await screen.findByRole('dialog');
     await within(dialog).findAllByTitle(/Interactive preview of/i);
 
-    expect(dialog.querySelectorAll('iframe')).toHaveLength(3);
+    expect(dialog.querySelectorAll('iframe')).toHaveLength(1);
 
     fetchMock.mockRestore();
   });

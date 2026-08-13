@@ -337,11 +337,10 @@ function SubmissionGalleryDialogInner({
   const currentVideoAspectRatio =
     currentVideoAspect?.artifactId === artifact.id ? currentVideoAspect.ratio : null;
 
-  // Warm the browser cache for the two adjacent images so paging feels instant. Any
-  // adjacent artifact's own preview URL (any media kind, including interactive HTML)
-  // is warmed by windowed mounting itself: the previous/next GallerySlide instances
-  // fetch their own artifact's preview URL as soon as they mount, exactly like the
-  // current slide does.
+  // Warm the browser cache for the two adjacent images so paging feels instant. The
+  // previous/next GallerySlide instances also resolve their own preview URLs, but an
+  // interactive HTML document is deliberately mounted only while current so its
+  // scripts cannot keep running after the user advances.
   useEffect(() => {
     if (!open || count < 2) {
       return;
@@ -767,9 +766,9 @@ type GallerySlideProps = {
 };
 
 // One mounted pane of the windowed carousel. Each slide owns its own artifact's
-// preview-URL lifecycle independently rather than lifting it to the parent, which is
-// what lets the previous/next slides warm their own content ahead of a swipe while
-// the parent still only ever hands out 3 slots (see gallerySlots).
+// preview-URL lifecycle independently rather than lifting it to the parent. The
+// parent still only ever hands out 3 slots (see gallerySlots), while interactive HTML
+// content is mounted only in the current slot to enforce a single active document.
 function GallerySlide({
   entry,
   motionDisabled,
@@ -934,7 +933,7 @@ function GalleryNonVideoPreview({
     </div>
   ) : !previewUrl ? (
     <p className="p-4 text-sm text-muted-foreground">Loading artifact preview...</p>
-  ) : isInteractiveHtmlArtifact(artifact) ? (
+  ) : isInteractiveHtmlArtifact(artifact) && open && isCurrent ? (
     <InteractiveHtmlPreview
       artifact={artifact}
       classNames={showWarning ? GALLERY_HTML_CLASS_NAMES : GALLERY_HTML_CLASS_NAMES_COMPACT}

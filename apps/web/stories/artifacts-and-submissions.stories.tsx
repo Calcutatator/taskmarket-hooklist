@@ -85,6 +85,12 @@ const htmlArtifact = artifactFixture({
   sizeBytes: 812,
   storageUri: 'ipfs://bafybeifake/interactive-report.html',
 });
+const secondaryHtmlArtifact = artifactFixture({
+  ...htmlArtifact,
+  fileName: 'interactive-dashboard.html',
+  id: 'artifact-html-dashboard',
+  storageUri: 'ipfs://bafybeifake/interactive-dashboard.html',
+});
 const videoArtifact = artifactFixture({
   fileName: 'demo.mp4',
   id: 'artifact-video',
@@ -160,6 +166,19 @@ const submissions = [
     artifacts: [documentArtifact],
     id: 'submission-3',
     submittedAt: '2026-08-02T04:00:00.000Z',
+  }),
+];
+const interactiveGallerySubmissions = [
+  submissionFixture({ artifacts: [imageArtifact], id: 'submission-gallery-image' }),
+  submissionFixture({
+    artifacts: [htmlArtifact],
+    id: 'submission-gallery-html-report',
+    submittedAt: '2026-08-02T03:00:00.000Z',
+  }),
+  submissionFixture({
+    artifacts: [secondaryHtmlArtifact],
+    id: 'submission-gallery-html-dashboard',
+    submittedAt: '2026-08-02T02:00:00.000Z',
   }),
 ];
 const groups = groupSubmissionsByWorker(submissions);
@@ -397,7 +416,7 @@ export const FullscreenInteractiveHtmlGallery: Story = {
   render: () => (
     <SubmissionGalleryDialog
       contextLabel="Protocol review submissions"
-      entries={submissionMediaEntries(submissions)}
+      entries={submissionMediaEntries(interactiveGallerySubmissions)}
       initialArtifactId={null}
       onOpenChange={() => undefined}
       open
@@ -426,6 +445,13 @@ export const FullscreenInteractiveHtmlGallery: Story = {
     const frame = await gallery.findByTitle('Interactive preview of interactive-report.html');
 
     await expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
+    await expect(gallery.queryAllByTitle(/Interactive preview of/i)).toHaveLength(1);
+    await userEvent.click(gallery.getByRole('button', { name: 'Next artifact' }));
+    await expect(
+      await gallery.findByTitle('Interactive preview of interactive-dashboard.html')
+    ).toBeVisible();
+    await expect(frame).not.toBeInTheDocument();
+    await expect(gallery.queryAllByTitle(/Interactive preview of/i)).toHaveLength(1);
     const enterFullScreen = gallery.queryByRole('button', { name: 'Enter full screen' });
     if (!enterFullScreen) {
       await expect(gallery.getByRole('button', { name: 'Close submission gallery' })).toBeVisible();
