@@ -49,6 +49,7 @@ vi.mock('motion/react', () => ({
     }: Record<string, unknown>) => <span data-motion-span="true" {...props} />,
   },
   useReducedMotion: () => reducedMotionState.value,
+  useReducedMotionConfig: () => reducedMotionState.value,
 }));
 
 const REQUESTER = '0x1111111111111111111111111111111111111111';

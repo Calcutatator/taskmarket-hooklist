@@ -8,6 +8,7 @@ import { useHydrationSafeMotionDisabled } from '@/components/market/motion/use-m
 type MotionShellProps = {
   children: ReactNode;
   className?: string;
+  'data-testid'?: string;
   delay?: number;
   motionId: string;
   stagger?: number;
@@ -49,6 +50,7 @@ const itemVariants = {
 export function LandingMotionGroup({
   children,
   className,
+  'data-testid': testId,
   delay,
   motionId,
   stagger,
@@ -60,6 +62,7 @@ export function LandingMotionGroup({
       animate={motionDisabled ? undefined : 'show'}
       className={className}
       data-motion={motionId}
+      data-testid={testId}
       initial={motionDisabled ? false : 'hidden'}
       variants={motionDisabled ? undefined : groupVariants(delay, stagger)}
     >

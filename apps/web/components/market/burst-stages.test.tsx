@@ -17,6 +17,7 @@ vi.mock('motion/react', () => ({
     }: Record<string, unknown>) => <div data-animate={animate ? 'true' : 'false'} {...props} />,
   },
   useReducedMotion: () => reducedMotionState.value,
+  useReducedMotionConfig: () => reducedMotionState.value,
 }));
 
 describe('BurstStages reduced motion', () => {

@@ -115,6 +115,7 @@ vi.mock('motion/react', () => ({
     }: Record<string, unknown>) => <div data-motion-div="true" {...props} />,
   },
   useReducedMotion: () => reducedMotionState.value,
+  useReducedMotionConfig: () => reducedMotionState.value,
 }));
 
 vi.mock('next/link', () => ({

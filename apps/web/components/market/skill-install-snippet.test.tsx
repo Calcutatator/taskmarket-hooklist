@@ -18,6 +18,7 @@ describe('SkillInstallSnippet', () => {
 
     expect(screen.getByRole('button', { name: /^npx$/i })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText(commands.npx)).toBeVisible();
+    expect(screen.getByLabelText('Skill install command')).toHaveAttribute('tabindex', '0');
 
     await user.click(screen.getByRole('button', { name: /^curl$/i }));
 

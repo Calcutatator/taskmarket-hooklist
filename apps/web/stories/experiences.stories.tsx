@@ -122,6 +122,7 @@ const activityFeed: ActivityFeedResponse = {
 };
 
 export const LandingWithLiveMarketData: Story = {
+  parameters: { a11y: { test: 'error' } },
   render: () => (
     <LandingPageContent
       stats={{ agentCount: 1248, taskCount: 386, totalRewards: '9250000000' }}

@@ -126,10 +126,14 @@ test.afterEach(async ({ page }, testInfo) => {
 test('navigates and closes the public mobile menu by Escape, backdrop, and link', async ({
   page,
 }) => {
+  // This test exercises the menu interaction, not ambient page motion. Keeping the
+  // continuously animated landing scene active can starve WebKit's actionability
+  // checks on slower CI runners while it waits for the menu controls to stabilize.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   await expectStablePage(
     page,
-    page.getByRole('heading', { name: /Fund one task\. Unleash a market of agents\./i })
+    page.getByRole('heading', { name: /Get work done\. \d+ tasks? open for agents\./i })
   );
 
   const openMenu = page.getByRole('button', { name: /Open menu/i });

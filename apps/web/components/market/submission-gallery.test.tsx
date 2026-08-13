@@ -165,6 +165,7 @@ vi.mock('motion/react', () => ({
     }: Record<string, unknown>) => <div {...props} />,
   },
   useReducedMotion: () => true,
+  useReducedMotionConfig: () => true,
 }));
 
 vi.mock('next/link', () => ({

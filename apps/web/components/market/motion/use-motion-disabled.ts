@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useReducedMotion } from 'motion/react';
+import { useReducedMotionConfig } from 'motion/react';
 
 // Skip animation under reduced-motion, jsdom, and tests so the static markup
 // matches the server-rendered tree byte-for-byte. Shared by every animated
@@ -8,7 +8,7 @@ export function useMotionDisabled() {
   const isJsdom =
     typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('jsdom');
 
-  return useReducedMotion() || isJsdom || process.env.NODE_ENV === 'test';
+  return useReducedMotionConfig() || isJsdom || process.env.NODE_ENV === 'test';
 }
 
 // Critical first-paint content uses a static server/client tree, then opts into

@@ -100,35 +100,30 @@ function renderLanding(props?: {
 }
 
 describe('LandingPageContent', () => {
-  it('links the primary buyer actions into market destinations', () => {
+  it('links both sides of the hero into their market destinations', () => {
     const { container } = renderLanding();
 
     // The shared navbar/header now lives in the public route-group layout, not
     // in LandingPageContent.
     expect(container.querySelector('header')).toBeNull();
     expect(screen.queryByRole('navigation', { name: /primary/i })).not.toBeInTheDocument();
-    const heroEarnAction = container.querySelector(
-      '[data-motion="landing-hero-action-earn"]'
-    ) as HTMLElement;
-    expect(within(heroEarnAction).getByRole('link', { name: /^earn usdc now$/i })).toHaveAttribute(
-      'href',
-      '/live'
-    );
     const heroPostAction = container.querySelector(
       '[data-motion="landing-hero-action-post"]'
     ) as HTMLElement;
     expect(within(heroPostAction).getByRole('link', { name: /^post a task$/i })).toHaveAttribute(
-      'data-variant',
-      'ghost'
-    );
-    expect(within(heroPostAction).getByRole('link', { name: /^post a task$/i })).toHaveAttribute(
       'href',
       '/dashboard/tasks/new'
     );
-    expect(screen.queryByRole('link', { name: /^watch open market$/i })).not.toBeInTheDocument();
+    const heroBrowseAction = container.querySelector(
+      '[data-motion="landing-hero-action-browse"]'
+    ) as HTMLElement;
+    expect(within(heroBrowseAction).getByRole('link', { name: /^browse work$/i })).toHaveAttribute(
+      'href',
+      '/live'
+    );
     expect(
       screen.getByText(
-        /escrow usdc once, route the brief across autonomous workers, compare bids, pitches, proofs, and submissions live/i
+        /fund tasks and choose the best result, or put your agents to work and earn usdc/i
       )
     ).toBeVisible();
     expect(
@@ -141,47 +136,45 @@ describe('LandingPageContent', () => {
     );
     expect(
       container.querySelector(
-        '[data-motion="landing-hero-install-snippet"] [data-slot="skill-install-snippet"]'
+        '[data-testid="landing-market-loop"] [data-slot="skill-install-snippet"]'
       )
-    ).toHaveClass('skill-install-snippet--highlighted');
+    ).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /read protocol/i })).not.toBeInTheDocument();
-    expect(container.querySelector('[data-testid="hero-dotted-wave"]')).toBeInTheDocument();
-    expect(
-      container.querySelector('[data-testid="hero-compute-exchange"]')
-    ).not.toBeInTheDocument();
+    expect(container.querySelector('[data-testid="hero-dotted-wave"]')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-testid="landing-market-loop"]')).toBeInTheDocument();
   });
 
-  it('renders buyer-first hero stats below the install snippet', () => {
+  it('places live proof with the audience it serves', () => {
     const { container } = renderLanding({ tasks: [liveTask] });
 
     const heroHeading = screen.getByRole('heading', {
-      name: /fund one task\. unleash a market of agents\./i,
+      name: /get work done\. 12 tasks open for agents\./i,
     });
     const heroSection = heroHeading.closest('section');
-    const heroStats = container.querySelector('[data-testid="hero-market-stats"]');
+    const buyerProof = container.querySelector('[data-testid="landing-buyer-card-proof"]');
+    const agentProof = container.querySelector('[data-testid="landing-agent-card-proof"]');
+    const skillRail = container.querySelector('[data-testid="landing-market-skill"]');
 
     expect(heroSection).not.toBeNull();
-    expect(heroStats).not.toBeNull();
-    expect(heroSection).toContainElement(heroStats as HTMLElement);
-    expect(within(heroStats as HTMLElement).getByText(/^Open tasks$/i)).toBeVisible();
-    expect(within(heroStats as HTMLElement).getByText(/^12$/i)).toBeVisible();
-    expect(within(heroStats as HTMLElement).getByText(/^Registered agents$/i)).toBeVisible();
-    expect(within(heroStats as HTMLElement).getByText(/^4$/i)).toBeVisible();
-    expect(within(heroStats as HTMLElement).getByText(/^Funded volume$/i)).toBeVisible();
-    expect(within(heroStats as HTMLElement).getByLabelText('25.00')).toBeVisible();
-    expect(within(heroStats as HTMLElement).getByText(/^USDC$/i)).toBeVisible();
+    expect(buyerProof).not.toBeNull();
+    expect(agentProof).not.toBeNull();
+    expect(skillRail).not.toBeNull();
+    expect(heroSection).toContainElement(buyerProof as HTMLElement);
+    expect(heroSection).toContainElement(agentProof as HTMLElement);
+    expect(heroSection).toContainElement(skillRail as HTMLElement);
+    expect(within(skillRail as HTMLElement).getByText(/^Add the Taskmarket skill$/i)).toBeVisible();
+    expect(within(buyerProof as HTMLElement).getByText(/^Registered agents$/i)).toBeVisible();
+    expect(within(buyerProof as HTMLElement).getByLabelText('4')).toBeVisible();
+    expect(within(agentProof as HTMLElement).getByText(/^Funded volume$/i)).toBeVisible();
+    expect(within(agentProof as HTMLElement).getByLabelText('25.00')).toBeVisible();
+    expect(within(agentProof as HTMLElement).getByText(/^USDC$/i)).toBeVisible();
     expect(
-      within(heroStats as HTMLElement).getByRole('link', {
-        name: /view open tasks in dashboard/i,
-      })
-    ).toHaveAttribute('href', '/dashboard/tasks');
-    expect(
-      within(heroStats as HTMLElement).getByRole('link', {
+      within(buyerProof as HTMLElement).getByRole('link', {
         name: /view registered agents in dashboard/i,
       })
     ).toHaveAttribute('href', '/dashboard/agents');
     expect(
-      within(heroStats as HTMLElement).getByRole('link', {
+      within(agentProof as HTMLElement).getByRole('link', {
         name: /view funded volume in dashboard/i,
       })
     ).toHaveAttribute('href', '/dashboard?section=activity');
@@ -195,12 +188,12 @@ describe('LandingPageContent', () => {
     expect(container.querySelector('[data-motion="landing-hero-copy"]')).toBeInTheDocument();
     expect(container.querySelector('[data-motion="landing-hero-title"]')).toContainElement(
       screen.getByRole('heading', {
-        name: /fund one task\. unleash a market of agents\./i,
+        name: /get work done\. 12 tasks open for agents\./i,
       })
     );
     expect(container.querySelector('[data-motion="landing-hero-actions"]')).toBeInTheDocument();
-    expect(container.querySelector('[data-motion="landing-hero-install"]')).toBeInTheDocument();
-    expect(container.querySelector('[data-motion="landing-hero-stats"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-motion="landing-hero-diagram"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="landing-market-skill"]')).toBeInTheDocument();
     expect(container.querySelector('[data-motion="landing-section-why"]')).toBeInTheDocument();
     expect(
       container.querySelector('[data-motion="landing-section-mechanics"]')
@@ -229,7 +222,7 @@ describe('LandingPageContent', () => {
 
     expect(hero).toContainElement(
       screen.getByRole('heading', {
-        name: /fund one task\. unleash a market of agents\./i,
+        name: /get work done\. 12 tasks open for agents\./i,
       })
     );
     expect(whySection).toContainElement(

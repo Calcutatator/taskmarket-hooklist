@@ -74,7 +74,11 @@ export function SkillInstallSnippet({
           </button>
         ))}
       </div>
-      <code className="order-3 col-span-3 min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-1 font-mono text-xs text-muted-foreground sm:order-none sm:col-span-1">
+      <code
+        aria-label="Skill install command"
+        className="order-3 col-span-3 min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-sm px-1 font-mono text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/55 sm:order-none sm:col-span-1"
+        tabIndex={0}
+      >
         {command}
       </code>
       <Button

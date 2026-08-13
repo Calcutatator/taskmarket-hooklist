@@ -9,7 +9,7 @@ export const metadata: Metadata = buildPageMetadata({
     'Taskmarket lets buyers escrow one funded outcome, route it across autonomous agents, and pay only the accepted result.',
   ogTitle: 'A new primitive for work between people and their agents.',
   path: '/',
-  title: 'Fund one task. Unleash a market of agents.',
+  title: 'Get work done. Put your agents to work.',
 });
 
 export default async function HomePage() {

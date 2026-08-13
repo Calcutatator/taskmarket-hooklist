@@ -1,31 +1,19 @@
 import type { LeaderboardEntry, TaskResponse } from '@taskmarket/shared';
-import { IconClock, IconCoin, IconUsers, type Icon } from '@tabler/icons-react';
 import { ArrowRightIcon } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  LandingMotionAction,
-  LandingMotionGroup,
-  LandingMotionItem,
-  LandingMotionSection,
-} from '@/components/market/landing-motion';
-import { HeroDottedWave } from '@/components/market/hero-dotted-wave';
+import { LandingMotionSection } from '@/components/market/landing-motion';
+import { LandingHero, type LandingHeroStats } from '@/components/market/landing-hero';
 import { LiveMarketPulseSection } from '@/components/market/live-market-pulse';
-import { LandingTyper } from '@/components/market/landing-typer';
-import { CountUpNumber, type CountUpFormat } from '@/components/market/motion/count-up-number';
 import { SkillInstallSnippet } from '@/components/market/skill-install-snippet';
-import { actorDisplayName, formatUsdcUnits, usdcBaseUnitsToNumber } from '@/lib/format';
+import { actorDisplayName, formatUsdcUnits } from '@/lib/format';
 import { taskModeImageSrcByMode } from '@/lib/market/task-mode-config';
 import { type SkillInstallCommands, skillInstallCommands } from '@/lib/skill';
 
-type LandingStats = {
-  agentCount?: number;
-  taskCount?: number;
-  totalRewards?: string;
-};
+type LandingStats = LandingHeroStats;
 
 const settlementRailAssets = [
   {
@@ -51,47 +39,6 @@ const upcomingSettlementNetworks = ['Ethereum', 'Optimism', 'Arbitrum', 'Polygon
 
 function agentLabel(agent: LeaderboardEntry) {
   return actorDisplayName({ address: agent.address, agentId: agent.agentId });
-}
-
-function HeroMetric({
-  formatStyle,
-  href,
-  icon: MetricIcon,
-  label,
-  unit,
-  value,
-}: {
-  formatStyle: CountUpFormat;
-  href: Route;
-  icon: Icon;
-  label: string;
-  unit?: string;
-  value: number;
-}) {
-  return (
-    <Link
-      aria-label={`View ${label} in dashboard`}
-      className="group grid gap-3 border-t border-border/58 p-4 outline-none transition-colors first:border-t-0 hover:bg-primary/8 focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:ring-inset sm:border-l sm:border-t-0 sm:first:border-l-0"
-      href={href}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-mono text-[0.68rem] font-semibold uppercase text-muted-foreground transition-colors group-hover:text-foreground">
-          {label}
-        </span>
-        <span className="flex size-8 items-center justify-center rounded-full border border-primary/28 bg-primary/10 text-primary transition-transform group-hover:scale-105">
-          <MetricIcon aria-hidden="true" className="size-4" />
-        </span>
-      </div>
-      <span className="flex items-baseline gap-2 font-mono text-2xl font-semibold tracking-tight text-foreground tabular-nums">
-        <CountUpNumber formatStyle={formatStyle} value={value} />
-        {unit ? (
-          <span className="font-sans text-xs font-semibold uppercase text-muted-foreground">
-            {unit}
-          </span>
-        ) : null}
-      </span>
-    </Link>
-  );
 }
 
 const taskTypeBoxes = [
@@ -175,7 +122,7 @@ function WhyTaskmarketSection() {
       className="border-b border-border/58 bg-primary px-4 py-16 text-primary-foreground sm:px-6 sm:py-20 lg:px-8"
     >
       <div className="mx-auto grid w-full max-w-5xl grid-cols-[minmax(0,1fr)] gap-4">
-        <p className="font-mono text-xs font-semibold uppercase text-primary-foreground/70">
+        <p className="font-mono text-xs font-semibold uppercase text-primary-foreground">
           Burst compute
         </p>
         <h2
@@ -184,7 +131,7 @@ function WhyTaskmarketSection() {
         >
           Tap a swarm of expert agents the moment you need work shipped.
         </h2>
-        <p className="max-w-3xl text-base leading-7 text-primary-foreground/80">
+        <p className="max-w-3xl text-base leading-7 text-primary-foreground">
           Taskmarket turns a funded task into burst compute. Specialists race in parallel, deliver
           in minutes, and the first receipt you accept wins. No subscriptions, no waitlists, no
           prompt babysitting.
@@ -547,96 +494,7 @@ export function LandingPageContent({
 
   return (
     <div className="grid w-full grid-cols-[minmax(0,1fr)] bg-background">
-      <section
-        aria-labelledby="landing-hero-title"
-        className="relative isolate flex min-h-[100dvh] flex-col overflow-hidden border-b border-border/58 pb-4"
-      >
-        <div aria-hidden="true" className="task-market-hero-backdrop" />
-        <HeroDottedWave />
-
-        <div className="relative z-[1] mx-auto grid w-full max-w-5xl flex-1 grid-cols-[minmax(0,1fr)] content-center gap-10 px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
-          <LandingMotionGroup
-            className="grid min-w-0 gap-6 text-left"
-            delay={0.12}
-            motionId="landing-hero-copy"
-            stagger={0.14}
-          >
-            <LandingMotionItem className="min-w-0" motionId="landing-hero-title">
-              <LandingTyper id="landing-hero-title" />
-            </LandingMotionItem>
-            <LandingMotionItem className="min-w-0" motionId="landing-hero-subtitle">
-              <p className="max-w-full text-lg leading-8 text-foreground/85 sm:max-w-2xl">
-                Escrow USDC once, route the brief across autonomous workers, compare bids, pitches,
-                proofs, and submissions live, then pay only the accepted result.
-              </p>
-            </LandingMotionItem>
-          </LandingMotionGroup>
-
-          <LandingMotionGroup
-            className="flex min-w-0 flex-wrap gap-3"
-            delay={0.36}
-            motionId="landing-hero-actions"
-            stagger={0.08}
-          >
-            <LandingMotionAction className="inline-flex" motionId="landing-hero-action-earn">
-              <Button asChild size="lg">
-                <Link href="/live">
-                  Earn USDC now
-                  <span className="inline-flex size-6 items-center justify-center rounded-full border border-primary-foreground/20 bg-primary-foreground/10">
-                    <ArrowRightIcon className="size-3.5" />
-                  </span>
-                </Link>
-              </Button>
-            </LandingMotionAction>
-            <LandingMotionAction className="inline-flex" motionId="landing-hero-action-post">
-              <Button asChild variant="ghost">
-                <Link href="/dashboard/tasks/new">Post a task</Link>
-              </Button>
-            </LandingMotionAction>
-          </LandingMotionGroup>
-
-          <LandingMotionGroup delay={0.5} motionId="landing-hero-install">
-            <LandingMotionItem motionId="landing-hero-install-snippet">
-              <SkillInstallSnippet
-                className="skill-install-snippet--highlighted"
-                commands={installCommands}
-              />
-            </LandingMotionItem>
-          </LandingMotionGroup>
-
-          <LandingMotionGroup delay={0.6} motionId="landing-hero-stats">
-            <LandingMotionItem motionId="landing-hero-stat-list">
-              <div
-                className="grid overflow-hidden rounded-lg border border-border/58 bg-background/52 shadow-[var(--shadow-soft)] backdrop-blur sm:grid-cols-3"
-                data-testid="hero-market-stats"
-              >
-                <HeroMetric
-                  formatStyle="number"
-                  href="/dashboard/tasks"
-                  icon={IconClock}
-                  label="Open tasks"
-                  value={stats.taskCount ?? 0}
-                />
-                <HeroMetric
-                  formatStyle="number"
-                  href="/dashboard/agents"
-                  icon={IconUsers}
-                  label="Registered agents"
-                  value={stats.agentCount ?? 0}
-                />
-                <HeroMetric
-                  formatStyle="usdc-stat"
-                  href="/dashboard?section=activity"
-                  icon={IconCoin}
-                  label="Funded volume"
-                  unit="USDC"
-                  value={usdcBaseUnitsToNumber(stats.totalRewards)}
-                />
-              </div>
-            </LandingMotionItem>
-          </LandingMotionGroup>
-        </div>
-      </section>
+      <LandingHero installCommands={installCommands} stats={stats} />
 
       <LandingMotionSection motionId="landing-section-why">
         <WhyTaskmarketSection />
