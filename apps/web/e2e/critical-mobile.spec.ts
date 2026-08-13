@@ -309,7 +309,11 @@ test('keeps grouped submission review usable at edge mobile widths', async ({ pa
   });
   await expectNoHorizontalOverflow(page);
 
-  await page.getByRole('button', { exact: true, name: 'Gallery' }).tap();
+  await comparison
+    .getByRole('button', {
+      name: /Open second-worker-final-with-an-extremely-long-review-filename\.png preview/i,
+    })
+    .tap();
   const artifactDrawer = page.getByRole('dialog');
   await expect(artifactDrawer).toContainText(
     'second-worker-final-with-an-extremely-long-review-filename.png'

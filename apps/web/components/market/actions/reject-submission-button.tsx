@@ -34,6 +34,7 @@ export type WorkerRejectionTarget = {
 export type RejectSubmissionButtonProps = Omit<TaskActionComponentProps, 'action'> & {
   action?: Pick<PendingAction, 'command'>;
   onRejectSuccess?: (workerKey: string) => void;
+  presentation?: 'compact' | 'default';
   target?: WorkerRejectionTarget;
 };
 
@@ -41,6 +42,7 @@ export function RejectSubmissionButton({
   disabled,
   onRejectSuccess,
   onSuccess,
+  presentation = 'default',
   task,
   action,
   target,
@@ -146,9 +148,11 @@ export function RejectSubmissionButton({
     >
       {busy
         ? 'Rejecting...'
-        : target
-          ? `Reject submitter and all ${submissionLabel}`
-          : 'Reject submission'}
+        : presentation === 'compact'
+          ? 'Reject'
+          : target
+            ? `Reject submitter and all ${submissionLabel}`
+            : 'Reject submission'}
     </Button>
   );
 
@@ -191,10 +195,12 @@ export function RejectSubmissionButton({
           }}
         />
       ) : null}
-      <p className="text-xs text-muted-foreground">
-        Costs 0.001 USDC relay fee. Rejected workers cannot resubmit. Once all submissions are
-        rejected, the task can be cancelled.
-      </p>
+      {presentation === 'default' ? (
+        <p className="text-xs text-muted-foreground">
+          Costs 0.001 USDC relay fee. Rejected workers cannot resubmit. Once all submissions are
+          rejected, the task can be cancelled.
+        </p>
+      ) : null}
       {wrongRequester ? (
         <p className="text-xs text-destructive">
           Connect the requester wallet to reject submissions.

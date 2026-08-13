@@ -11,6 +11,7 @@ import {
   useState,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   type SyntheticEvent,
 } from 'react';
 
@@ -165,10 +166,12 @@ type SubmissionGalleryDialogProps = {
   entries: SubmissionMediaEntry[];
   entryPolicy?: SubmissionGalleryEntryPolicy;
   initialArtifactId: string | null;
+  onEntryChange?: (entry: SubmissionMediaEntry) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   preferredArtifactType?: SubmissionArtifactType | null;
   profileBasePath: string;
+  renderActionArea?: (entry: SubmissionMediaEntry) => ReactNode;
   sessionKey?: string;
   taskId: string;
 };
@@ -221,10 +224,12 @@ function SubmissionGalleryDialogInner({
   contextLabel,
   entries,
   initialArtifactId,
+  onEntryChange,
   onOpenChange,
   open,
   preferredArtifactType,
   profileBasePath,
+  renderActionArea,
   taskId,
 }: SubmissionGalleryDialogProps) {
   const [selectedArtifactId, setSelectedArtifactId] = useState(initialArtifactId);
@@ -310,6 +315,14 @@ function SubmissionGalleryDialogInner({
     address: submission.workerAddress,
     agentId: submission.workerAgentId,
   });
+  const onEntryChangeRef = useRef(onEntryChange);
+  onEntryChangeRef.current = onEntryChange;
+
+  useEffect(() => {
+    if (open) {
+      onEntryChangeRef.current?.(entry);
+    }
+  }, [entry, open]);
 
   // The Details disclosure below the frame reads the current entry's preview URL, but
   // that URL is now owned inside whichever GallerySlide is mounted at offset 0 (each
@@ -636,6 +649,7 @@ function SubmissionGalleryDialogInner({
       </details>
     </div>
   );
+  const actionArea = renderActionArea?.(entry);
 
   if (isMobile) {
     return (
@@ -678,11 +692,14 @@ function SubmissionGalleryDialogInner({
           {artifactFilterControls}
           <div className="grid min-h-0 flex-1 overflow-hidden p-2">{playfield}</div>
           <div
-            className="flex shrink-0 items-start justify-between gap-2 border-t border-border/58 px-4 py-2"
+            className="grid shrink-0 gap-2 border-t border-border/58"
             data-testid="gallery-mobile-footer"
           >
-            {detailsSection}
-            {interactiveHtml ? <UntrustedHtmlWarningChip /> : null}
+            <div className="flex items-start justify-between gap-2 px-4 py-2">
+              {detailsSection}
+              {interactiveHtml ? <UntrustedHtmlWarningChip /> : null}
+            </div>
+            {actionArea}
           </div>
         </DrawerContent>
       </Drawer>
@@ -747,7 +764,10 @@ function SubmissionGalleryDialogInner({
           {artifactFilterControls}
         </div>
         {playfield}
-        {detailsSection}
+        <div className="grid gap-3">
+          {detailsSection}
+          {actionArea}
+        </div>
       </DialogContent>
     </Dialog>
   );

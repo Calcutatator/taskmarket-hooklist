@@ -51,7 +51,14 @@ test('groups a revision flood by submitter and preserves inline history', async 
       .getByRole('button', { name: /View submission/i })
   ).toHaveCount(0);
 
-  await page.getByRole('button', { exact: true, name: 'Gallery' }).click();
+  const secondWorkerGroup = page.getByTestId(
+    'submitter-group-0x4444444444444444444444444444444444444444'
+  );
+  await secondWorkerGroup
+    .getByRole('button', {
+      name: /Open second-worker-final-with-an-extremely-long-review-filename\.png preview/i,
+    })
+    .click();
   const outerGallery = page.getByRole('dialog');
   await expect(outerGallery).toContainText('1 / 1');
   await expect(outerGallery).toContainText(
@@ -59,6 +66,10 @@ test('groups a revision flood by submitter and preserves inline history', async 
   );
   await expect(outerGallery).not.toContainText('first-spam-revision.png');
   await outerGallery.getByRole('button', { name: 'Close' }).click();
+
+  await page.getByRole('button', { name: 'List view' }).click();
+  await expect(secondWorkerGroup).toBeVisible();
+  await page.getByRole('button', { name: 'Gallery view' }).click();
 
   await page.getByRole('button', { name: 'Next page' }).click();
   await expect(comparison.getByRole('group', { name: /150 submissions/i })).toHaveCount(1);

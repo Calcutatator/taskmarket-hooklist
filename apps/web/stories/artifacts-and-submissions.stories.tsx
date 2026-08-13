@@ -15,7 +15,11 @@
 
 import type { PendingAction } from '@taskmarket/shared';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
+import { useEffect, useState, type ReactNode } from 'react';
 import { expect, userEvent, within } from 'storybook/test';
+import { base, baseSepolia } from 'viem/chains';
+import { createConfig, http, useAccount, useConnect, WagmiProvider } from 'wagmi';
+import { mock } from 'wagmi/connectors';
 
 import { ArtifactPoster } from '@/components/market/artifact-poster';
 import {
@@ -60,6 +64,40 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+function createSubmissionReviewConfig() {
+  return createConfig({
+    chains: [base, baseSepolia],
+    connectors: [mock({ accounts: [addresses.requester] })],
+    transports: {
+      [base.id]: http(),
+      [baseSepolia.id]: http(),
+    },
+  });
+}
+
+function ConnectSubmissionReviewWallet({ children }: Readonly<{ children: ReactNode }>) {
+  const { isConnected } = useAccount();
+  const { connect, connectors } = useConnect();
+
+  useEffect(() => {
+    if (!isConnected && connectors[0]) {
+      connect({ connector: connectors[0] });
+    }
+  }, [connect, connectors, isConnected]);
+
+  return isConnected ? children : <p className="text-sm text-muted-foreground">Connecting...</p>;
+}
+
+function ConnectedSubmissionRequester({ children }: Readonly<{ children: ReactNode }>) {
+  const [config] = useState(createSubmissionReviewConfig);
+
+  return (
+    <WagmiProvider config={config} reconnectOnMount={false}>
+      <ConnectSubmissionReviewWallet>{children}</ConnectSubmissionReviewWallet>
+    </WagmiProvider>
+  );
+}
 
 const imageArtifact = artifactFixture();
 const documentArtifact = artifactFixture({
@@ -166,6 +204,43 @@ const submissions = [
     artifacts: [documentArtifact],
     id: 'submission-3',
     submittedAt: '2026-08-02T04:00:00.000Z',
+  }),
+];
+const reviewSubmissions = [
+  submissionFixture({
+    artifacts: [
+      artifactFixture({
+        id: 'artifact-review-a',
+        previewUrl:
+          'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&auto=format&fit=crop',
+        submissionId: 'submission-review-a',
+        taskId: 'task-1',
+        workerAddress: addresses.worker,
+        workerAgentId: '42',
+      }),
+    ],
+    id: 'submission-review-a',
+    submittedAt: '2026-08-02T04:00:00.000Z',
+    taskId: 'task-1',
+    workerAddress: addresses.worker,
+    workerAgentId: '42',
+  }),
+  submissionFixture({
+    artifacts: [
+      {
+        ...htmlArtifact,
+        id: 'artifact-review-b',
+        submissionId: 'submission-review-b',
+        taskId: 'task-1',
+        workerAddress: addresses.workerB,
+        workerAgentId: '84',
+      },
+    ],
+    id: 'submission-review-b',
+    submittedAt: '2026-08-02T03:00:00.000Z',
+    taskId: 'task-1',
+    workerAddress: addresses.workerB,
+    workerAgentId: '84',
   }),
 ];
 const interactiveGallerySubmissions = [
@@ -370,6 +445,79 @@ export const TaskDetailReviewFirstMobile: Story = {
     ).toBe(true);
     await expect(canvas.getByText('3 submissions ready for review.')).toBeVisible();
   },
+};
+
+function SubmissionReviewSurface() {
+  return (
+    <ConnectedSubmissionRequester>
+      <main className="mx-auto min-h-app-viewport max-w-6xl bg-background py-8">
+        <LiveActivityPanel
+          initialModeData={{ submissions: reviewSubmissions }}
+          marketStats={null}
+          profileBasePath="/agents"
+          reviewActions={{ acceptAction, rejectAction }}
+          submissionReviewEligible
+          task={{ ...reviewTask, reward: '250000000', status: 'completed' }}
+        />
+      </main>
+    </ConnectedSubmissionRequester>
+  );
+}
+
+export const SubmissionReviewGalleryAndList: Story = {
+  parameters: {
+    a11y: { test: 'error' },
+    viewport: { defaultViewport: 'desktop' },
+  },
+  render: () => <SubmissionReviewSurface />,
+};
+
+export const SubmissionReviewGalleryAndListInteraction: Story = {
+  ...SubmissionReviewGalleryAndList,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const documentBody = within(canvasElement.ownerDocument.body);
+    const choices = await canvas.findAllByRole('radio');
+    const secondChoice = choices[1];
+    if (!secondChoice) throw new Error('Second submission choice did not render.');
+
+    await expect(canvas.getByTestId('submission-decision-bar')).toHaveTextContent(
+      'Select a submitter above'
+    );
+    await userEvent.click(secondChoice);
+    await expect(secondChoice).toBeChecked();
+    await expect(canvas.getByTestId('submission-decision-bar')).toHaveTextContent(
+      'receives 250 USDC'
+    );
+    await expect(canvas.getByRole('button', { name: 'Award 250 USDC' })).toBeVisible();
+
+    await userEvent.click(canvas.getByRole('button', { name: 'List view' }));
+    await expect(secondChoice).toBeChecked();
+    await userEvent.click(canvas.getByRole('button', { name: 'Gallery view' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'Preview' }));
+
+    const galleryFrame = await documentBody.findByTestId('gallery-frame');
+    const dialog = galleryFrame.closest<HTMLElement>('[role="dialog"]');
+    await expect(dialog).not.toBeNull();
+    if (!dialog) throw new Error('Submission gallery dialog did not render.');
+
+    const gallery = within(dialog);
+    await expect(gallery.getByTestId('submission-decision-bar')).toHaveTextContent(
+      'receives 250 USDC'
+    );
+    await userEvent.click(gallery.getByRole('button', { name: 'Enter full screen' }));
+    await expect(dialog).toHaveAttribute('data-full-viewport', 'true');
+    await expect(gallery.getByRole('button', { name: 'Award 250 USDC' })).toBeVisible();
+  },
+};
+
+export const SubmissionReviewGalleryAndListMobile: Story = {
+  globals: { theme: 'dark' },
+  parameters: {
+    a11y: { test: 'error' },
+    viewport: { defaultViewport: 'mobile' },
+  },
+  render: () => <SubmissionReviewSurface />,
 };
 
 export const OpenSubmissionGallery: Story = {

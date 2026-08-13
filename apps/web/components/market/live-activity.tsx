@@ -2,7 +2,15 @@
 
 import type { PendingAction, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronLeftIcon, ChevronRightIcon, Images, LayoutGridIcon, ListIcon } from 'lucide-react';
+import {
+  CheckCircle2Icon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  CircleIcon,
+  Images,
+  LayoutGridIcon,
+  ListIcon,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -29,7 +37,7 @@ import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import { READ_AUTH_CONTEXT_KEY, trpc } from '@/lib/api/client';
 import type { MarketStats } from '@/lib/api/server';
-import { actorDisplayName } from '@/lib/format';
+import { actorDisplayName, formatUsdcUnits } from '@/lib/format';
 import {
   groupSubmissionsByWorker,
   sortSubmissionGroups,
@@ -66,6 +74,124 @@ const REVIEW_SORT_OPTIONS: Array<{ value: ReviewSort; label: string }> = [
   { value: 'oldest', label: 'Oldest submitters' },
   { value: 'credibility', label: 'Most experienced worker' },
 ];
+
+function SubmissionCandidateChoice({
+  checked,
+  group,
+  onChange,
+}: {
+  checked: boolean;
+  group: WorkerSubmissionGroup;
+  onChange: () => void;
+}) {
+  const workerLabel = actorDisplayName({
+    address: group.workerAddress,
+    agentId: group.representativeSubmission.workerAgentId,
+  });
+
+  return (
+    <label
+      className={cn(
+        'relative inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-[var(--shadow-soft)] backdrop-blur transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-background',
+        checked
+          ? 'border-primary bg-primary text-primary-foreground'
+          : 'border-border/72 bg-card/92 text-foreground hover:border-primary/54'
+      )}
+    >
+      <input
+        aria-label={`Select submission from ${workerLabel}`}
+        checked={checked}
+        className="absolute inset-0 z-10 cursor-pointer opacity-0"
+        name="submission-award-candidate"
+        onChange={onChange}
+        type="radio"
+        value={group.workerKey}
+      />
+      {checked ? (
+        <CheckCircle2Icon aria-hidden="true" className="pointer-events-none size-3.5" />
+      ) : (
+        <CircleIcon aria-hidden="true" className="pointer-events-none size-3.5" />
+      )}
+      <span className="pointer-events-none">{checked ? 'Selected' : 'Select'}</span>
+    </label>
+  );
+}
+
+function SubmissionDecisionBar({
+  group,
+  onOpenPreview,
+  onRejectSuccess,
+  placement = 'gallery',
+  reviewActions,
+  task,
+}: {
+  group: WorkerSubmissionGroup | null;
+  onOpenPreview?: () => void;
+  onRejectSuccess: (workerKey: string) => void;
+  placement?: 'gallery' | 'page';
+  reviewActions?: {
+    acceptAction?: PendingAction;
+    rejectAction?: PendingAction;
+  };
+  task: TaskDetailResponse | TaskResponse;
+}) {
+  const workerLabel = group
+    ? actorDisplayName({
+        address: group.workerAddress,
+        agentId: group.representativeSubmission.workerAgentId,
+      })
+    : null;
+
+  return (
+    <aside
+      aria-label="Submission award actions"
+      className={cn(
+        'z-30 grid gap-3 border-t border-border/72 bg-card/95 px-4 pt-3 pb-[max(0.75rem,var(--safe-area-inset-bottom))] shadow-[var(--shadow-elevated)] backdrop-blur sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:rounded-xl sm:border sm:px-4 sm:py-3',
+        placement === 'page'
+          ? 'fixed inset-x-3 bottom-0 z-40 sm:inset-x-6 sm:bottom-3 xl:left-1/2 xl:right-auto xl:w-[min(64rem,calc(100vw-3rem))] xl:-translate-x-1/2'
+          : 'sticky bottom-0'
+      )}
+      data-testid="submission-decision-bar"
+    >
+      <div className="min-w-0">
+        <p className="font-mono text-[0.7rem] uppercase tracking-[0.08em] text-muted-foreground">
+          {group ? 'Selected submission' : 'Award a submission'}
+        </p>
+        {group && workerLabel ? (
+          <p className="mt-0.5 truncate text-sm font-semibold text-foreground" title={workerLabel}>
+            {workerLabel}
+            <span className="font-normal text-muted-foreground">
+              {' '}
+              receives {formatUsdcUnits(task.reward)}
+            </span>
+          </p>
+        ) : (
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Select a submitter above. Your choice stays selected in Gallery, List, and full screen.
+          </p>
+        )}
+      </div>
+      {group ? (
+        <div className="flex min-w-0 flex-wrap items-start justify-end gap-2">
+          {onOpenPreview ? (
+            <Button onClick={onOpenPreview} size="sm" type="button" variant="outline">
+              <Images className="size-3.5" />
+              Preview
+            </Button>
+          ) : null}
+          <WorkerSubmissionActions
+            acceptAction={reviewActions?.acceptAction}
+            group={group}
+            onRejectSuccess={onRejectSuccess}
+            presentation="bar"
+            rejectAction={reviewActions?.rejectAction}
+            task={task}
+          />
+        </div>
+      ) : null}
+    </aside>
+  );
+}
 
 // Shared by submissions and pitches -- the only two review-queue item types that carry
 // both a submission timestamp and workerStats.completedTasks (proofs and bids have
@@ -613,7 +739,6 @@ function BenchmarkSubmissionsSection({
     setGalleryArtifactId(artifactId);
     setGalleryOpen(true);
   };
-
   const disclosureLabel = `Additional submissions (${groupedReview.totalSubmissionCount})`;
 
   if (selectedGroup) {
@@ -1034,6 +1159,7 @@ export function LiveActivityPanel({
   const [rejectedPage, setRejectedPage] = useState(1);
   const [rejectedOpen, setRejectedOpen] = useState(false);
   const [selectedWorkerKey, setSelectedWorkerKey] = useState<string | null>(null);
+  const [selectedAwardWorkerKey, setSelectedAwardWorkerKey] = useState<string | null>(null);
   const [optimisticRejectedKeys, setOptimisticRejectedKeys] = useState<Set<string>>(new Set());
   const historyOriginRef = useRef<{
     activePage: number;
@@ -1080,6 +1206,8 @@ export function LiveActivityPanel({
   const selectedGroup =
     [...activeGroups, ...rejectedGroups].find((group) => group.workerKey === selectedWorkerKey) ??
     null;
+  const selectedAwardGroup =
+    activeGroups.find((group) => group.workerKey === selectedAwardWorkerKey) ?? null;
   const pitches = data.pitches ?? [];
   const proofs = data.proofs ?? [];
   const bids = data.bids ?? [];
@@ -1123,6 +1251,10 @@ export function LiveActivityPanel({
   const openGalleryAt = (artifactId: string) => {
     setGalleryArtifactId(artifactId);
     setGalleryOpen(true);
+  };
+  const openGalleryForGroup = (group: WorkerSubmissionGroup, artifactId: string) => {
+    setSelectedAwardWorkerKey(group.workerKey);
+    openGalleryAt(artifactId);
   };
 
   const activityData = usesScopedSubmissions ? { ...data, submissions: visibleSubmissions } : data;
@@ -1176,6 +1308,7 @@ export function LiveActivityPanel({
     setRejectedPage(1);
     setRejectedOpen(false);
     setSelectedWorkerKey(null);
+    setSelectedAwardWorkerKey(null);
     scopedSeedKeyRef.current = null;
     scopedSeedIdsRef.current = new Set();
   }, [visibilityScopeKey]);
@@ -1328,6 +1461,11 @@ export function LiveActivityPanel({
     window.requestAnimationFrame(() => reviewHeadingRef.current?.focus({ preventScroll: true }));
   }, [selectedGroup, selectedWorkerKey]);
 
+  useEffect(() => {
+    if (!selectedAwardWorkerKey || selectedAwardGroup) return;
+    setSelectedAwardWorkerKey(null);
+  }, [selectedAwardGroup, selectedAwardWorkerKey]);
+
   const handleRejectSuccess = (workerKey: string) => {
     setOptimisticRejectedKeys((current) => new Set(current).add(workerKey));
     if (usesScopedSubmissions) {
@@ -1410,7 +1548,7 @@ export function LiveActivityPanel({
             <p className="text-base leading-6 text-muted-foreground">{description}</p>
           </div>
           <div className="flex items-center gap-2">
-            {galleryEntries.length > 0 ? (
+            {galleryEntries.length > 0 && !submissionReviewEligible ? (
               <Button
                 onClick={() => {
                   setGalleryArtifactId(null);
@@ -1541,17 +1679,45 @@ export function LiveActivityPanel({
                     })}, ${group.submissions.length} ${
                       group.submissions.length === 1 ? 'submission' : 'submissions'
                     }`}
-                    className="grid min-w-0 gap-3"
+                    className={cn(
+                      'relative grid min-w-0 gap-3 rounded-xl transition-shadow',
+                      selectedAwardWorkerKey === group.workerKey &&
+                        'ring-2 ring-primary ring-offset-2 ring-offset-background'
+                    )}
                     data-testid={`submitter-group-${group.workerKey}`}
                     role="group"
                   >
-                    <SubmissionCard
-                      layout={reviewView}
-                      onOpenMedia={openGalleryAt}
-                      profileBasePath={profileBasePath}
-                      submission={group.representativeSubmission}
-                      task={task}
-                    />
+                    <div
+                      className={cn(
+                        reviewView === 'list' &&
+                          isRequester &&
+                          'grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3'
+                      )}
+                    >
+                      {isRequester ? (
+                        <div
+                          className={cn(
+                            reviewView === 'gallery'
+                              ? 'absolute right-3 top-3 z-20'
+                              : 'pl-3 sm:pl-4'
+                          )}
+                        >
+                          <SubmissionCandidateChoice
+                            checked={selectedAwardWorkerKey === group.workerKey}
+                            group={group}
+                            onChange={() => setSelectedAwardWorkerKey(group.workerKey)}
+                          />
+                        </div>
+                      ) : null}
+                      <SubmissionCard
+                        layout={reviewView}
+                        onOpenMedia={(artifactId) => openGalleryForGroup(group, artifactId)}
+                        profileBasePath={profileBasePath}
+                        showPreviewAction={false}
+                        submission={group.representativeSubmission}
+                        task={task}
+                      />
+                    </div>
                     {group.submissions.length > 1 ? (
                       <div className="flex justify-end">
                         <Button
@@ -1562,7 +1728,10 @@ export function LiveActivityPanel({
                             }
                           )}`}
                           data-testid={`submitter-history-origin-${group.workerKey}`}
-                          onClick={() => openHistory(group, 'active')}
+                          onClick={() => {
+                            setSelectedAwardWorkerKey(group.workerKey);
+                            openHistory(group, 'active');
+                          }}
                           size="sm"
                           type="button"
                           variant="outline"
@@ -1570,15 +1739,6 @@ export function LiveActivityPanel({
                           Review all {group.submissions.length}
                         </Button>
                       </div>
-                    ) : null}
-                    {isRequester ? (
-                      <WorkerSubmissionActions
-                        acceptAction={reviewActions?.acceptAction}
-                        group={group}
-                        onRejectSuccess={handleRejectSuccess}
-                        rejectAction={reviewActions?.rejectAction}
-                        task={task}
-                      />
                     ) : null}
                   </div>
                 </AnimatedRow>
@@ -1759,13 +1919,63 @@ export function LiveActivityPanel({
           )
         ) : null}
       </div>
+      {submissionReviewEligible && isRequester && activeGroups.length > 0 ? (
+        <SubmissionDecisionBar
+          group={selectedAwardGroup}
+          onOpenPreview={
+            selectedAwardGroup
+              ? () => {
+                  const firstEntry = galleryEntries.find(
+                    (entry) =>
+                      entry.submission.workerAddress.toLowerCase() ===
+                      selectedAwardGroup.workerAddress.toLowerCase()
+                  );
+                  if (firstEntry) {
+                    openGalleryForGroup(selectedAwardGroup, firstEntry.artifact.id);
+                  }
+                }
+              : undefined
+          }
+          onRejectSuccess={handleRejectSuccess}
+          placement="page"
+          reviewActions={reviewActions}
+          task={task}
+        />
+      ) : null}
+      {submissionReviewEligible && isRequester && activeGroups.length > 0 ? (
+        <div aria-hidden="true" className="h-28 sm:h-24" />
+      ) : null}
       <SubmissionGalleryDialog
         entries={galleryEntries}
         entryPolicy={submissionReviewEligible ? 'snapshot-membership' : 'live'}
         initialArtifactId={galleryArtifactId}
+        onEntryChange={
+          submissionReviewEligible
+            ? (entry) => setSelectedAwardWorkerKey(entry.submission.workerAddress.toLowerCase())
+            : undefined
+        }
         onOpenChange={setGalleryOpen}
         open={galleryOpen}
         profileBasePath={profileBasePath}
+        renderActionArea={
+          submissionReviewEligible && isRequester
+            ? (entry) => {
+                const entryGroup = activeGroups.find(
+                  (group) =>
+                    group.workerAddress.toLowerCase() ===
+                    entry.submission.workerAddress.toLowerCase()
+                );
+                return entryGroup ? (
+                  <SubmissionDecisionBar
+                    group={entryGroup}
+                    onRejectSuccess={handleRejectSuccess}
+                    reviewActions={reviewActions}
+                    task={task}
+                  />
+                ) : null;
+              }
+            : undefined
+        }
         sessionKey={`${visibilityScopeKey}:${submissionReviewEligible ? 'active-submitters' : 'activity'}`}
         taskId={task.id}
       />

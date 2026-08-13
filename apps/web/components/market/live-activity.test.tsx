@@ -468,6 +468,66 @@ describe('LiveActivityPanel', () => {
     );
   });
 
+  it('keeps one selected submitter across gallery and list and consolidates decisions in the sticky bar', () => {
+    const workerA = '0x2222222222222222222222222222222222222222';
+    const workerB = '0x3333333333333333333333333333333333333333';
+    const reviewSubmissions = [
+      submission('submission-1', workerA),
+      submission('submission-2', workerB),
+    ];
+    mockAccount.address = REQUESTER;
+    mockAccount.isConnected = true;
+    submissionsState.value = reviewSubmissions;
+
+    render(
+      <LiveActivityPanel
+        initialModeData={{ submissions: reviewSubmissions }}
+        marketStats={null}
+        profileBasePath="/dashboard/agents"
+        reviewActions={{
+          acceptAction: {
+            action: 'accept',
+            command: `taskmarket task accept ${task.id} --worker ${workerA}`,
+            role: 'requester',
+          },
+          rejectAction: {
+            action: 'reject_submission',
+            command: `taskmarket task reject-submission ${task.id} --worker ${workerA}`,
+            role: 'requester',
+          },
+        }}
+        submissionReviewEligible
+        task={{
+          ...task,
+          auctionType: null,
+          mode: 'bounty',
+          reward: '25000000',
+          submissionCount: reviewSubmissions.length,
+        }}
+      />
+    );
+
+    const decisionBar = screen.getByTestId('submission-decision-bar');
+    const workerBChoice = screen.getByRole('radio', {
+      name: 'Select submission from 0x3333...3333',
+    });
+    expect(decisionBar).toHaveTextContent('Select a submitter above');
+    expect(screen.queryByRole('group', { name: 'Submitter decisions' })).not.toBeInTheDocument();
+
+    fireEvent.click(workerBChoice);
+
+    expect(workerBChoice).toBeChecked();
+    expect(decisionBar).toHaveTextContent('0x3333...3333 receives 25 USDC');
+    expect(screen.getAllByRole('group', { name: 'Submitter decisions' })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Award 25 USDC' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'List view' }));
+    expect(workerBChoice).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Gallery view' }));
+    expect(workerBChoice).toBeChecked();
+  });
+
   it('shows the Live indicator and feed for the requester on a live task', () => {
     mockAccount.address = REQUESTER;
     bidsState.value = [bid('bid-1', '0x2222222222222222222222222222222222222222')];

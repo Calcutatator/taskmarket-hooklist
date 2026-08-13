@@ -343,16 +343,20 @@ function directGallery({
   entries,
   entryPolicy,
   initialArtifactId = entries[0]?.artifact.id ?? null,
+  onEntryChange,
   onOpenChange = vi.fn(),
   open = true,
+  renderActionArea,
   sessionKey,
 }: {
   contextLabel?: string;
   entries: SubmissionMediaEntry[];
   entryPolicy?: 'live' | 'snapshot-membership';
   initialArtifactId?: string | null;
+  onEntryChange?: (entry: SubmissionMediaEntry) => void;
   onOpenChange?: (open: boolean) => void;
   open?: boolean;
+  renderActionArea?: (entry: SubmissionMediaEntry) => ReactNode;
   sessionKey?: string;
 }) {
   return (
@@ -361,9 +365,11 @@ function directGallery({
       entries={entries}
       entryPolicy={entryPolicy}
       initialArtifactId={initialArtifactId}
+      onEntryChange={onEntryChange}
       onOpenChange={onOpenChange}
       open={open}
       profileBasePath="/dashboard/agents"
+      renderActionArea={renderActionArea}
       sessionKey={sessionKey}
       taskId={task.id}
     />
@@ -713,6 +719,48 @@ describe('SubmissionGalleryDialog', () => {
     expect(frame).toHaveClass('h-[62vh]');
     expect(frame).not.toHaveClass('h-full');
     expect(within(dialog).getByRole('button', { name: 'Enter full screen' })).toBeVisible();
+  });
+
+  it('keeps the current entry action area visible in full screen and updates it while paging', async () => {
+    setupMatchMedia(1280);
+    const user = userEvent.setup();
+    const onEntryChange = vi.fn();
+    const firstSubmission = submission('sub-1', '0x3333333333333333333333333333333333333333', [
+      imageA,
+    ]);
+    const secondSubmission = submission('sub-2', '0x4444444444444444444444444444444444444444', [
+      imageB,
+    ]);
+
+    render(
+      directGallery({
+        entries: [galleryEntry(imageA, firstSubmission), galleryEntry(imageB, secondSubmission)],
+        onEntryChange,
+        renderActionArea: (entry) => (
+          <div data-testid="gallery-action-worker">Award {entry.submission.workerAddress}</div>
+        ),
+      })
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByTestId('gallery-action-worker')).toHaveTextContent(
+      firstSubmission.workerAddress
+    );
+    expect(onEntryChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ submission: firstSubmission })
+    );
+
+    await user.click(within(dialog).getByRole('button', { name: 'Next artifact' }));
+    expect(within(dialog).getByTestId('gallery-action-worker')).toHaveTextContent(
+      secondSubmission.workerAddress
+    );
+    expect(onEntryChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ submission: secondSubmission })
+    );
+
+    await user.click(within(dialog).getByRole('button', { name: 'Enter full screen' }));
+    expect(dialog).toHaveAttribute('data-full-viewport', 'true');
+    expect(within(dialog).getByTestId('gallery-action-worker')).toBeVisible();
   });
 
   it('uses Escape to restore the bounded gallery before allowing the dialog to close', async () => {

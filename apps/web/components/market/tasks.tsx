@@ -1945,6 +1945,7 @@ export function SubmissionCard({
   onOpenMedia,
   profileBasePath,
   reviewAction,
+  showPreviewAction = true,
   submission,
   task,
 }: {
@@ -1952,6 +1953,7 @@ export function SubmissionCard({
   onOpenMedia?: (artifactId: string) => void;
   profileBasePath: string;
   reviewAction?: PendingAction;
+  showPreviewAction?: boolean;
   submission: SubmissionResponse;
   task: TaskDetailResponse | TaskResponse;
 }) {
@@ -2026,7 +2028,7 @@ export function SubmissionCard({
             className="shrink-0 text-sm text-muted-foreground sm:w-24"
             value={submission.submittedAt}
           />
-          {primaryArtifact ? (
+          {primaryArtifact && showPreviewAction ? (
             <ArtifactPreviewButton
               artifact={primaryArtifact}
               label={
@@ -2099,7 +2101,7 @@ export function SubmissionCard({
             </details>
           ) : null}
         </div>
-        {primaryArtifact ? (
+        {primaryArtifact && showPreviewAction ? (
           <div className="flex items-center justify-between border-t border-border/58 px-4 py-2">
             <ArtifactPreviewButton
               artifact={primaryArtifact}

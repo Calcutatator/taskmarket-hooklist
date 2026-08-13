@@ -98,10 +98,12 @@ function sameAddress(left?: string | null, right?: string | null) {
 export function SubmissionPayoutAction({
   action,
   onSuccess,
+  presentation = 'default',
   task,
 }: {
   action: PendingAction;
   onSuccess?: () => void;
+  presentation?: 'bar' | 'default';
   task: TaskDetailResponse | TaskResponse;
 }) {
   const { address, isConnected } = useAccount();
@@ -154,6 +156,45 @@ export function SubmissionPayoutAction({
   }
 
   if (requesterConnected) {
+    if (presentation === 'bar') {
+      return (
+        <div className="grid min-w-0 gap-2">
+          {actionFundingPrompt ? (
+            <FundingGuard
+              address={address}
+              defaultAmount={actionFundingPrompt.defaultAmount}
+              message={`Wallet has ${actionFundingPrompt.balanceUsdc} USDC. Add ${formatUsdcUnits(
+                actionFundingPrompt.shortfallBaseUnits
+              )} before releasing payout.`}
+              onStatus={(status) => {
+                if (status === 'confirmed') {
+                  recheckActionFunding();
+                }
+              }}
+            >
+              <p className="text-xs leading-5 text-muted-foreground">
+                Payout release requires {formatUsdcUnits(PAID_ACTION_COST_BASE_UNITS.toString())}.
+              </p>
+            </FundingGuard>
+          ) : null}
+          {settlementState.phase === 'idle' ? (
+            <AcceptButton
+              action={action}
+              disabled={Boolean(actionFundingPrompt)}
+              onSuccess={handlePayoutSuccess}
+              presentation="award"
+              task={task}
+            />
+          ) : (
+            <SettlementConfirmation
+              delayed={settlementState.phase === 'delayed'}
+              onRetry={beginSettlementConfirmation}
+            />
+          )}
+        </div>
+      );
+    }
+
     return (
       <div className="grid min-w-0 gap-2 rounded-xl border border-primary/28 bg-primary/10 p-3">
         <p className="text-sm font-semibold tracking-tight text-foreground">Release payout</p>

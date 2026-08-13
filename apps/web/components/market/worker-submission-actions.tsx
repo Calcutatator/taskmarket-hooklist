@@ -13,6 +13,7 @@ import { useInvalidateActionQueue } from '@/lib/use-action-queue';
 export type WorkerSubmissionActionsProps = {
   acceptAction?: PendingAction;
   group: WorkerSubmissionGroup;
+  presentation?: 'bar' | 'default';
   onRejectSuccess: (workerKey: string) => void;
   rejectAction?: PendingAction;
   task: TaskDetailResponse | TaskResponse;
@@ -22,6 +23,7 @@ export function WorkerSubmissionActions({
   acceptAction,
   group,
   onRejectSuccess,
+  presentation = 'default',
   rejectAction,
   task,
 }: WorkerSubmissionActionsProps) {
@@ -40,9 +42,19 @@ export function WorkerSubmissionActions({
     : null;
 
   return (
-    <div className="grid min-w-0 gap-3" role="group" aria-label="Submitter decisions">
+    <div
+      className={
+        presentation === 'bar' ? 'flex min-w-0 flex-wrap items-start gap-2' : 'grid min-w-0 gap-3'
+      }
+      role="group"
+      aria-label="Submitter decisions"
+    >
       {targetedAcceptAction ? (
-        <SubmissionPayoutAction action={targetedAcceptAction} task={task} />
+        <SubmissionPayoutAction
+          action={targetedAcceptAction}
+          presentation={presentation}
+          task={task}
+        />
       ) : null}
       {rejectAction ? (
         <RejectSubmissionButton
@@ -58,6 +70,7 @@ export function WorkerSubmissionActions({
             onRejectSuccess(workerKey);
           }}
           onSuccess={() => router.refresh()}
+          presentation={presentation === 'bar' ? 'compact' : 'default'}
           target={{
             activeSubmissionCount: group.submissions.length,
             workerAddress: group.workerAddress,

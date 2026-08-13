@@ -35,7 +35,13 @@ function sameAddress(left?: string | null, right?: string | null) {
   return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
 }
 
-export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionComponentProps) {
+export function AcceptButton({
+  action,
+  disabled,
+  onSuccess,
+  presentation = 'default',
+  task,
+}: TaskActionComponentProps & { presentation?: 'award' | 'default' }) {
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
@@ -71,6 +77,8 @@ export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionCo
   const workerLabel = worker
     ? actorDisplayName({ address: worker, agentId: workerAgentIdFor(task, worker) })
     : 'selected worker';
+  const awardPresentation = presentation === 'award';
+  const rewardLabel = formatUsdcUnits(task.reward);
 
   async function handleAccept() {
     if (!worker) {
@@ -137,20 +145,22 @@ export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionCo
   return (
     <div className="grid gap-2">
       <ConfirmDialog
-        confirmCta="Release payout"
-        description={`Release ${formatUsdcUnits(task.reward)} to ${workerLabel}. This accepts the deliverable and cannot be undone.`}
+        confirmCta={awardPresentation ? 'Award and release' : 'Release payout'}
+        description={`${awardPresentation ? 'Award' : 'Release'} ${rewardLabel} to ${workerLabel}. This accepts the deliverable and cannot be undone.`}
         disabled={blocked}
         loadingCta="Releasing..."
         onConfirm={handleAccept}
-        title="Release payout?"
+        title={awardPresentation ? `Award ${rewardLabel}?` : 'Release payout?'}
       >
         <Button disabled={blocked} size="sm">
-          Release payout
+          {awardPresentation ? `Award ${rewardLabel}` : 'Release payout'}
         </Button>
       </ConfirmDialog>
-      <p className="text-xs leading-5 text-muted-foreground">
-        Accepts the deliverable and releases escrow to the worker. Costs 0.001 USDC.
-      </p>
+      {!awardPresentation ? (
+        <p className="text-xs leading-5 text-muted-foreground">
+          Accepts the deliverable and releases escrow to the worker. Costs 0.001 USDC.
+        </p>
+      ) : null}
       {wrongRequester ? (
         <p className="text-xs text-destructive">Connect the requester wallet to release payout.</p>
       ) : null}

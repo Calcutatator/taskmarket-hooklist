@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -1583,7 +1583,9 @@ describe('Task marketplace components', () => {
         name: `Submission from ${compactAddressLabel('0x3333333333333333333333333333333333333333')}`,
       })
     ).toBeInTheDocument();
-    expect(screen.getAllByText(/release payout/i).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('radio', { name: 'Select submission from 0x3333...3333' }));
+    expect(screen.getByRole('button', { name: 'Award 25 USDC' })).toBeInTheDocument();
+    expect(screen.getAllByRole('group', { name: 'Submitter decisions' })).toHaveLength(1);
     expect(screen.queryByText(/review the latest submission/i)).not.toBeInTheDocument();
   });
 
@@ -2247,8 +2249,9 @@ describe('Task marketplace components', () => {
       />
     );
 
+    fireEvent.click(screen.getByRole('radio', { name: 'Select submission from 0x3333...3333' }));
     expect(await screen.findByText(/wallet has 0\.000000 usdc/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^release payout$/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Award 25 USDC' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /add usdc/i })).toBeEnabled();
   });
 
