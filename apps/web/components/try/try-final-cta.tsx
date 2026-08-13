@@ -5,6 +5,7 @@ import type { RefObject } from 'react';
 import { TryTopicForm } from './try-topic-form';
 
 type TryFinalCtaProps = {
+  disabled: boolean;
   error: string | null;
   inputRef: RefObject<HTMLInputElement | null>;
   onChange: (value: string) => void;
@@ -12,7 +13,14 @@ type TryFinalCtaProps = {
   value: string;
 };
 
-export function TryFinalCta({ error, inputRef, onChange, onSubmit, value }: TryFinalCtaProps) {
+export function TryFinalCta({
+  disabled,
+  error,
+  inputRef,
+  onChange,
+  onSubmit,
+  value,
+}: TryFinalCtaProps) {
   return (
     <section
       aria-labelledby="try-final-title"
@@ -28,6 +36,7 @@ export function TryFinalCta({ error, inputRef, onChange, onSubmit, value }: TryF
         </h2>
         <div className="mx-auto w-full max-w-2xl text-left">
           <TryTopicForm
+            disabled={disabled}
             error={error}
             id="try-topic-closing"
             inputRef={inputRef}

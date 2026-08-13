@@ -6,6 +6,13 @@ export function isWebKitRscPrefetchAccessControlError(projectName: string, text:
   );
 }
 
+export function isWebKitLegalDiscoveryAccessControlError(projectName: string, text: string) {
+  return (
+    projectName.includes('webkit') &&
+    text.includes('/api/legal/current due to access control checks.')
+  );
+}
+
 // WebKit's native <video controls> chrome logs a console error of its own accord when
 // it cannot load the icon for one of its built-in placard buttons (invalid,
 // picture-in-picture, AirPlay) -- this is WebKit's native media-control UI failing to

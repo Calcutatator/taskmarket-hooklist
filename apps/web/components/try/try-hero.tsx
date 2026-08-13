@@ -8,6 +8,7 @@ import { TryDropCollage } from './try-drop-collage';
 import { TryTopicForm } from './try-topic-form';
 
 type TryHeroProps = {
+  disabled: boolean;
   drops: readonly TryDrop[];
   error: string | null;
   inputRef: RefObject<HTMLInputElement | null>;
@@ -16,7 +17,15 @@ type TryHeroProps = {
   value: string;
 };
 
-export function TryHero({ drops, error, inputRef, onChange, onSubmit, value }: TryHeroProps) {
+export function TryHero({
+  disabled,
+  drops,
+  error,
+  inputRef,
+  onChange,
+  onSubmit,
+  value,
+}: TryHeroProps) {
   return (
     <section
       aria-labelledby="try-hero-title"
@@ -43,6 +52,7 @@ export function TryHero({ drops, error, inputRef, onChange, onSubmit, value }: T
           </p>
           <div className="mt-1 max-w-2xl">
             <TryTopicForm
+              disabled={disabled}
               error={error}
               id="try-topic"
               inputRef={inputRef}

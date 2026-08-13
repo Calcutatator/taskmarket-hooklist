@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 
 type TryTopicFormProps = {
+  disabled: boolean;
   error: string | null;
   id: string;
   inputRef?: RefObject<HTMLInputElement | null>;
@@ -19,6 +20,7 @@ type TryTopicFormProps = {
 };
 
 export function TryTopicForm({
+  disabled,
   error,
   id,
   inputRef,
@@ -39,7 +41,7 @@ export function TryTopicForm({
   }
 
   return (
-    <form className="grid gap-3" onSubmit={handleSubmit}>
+    <form aria-busy={disabled} className="grid gap-3" onSubmit={handleSubmit}>
       <Label
         className={cn(
           'font-mono text-xs font-semibold uppercase',
@@ -58,6 +60,7 @@ export function TryTopicForm({
             'h-12 min-w-0 bg-background/86 px-4 text-base shadow-[var(--shadow-elevated)] md:text-base',
             variant === 'hero' && 'border-white/22 backdrop-blur-md'
           )}
+          disabled={disabled}
           id={id}
           maxLength={180}
           onChange={handleChange}
@@ -65,7 +68,12 @@ export function TryTopicForm({
           ref={inputRef}
           value={value}
         />
-        <Button className="h-12 w-full gap-2 px-5 sm:w-auto" size="lg" type="submit">
+        <Button
+          className="h-12 w-full gap-2 px-5 sm:w-auto"
+          disabled={disabled}
+          size="lg"
+          type="submit"
+        >
           Build my brief
           <ArrowRightIcon aria-hidden="true" className="size-4" />
         </Button>

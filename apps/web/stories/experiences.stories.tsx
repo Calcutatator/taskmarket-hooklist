@@ -137,7 +137,16 @@ export const LandingWithLiveMarketData: Story = {
 };
 
 export const GuidedTryExperience: Story = {
+  parameters: { a11y: { test: 'error' } },
   render: () => <TryExperience drops={TRY_DROPS} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const [heroPrompt, closingPrompt] = canvas.getAllByLabelText(/what should yours explain/i);
+
+    await expect(heroPrompt).toBeEnabled();
+    await userEvent.type(heroPrompt!, 'Why heat pumps move more energy than they consume');
+    await expect(closingPrompt).toHaveValue('Why heat pumps move more energy than they consume');
+  },
 };
 
 export const TaskWizardDefaultAndCampaign: Story = {

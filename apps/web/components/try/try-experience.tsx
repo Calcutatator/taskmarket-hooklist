@@ -211,6 +211,7 @@ export function TryExperience({ drops }: TryExperienceProps) {
   return (
     <div className="grid w-full grid-cols-[minmax(0,1fr)] bg-background">
       <TryHero
+        disabled={!draftRestored}
         drops={drops}
         error={promptError?.source === 'hero' ? promptError.message : null}
         inputRef={heroInputRef}
@@ -279,6 +280,7 @@ export function TryExperience({ drops }: TryExperienceProps) {
       <TryHowItWorks drops={drops} />
       <TryGallery drops={drops} onRemix={handleRemix} />
       <TryFinalCta
+        disabled={!draftRestored}
         error={promptError?.source === 'closing' ? promptError.message : null}
         inputRef={closingInputRef}
         onChange={handlePromptChange}

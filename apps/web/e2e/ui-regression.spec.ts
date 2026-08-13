@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import {
+  isWebKitLegalDiscoveryAccessControlError,
   isWebKitMediaControlIconLoadError,
   isWebKitRscPrefetchAccessControlError,
 } from './client-errors';
@@ -89,6 +90,11 @@ test.beforeEach(async ({ page }, testInfo) => {
   });
 
   page.on('pageerror', (error) => {
+    if (isWebKitLegalDiscoveryAccessControlError(testInfo.project.name, error.message)) {
+      // WebKit reports an in-flight legal discovery request as a page error when
+      // a full-page navigation cancels it. The gate already treats discovery as optional.
+      return;
+    }
     failures.push(error.message);
   });
 });
@@ -1150,6 +1156,18 @@ test('explains when /try publication is unavailable without Privy', async ({ pag
   await expect(page.getByRole('heading', { name: /Fund and publish/i })).toBeVisible();
   await expect(page.getByText('Publication is unavailable')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Publishing unavailable' })).toBeDisabled();
+});
+
+test('keeps /try prompt controls inert until hydration can preserve input', async ({ page }) => {
+  await page.route('**/_next/static/**/*.js', (route) =>
+    route.fulfill({ body: '', contentType: 'application/javascript', status: 200 })
+  );
+  await page.goto('/try');
+
+  await expect(
+    page.getByLabel('What should yours explain?', { exact: true }).first()
+  ).toBeDisabled();
+  await expect(page.getByRole('button', { name: /Build my brief/i }).first()).toBeDisabled();
 });
 
 test('keeps /try static and legible with reduced motion and long input', async ({ page }) => {
