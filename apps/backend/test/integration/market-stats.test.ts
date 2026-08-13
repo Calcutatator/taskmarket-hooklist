@@ -25,14 +25,17 @@ const UNREGISTERED_WORKER = '0x3000000000000000000000000000000000000001';
 const RECENT_TASK = 'market-stats-recent';
 const OLD_TASK = 'market-stats-old';
 const UNLISTED_TASK = 'market-stats-unlisted';
+const AVAILABLE_TASK = 'market-stats-available';
+const EXPIRED_TASK = 'market-stats-expired';
 
 describeWithDatabase('market stats against PostgreSQL', () => {
   beforeAll(async () => {
     await isolatedDatabase.start();
 
     const recent = new Date(Date.now() - 60 * 60 * 1000);
-    const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    const old = new Date('2026-06-01T00:00:00.000Z');
     const expiryTime = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const expiredTime = new Date(Date.now() - 60 * 60 * 1000);
 
     await database.insert(agents).values(
       [REQUESTER, OLD_REQUESTER, UNLISTED_REQUESTER, ...WORKERS, UNLISTED_WORKER].map(
@@ -76,6 +79,30 @@ describeWithDatabase('market stats against PostgreSQL', () => {
         status: 'open',
         tags: ['integration'],
         taskVisibility: 'unlisted',
+      },
+      {
+        createdAt: recent,
+        description: 'Available public task',
+        escrowTxHash: 'market-stats-available-escrow',
+        expiryTime,
+        id: AVAILABLE_TASK,
+        requester: REQUESTER,
+        requesterPubkey: 'requester-key',
+        reward: '1000000',
+        status: 'open',
+        tags: ['integration'],
+      },
+      {
+        createdAt: recent,
+        description: 'Expired public task still stored as open',
+        escrowTxHash: 'market-stats-expired-escrow',
+        expiryTime: expiredTime,
+        id: EXPIRED_TASK,
+        requester: REQUESTER,
+        requesterPubkey: 'requester-key',
+        reward: '1000000',
+        status: 'open',
+        tags: ['integration'],
       },
     ]);
 

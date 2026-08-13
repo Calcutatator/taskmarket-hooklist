@@ -1937,7 +1937,7 @@ describe('tasks router', () => {
 
     // Default (unset) status resolves to 'ALL', which -- like 'open' -- excludes
     // pre-Rev007 legacy tasks via a leading createdAt >= cutoff condition (see
-    // REV007_LISTING_CUTOFF in tasks.router.ts). The shared taskDiscoverable filter
+    // REV007_LISTING_CUTOFF in task-discovery.ts). The shared taskDiscoverable filter
     // is pushed before that cutoff condition, so every filter combination below
     // carries 'unlisted' and 'private' (bound via Drizzle's `notInArray()`) as its
     // first two parameters, followed by the cutoff ISO timestamp.

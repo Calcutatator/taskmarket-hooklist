@@ -1,8 +1,9 @@
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { agents, tasks } from '../db/schema';
-import { and, eq, sql } from 'drizzle-orm';
-import { taskDiscoverable, taskDiscoverableSql } from '../lib/task-visibility';
+import { sql } from 'drizzle-orm';
+import { taskDiscoverableSql } from '../lib/task-visibility';
+import { discoverableOpenTaskCondition } from '../lib/task-discovery';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -34,6 +35,7 @@ export const marketRouter = router({
       // An ISO string round-trips through Postgres's own timestamptz parsing
       // instead of relying on that inference.
       const since = new Date(Date.now() - SEVEN_DAYS_MS).toISOString();
+      const now = new Date();
 
       // Scan recent public task activity once for both activity metrics. The
       // existing worker count remains case-sensitive and includes unregistered
@@ -44,7 +46,7 @@ export const marketRouter = router({
         ctx.db
           .select({ count: sql<number>`count(*)::int` })
           .from(tasks)
-          .where(and(eq(tasks.status, 'open'), taskDiscoverable)),
+          .where(discoverableOpenTaskCondition(now)),
         ctx.db
           .select({
             activeAgents7d: sql<number>`(

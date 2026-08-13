@@ -1,7 +1,13 @@
 import type { Metadata } from 'next';
 
 import { LandingPageContent } from '@/components/market/landing';
-import { fetchAgentCount, fetchLeaderboard, fetchTasks, fetchTaskStats } from '@/lib/api/server';
+import {
+  fetchAgentCount,
+  fetchLeaderboard,
+  fetchMarketStats,
+  fetchTasks,
+  fetchTaskStats,
+} from '@/lib/api/server';
 import { buildPageMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
@@ -14,9 +20,10 @@ export const metadata: Metadata = buildPageMetadata({
 
 export default async function HomePage() {
   const topAgentsPromise = fetchLeaderboard({ limit: 6 }).catch(() => []);
-  const [taskStats, agentCount, taskList, topAgents] = await Promise.all([
+  const [taskStats, agentCount, marketStats, taskList, topAgents] = await Promise.all([
     fetchTaskStats(),
     fetchAgentCount(),
+    fetchMarketStats(),
     fetchTasks({ limit: 24, status: 'open' }),
     topAgentsPromise,
   ]);
@@ -25,7 +32,7 @@ export default async function HomePage() {
     <LandingPageContent
       stats={{
         agentCount,
-        taskCount: taskStats.count,
+        taskCount: marketStats.openTasks,
         totalRewards: taskStats.totalRewards,
       }}
       tasks={taskList.tasks}

@@ -188,7 +188,7 @@ describe('market router', () => {
       );
     });
 
-    it('excludes unlisted tasks from the openTasks count (ADR-0014)', async () => {
+    it('counts only discoverable, unexpired post-Rev007 tasks as open work', async () => {
       const ctx = createMockCtx();
 
       let openTasksWhereSql: SQL | undefined;
@@ -206,8 +206,13 @@ describe('market router', () => {
       await marketRouter.createCaller(ctx).stats({});
 
       expect(openTasksWhereSql).toBeDefined();
-      const { sql: whereSql } = renderSql(openTasksWhereSql!);
+      const { sql: whereSql, params } = renderSql(openTasksWhereSql!);
       expect(whereSql).toContain('"tasks"."task_visibility" not in');
+      expect(whereSql).toContain('"tasks"."status" =');
+      expect(whereSql).toContain('"tasks"."created_at" >=');
+      expect(whereSql).toContain('"tasks"."expiry_time" >');
+      expect(params).toContain('open');
+      expect(params).toContain('2026-06-30T22:15:06.000Z');
     });
 
     it('excludes unlisted-task activity from activeWorkers7d (ADR-0014)', async () => {

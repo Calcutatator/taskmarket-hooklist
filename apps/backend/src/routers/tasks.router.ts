@@ -56,6 +56,7 @@ import { getServerConfig } from '../config/env';
 import { computeClockPrice, computePriceTimestamp } from '../lib/auction';
 import { lowerAddressEq } from '../lib/agents';
 import { taskDiscoverable, canView, fetchPrivateViewabilityContext } from '../lib/task-visibility';
+import { discoverableOpenTaskCondition, REV007_LISTING_CUTOFF } from '../lib/task-discovery';
 import {
   computeNetReward,
   computePendingActions,
@@ -102,13 +103,6 @@ import {
 // reaches create() -- not merely by the time the reconciler runs. Asking for it here rather
 // than relying on startup ordering keeps the router correct in any process that loads it.
 registerRelayedIntentHandlers();
-
-// Tasks created before the ERC-8195 Rev007 submission-integrity upgrade (PR #135,
-// merged 2026-06-30T18:15:06-04:00) predate the current escrow/refund flow. A wave of
-// them are stuck open with expired escrow that can't be resolved on our side (no
-// requester-reject path existed yet, refundExpired wasn't callable the way it is now).
-// Hide them from discovery so agents stop finding tasks they can never win.
-const REV007_LISTING_CUTOFF = new Date('2026-06-30T22:15:06.000Z');
 
 // Implements: ADR-0047. The service raises HTTP statuses because its other caller is the X402
 // preflight, which speaks HTTP; this maps them back for the tRPC boundary.
@@ -447,9 +441,15 @@ export const tasksRouter = router({
       const conditions = [];
       // Discovery listings never surface unlisted tasks (ADR-0014). Fetching a
       // specific task by ID is unaffected -- this only gates the browse/search path.
-      conditions.push(taskDiscoverable);
-      if (input.status && input.status !== 'ALL') {
-        conditions.push(eq(tasks.status, input.status));
+      if (input.status === 'open') {
+        // Keep this exactly aligned with market.stats.openTasks: the count and the rows
+        // shown to agents must describe the same actionable public market.
+        conditions.push(discoverableOpenTaskCondition(now));
+      } else {
+        conditions.push(taskDiscoverable);
+        if (input.status && input.status !== 'ALL') {
+          conditions.push(eq(tasks.status, input.status));
+        }
       }
       // Discovery listings (open, or unfiltered/ALL browsing) should never surface
       // pre-Rev007 legacy tasks or tasks whose escrow has already expired but whose
@@ -457,7 +457,7 @@ export const tasksRouter = router({
       // action, not automatically -- see refundExpired / indexer TaskExpired handler).
       // Non-open status filters (completed, cancelled, etc.) are left untouched so
       // historical records stay queryable.
-      if (!input.status || input.status === 'ALL' || input.status === 'open') {
+      if (!input.status || input.status === 'ALL') {
         conditions.push(gte(tasks.createdAt, REV007_LISTING_CUTOFF));
       }
       // 'open' isn't the only status with a submission window: 'claimed' (claim/auction
@@ -465,11 +465,7 @@ export const tasksRouter = router({
       // deliverables" states -- see computeSubmissionWindowOpen in lib/task.ts. Apply the
       // same expiry-exclusion guard to all three so filtering by any of them consistently
       // excludes tasks whose window has already closed, instead of only 'open' doing so.
-      if (
-        input.status === 'open' ||
-        input.status === 'claimed' ||
-        input.status === 'worker_selected'
-      ) {
+      if (input.status === 'claimed' || input.status === 'worker_selected') {
         conditions.push(gt(tasks.expiryTime, now));
       }
       if (input.phase) {
