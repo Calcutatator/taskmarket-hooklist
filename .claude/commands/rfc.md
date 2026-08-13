@@ -54,6 +54,14 @@ user to restate it.
    resolve, and it fails the audit.
 
 5. **Stage the file, then validate it — in that order:**
+
+   **Check the working tree before staging:**
+   ```bash
+   git status --short
+   ```
+   If unrelated changes are already staged, stop and ask. `git add` here would fold them into
+   whatever the user commits next, and this command cannot tell which of them they intended.
+
    ```bash
    git add docs/rfc/NNNN-slug.md
    cd packages/adr && npx tsx adr-lint.ts && npx tsx citation-check.ts

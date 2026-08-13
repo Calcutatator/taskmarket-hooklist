@@ -16,6 +16,14 @@ comment, use `/rfc` instead, not this.
    choice, the options that were genuinely considered (including at least one that was rejected —
    real, not invented), and the choice actually made with its real justification.
 
+   You must be able to state it in the five-part Y-statement this repo's ADRs require, every part
+   filled from the actual discussion:
+
+   > In the context of **X**, facing **Y**, we decided **Z** to achieve **W**, accepting **V**.
+
+   The accepted trade-off (**V**) is the part most often omitted and the part a later reader most
+   needs. If you cannot name a real one, the decision probably has not been made — use `/rfc`.
+
 2. **Get the next ADR number:**
    ```bash
    ls docs/adr/[0-9]*.md 2>/dev/null | sort -V | tail -1
@@ -61,7 +69,22 @@ comment, use `/rfc` instead, not this.
    in `.adrrc.json`'s `publishedPaths` is a pointer that package's external readers cannot resolve,
    and it fails the audit. If the decision needs explaining there, inline the reasoning instead.
 
-6. **Stage the file, then validate it — in that order:**
+6. **Record relationships in the right field, and reciprocate them.** If this ADR supersedes or
+   amends another, the peer must point back, and `adr-lint.ts` checks both directions. While this
+   ADR is still `Proposed` the claim is not binding, so it belongs in the peer's `Pending
+   Supersedes / Superseded-by` or `Pending Amends / Amended-by` field and moves to the binding
+   field only once this ADR is Accepted. A premature claim in the binding field is worse than a
+   one-sided one, because it reads as settled.
+
+7. **Stage the file, then validate it — in that order:**
+
+   **Check the working tree before staging:**
+   ```bash
+   git status --short
+   ```
+   If unrelated changes are already staged, stop and ask. `git add` here would fold them into
+   whatever the user commits next, and this command cannot tell which of them they intended.
+
    ```bash
    git add docs/adr/NNNN-slug.md
    cd packages/adr && npx tsx adr-lint.ts
@@ -73,7 +96,7 @@ comment, use `/rfc` instead, not this.
    the linter reports rather than leaving it for CI, and never report success on a file that was
    never examined.
 
-7. **Regenerate the index** (the file is already staged from step 6):
+8. **Regenerate the index** (the file is already staged from step 7):
    ```bash
    cd packages/adr && npx tsx adr-audit.ts
    ```
@@ -83,7 +106,7 @@ comment, use `/rfc` instead, not this.
    index instead of erroring. `tsx` also only resolves from `packages/adr`'s own
    `node_modules/.bin` — running it from the repo root fails with `tsx: command not found`.
 
-8. **Report back**: state the file path, the Y-statement, and explicitly flag that `Status:
+9. **Report back**: state the file path, the Y-statement, and explicitly flag that `Status:
    Proposed` needs a human Decider + reviewer ack before it can move to `Accepted` — don't let the
    user assume drafting it is the same as deciding it.
 

@@ -28,6 +28,9 @@ Use `_template.md` as your starting point. Each ADR follows **MADR-lite** struct
 
 - **Status:** Proposed
 - **Date:** YYYY-MM-DD
+- **Accepted:** (the date a Decider accepted it — required on `Accepted`, `Superseded` and
+  `Deprecated`; omitted entirely on `Proposed`, `Rejected` and `Withdrawn`. See ADR-0082; enforced
+  by `checkAcceptedField` in `packages/adr/lib.ts`)
 - **Embodiment:** Not started
 - **Last audited:** YYYY-MM-DD
 - **Author:** (who drafted this ADR)

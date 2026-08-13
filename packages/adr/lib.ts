@@ -118,7 +118,10 @@ export function formatGithubAnnotation(issue: Issue, normalizedFile: string): st
 // work against a header block in isolation (see headerText) and not only against a whole
 // document that happens to have a section heading after the header.
 function fieldRegex(label: string): RegExp {
-  return new RegExp(`\\*\\*${label}:\\*\\*([\\s\\S]*?)(?=\\n- \\*\\*|\\n##|$)`, 'i');
+  // The lookahead must accept the same whitespace HEADER_FIELD_LINE_RE does — "-" followed by a
+  // space *or a tab* — otherwise a tab-indented field is not recognized as the next field and gets
+  // swallowed into the previous field's value.
+  return new RegExp(`\\*\\*${label}:\\*\\*([\\s\\S]*?)(?=\\n-[ \\t]+\\*\\*|\\n##|$)`, 'i');
 }
 
 export const AUTHOR_RE = fieldRegex('Author');

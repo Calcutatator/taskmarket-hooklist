@@ -57,6 +57,7 @@ import {
   checkStatusField,
   checkDateField,
   checkAcceptedField,
+  AUTHOR_RE,
   checkStatusEmbodimentConsistency,
   checkHeaderStructure,
   parseHeader,
@@ -1249,6 +1250,15 @@ describe('parseHeader / checkHeaderStructure', () => {
     const parsed = parseHeader(content);
     expect(parsed.fields.find((f) => f.key === 'Date')?.value).toBe('2026-07-01');
     expect(parsed.fields.map((f) => f.key)).toEqual(['Status', 'Date', 'Deciders']);
+  });
+
+  // fieldRegex's terminator and HEADER_FIELD_LINE_RE must accept the same whitespace: with only
+  // "\n- " accepted, a tab-indented field was not seen as the next field and was swallowed into
+  // the value above it.
+  test('a tab-separated field line terminates the previous field value', () => {
+    const content = "- **Status:** Accepted\n- **Author:** Beau\n-\t**Deciders:** Ada\n\n## Context\n";
+    expect(parseHeader(content).fields.map((f) => f.key)).toEqual(['Status', 'Author', 'Deciders']);
+    expect(fieldValue(headerText(content), AUTHOR_RE)).toBe('Beau');
   });
 
   test('an indented continuation line attaches to the field above it', () => {
