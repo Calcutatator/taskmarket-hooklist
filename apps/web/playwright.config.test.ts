@@ -97,4 +97,11 @@ describe('Playwright configuration', () => {
       }
     }
   });
+
+  it('allows CI shards to balance individual tests while keeping one worker per shard', async () => {
+    const { default: config } = await import('./playwright.config');
+
+    expect(config.fullyParallel).toBe(true);
+    expect(config.workers).toBe(1);
+  });
 });

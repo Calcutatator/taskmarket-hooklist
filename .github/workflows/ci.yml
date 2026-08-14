@@ -55,12 +55,14 @@ jobs:
             RANGE="HEAD^...HEAD"
           fi
           echo "range: $RANGE"
-          if git diff --name-only "$RANGE" | grep -q "^packages/contracts/"; then
+          if git diff --name-only "$RANGE" | grep -Eq \
+            '^(packages/contracts/|Makefile$|scripts/run-ci-test\.mjs$|\.github/workflows/ci\.yml$)'; then
             echo "contracts=true" >> "$GITHUB_OUTPUT"
           else
             echo "contracts=false" >> "$GITHUB_OUTPUT"
           fi
-          git diff --name-only "$RANGE" | grep "^packages/contracts/" | head -5 || true
+          git diff --name-only "$RANGE" | grep -E \
+            '^(packages/contracts/|Makefile$|scripts/run-ci-test\.mjs$|\.github/workflows/ci\.yml$)' | head -5 || true
 
   skill-conformance:
     runs-on: ubuntu-latest
@@ -79,8 +81,8 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version-file: '.nvmrc'
-          cache: 'pnpm'
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
 
       - run: make install
 
@@ -109,8 +111,8 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version-file: '.nvmrc'
-          cache: 'pnpm'
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
 
       - run: make install
 
@@ -158,6 +160,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      - run: make install
+
+      # This is deliberately separate from tests. Test shards have a measured five-minute
+      # budget; lint, format, type checking, and builds are independent quality gates.
+      - name: Run non-test JavaScript checks
+        timeout-minutes: 5
+        run: make ci-quality-js
+
+  backend-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: backend
+            shard: 1/2
+            label: backend-1-of-2
+          - target: backend
+            shard: 2/2
+            label: backend-2-of-2
+
     services:
       postgres:
         image: public.ecr.aws/docker/library/postgres:15-alpine
@@ -184,14 +222,97 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version-file: '.nvmrc'
-          cache: 'pnpm'
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
 
       - run: make install
 
-      - run: make ci-quality-js
+      # The Make target measures the child process and terminates it at 300 seconds. This outer
+      # timeout only leaves one minute for that process to report and clean up after termination.
+      - name: Test ${{ matrix.label }}
+        timeout-minutes: 6
+        run: >-
+          make ci-test
+          CI_TEST_TARGET='${{ matrix.target }}'
+          CI_TEST_SHARD='${{ matrix.shard }}'
         env:
           DATABASE_URL: postgresql://taskmarket:taskmarket@localhost:5432/taskmarket_test
+
+  js-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: web
+            shard: 1/2
+            label: web-1-of-2
+          - target: web
+            shard: 2/2
+            label: web-2-of-2
+          - target: other
+            shard: ""
+            label: other-js
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      - run: make install
+
+      - name: Test ${{ matrix.label }}
+        timeout-minutes: 6
+        run: >-
+          make ci-test
+          CI_TEST_TARGET='${{ matrix.target }}'
+          CI_TEST_SHARD='${{ matrix.shard }}'
+
+  web-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      - run: make install
+
+      # The production app used to be built independently in both browser jobs and quality-js.
+      # Build it once, gate the build itself, then fan the same bytes out to every E2E shard.
+      - name: Build production web app
+        timeout-minutes: 5
+        run: make ui-ci-build
+
+      - name: Upload production web app
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-production-build
+          path: |
+            apps/web/.next
+            !apps/web/.next/cache
+          include-hidden-files: true
+          retention-days: 1
 
   quality-contracts:
     needs: changes
@@ -219,8 +340,8 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version-file: '.nvmrc'
-          cache: 'pnpm'
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
@@ -230,7 +351,7 @@ jobs:
       - name: Install Python (for Slither)
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install Slither
         # Pinned for deterministic results — bump in lockstep with the local Homebrew/pip version.
@@ -277,10 +398,13 @@ jobs:
 
       - run: make format-check contracts
 
-      - run: make contract test
+      - name: Contract test shard
+        timeout-minutes: 6
+        run: make contract test-ci
 
       - name: Gas snapshot check
-        run: make contract snapshot-check
+        timeout-minutes: 6
+        run: make contract snapshot-check-ci
 
       # TaskTokenRewardHook sits behind a proxy, so a sequential state variable would be
       # repointed by any later insertion above it. Its state lives in a fixed-slot struct
@@ -315,7 +439,11 @@ jobs:
           free -h
         continue-on-error: true
 
-      - name: Coverage check
+      # Coverage is an analysis phase, not one of the five-minute correctness-test shards. Forge
+      # recompiles every contract with instrumentation and executes the suite as one indivisible
+      # command; its cold compiler path alone exceeds five minutes. Keep measuring it as its own
+      # step until Foundry can separate instrumented compilation from coverage execution.
+      - name: Coverage analysis
         run: make contract coverage-check
 
       - name: Upload Slither report
@@ -349,8 +477,8 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version-file: '.nvmrc'
-          cache: 'pnpm'
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
 
       - run: make install
 
@@ -370,7 +498,18 @@ jobs:
 
   quality:
     if: always()
-    needs: [quality-js, quality-contracts, skill-conformance, adr, storybook]
+    needs:
+      [
+        quality-js,
+        backend-tests,
+        js-tests,
+        web-build,
+        changes,
+        quality-contracts,
+        skill-conformance,
+        adr,
+        storybook,
+      ]
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -378,18 +517,24 @@ jobs:
       - name: Verify quality shards
         run: |
           test "${{ needs.quality-js.result }}" = "success"
-          # Skipped is a pass here and nowhere else: this job is conditional on Solidity having
-          # changed, so "did not run" means "there was nothing to check". Every other shard is
-          # unconditional, and a skip there would mean something went wrong.
-          case "${{ needs.quality-contracts.result }}" in
-            success|skipped) ;;
-            *) echo "quality-contracts: ${{ needs.quality-contracts.result }}"; exit 1 ;;
+          test "${{ needs.backend-tests.result }}" = "success"
+          test "${{ needs.js-tests.result }}" = "success"
+          test "${{ needs.web-build.result }}" = "success"
+          test "${{ needs.changes.result }}" = "success"
+          # A skipped contract job is valid only when the successful detector explicitly found
+          # no contract-affecting inputs. An upstream detector failure must never become a pass.
+          case "${{ needs.changes.outputs.contracts }}:${{ needs.quality-contracts.result }}" in
+            true:success|false:skipped) ;;
+            *)
+              echo "contracts=${{ needs.changes.outputs.contracts }}, quality-contracts=${{ needs.quality-contracts.result }}"
+              exit 1;;
           esac
           test "${{ needs.skill-conformance.result }}" = "success"
           test "${{ needs.adr.result }}" = "success"
           test "${{ needs.storybook.result }}" = "success"
 
   ui-e2e:
+    needs: web-build
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -398,8 +543,28 @@ jobs:
         include:
           - browser: chromium
             project: chromium-*
+            shard: 1/2
+            label: chromium-1-of-2
           - browser: webkit
             project: webkit-*
+            shard: 1/4
+            label: webkit-1-of-4
+          - browser: chromium
+            project: chromium-*
+            shard: 2/2
+            label: chromium-2-of-2
+          - browser: webkit
+            project: webkit-*
+            shard: 2/4
+            label: webkit-2-of-4
+          - browser: webkit
+            project: webkit-*
+            shard: 3/4
+            label: webkit-3-of-4
+          - browser: webkit
+            project: webkit-*
+            shard: 4/4
+            label: webkit-4-of-4
 
     steps:
       - uses: actions/checkout@v7
@@ -412,14 +577,26 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version-file: '.nvmrc'
-          cache: 'pnpm'
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
 
       - run: make install
 
+      - name: Download production web app
+        uses: actions/download-artifact@v4
+        with:
+          name: web-production-build
+          path: apps/web/.next
+
       - run: make ui-ci-install-browsers UI_CI_BROWSER=${{ matrix.browser }}
 
-      - run: make ui-ci-e2e UI_CI_PROJECT='${{ matrix.project }}'
+      - name: Test ${{ matrix.label }}
+        timeout-minutes: 6
+        run: >-
+          make ui-ci-e2e
+          UI_CI_SKIP_BUILD=1
+          UI_CI_PROJECT='${{ matrix.project }}'
+          UI_CI_SHARD='${{ matrix.shard }}'
         env:
           CI: true
 
@@ -427,7 +604,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-${{ matrix.browser }}
+          name: playwright-report-${{ matrix.label }}
           path: apps/web/playwright-report
           retention-days: 14
 
@@ -435,13 +612,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-test-results-${{ matrix.browser }}
+          name: playwright-test-results-${{ matrix.label }}
           path: apps/web/test-results
           retention-days: 14
 
   ui:
     if: always()
-    needs: [quality-js, storybook, ui-e2e]
+    needs: [quality-js, backend-tests, js-tests, web-build, storybook, ui-e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -449,5 +626,8 @@ jobs:
       - name: Verify UI shards
         run: |
           test "${{ needs.quality-js.result }}" = "success"
+          test "${{ needs.backend-tests.result }}" = "success"
+          test "${{ needs.js-tests.result }}" = "success"
+          test "${{ needs.web-build.result }}" = "success"
           test "${{ needs.storybook.result }}" = "success"
           test "${{ needs.ui-e2e.result }}" = "success"

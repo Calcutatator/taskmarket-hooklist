@@ -301,6 +301,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0083 — The ADR header is a closed structure, validated as a whole](0083-the-adr-header-is-a-closed-structure.md)
 - [0084 — A published path carries no decision references, and declares its own severity](0084-published-paths-carry-no-decision-references.md)
 - [0085 — The header region is bounded by its section heading, not by contiguity](0085-the-header-region-is-bounded-by-its-section-heading.md)
+- [0086 — CI correctness-test shards have a five-minute budget](0086-ci-correctness-test-shards-have-a-five-minute-budget.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

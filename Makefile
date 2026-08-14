@@ -1,11 +1,12 @@
 # Taskmarket monorepo - install, build, start services, lint, format
 SHELL := /bin/bash
 ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$${NVM_DIR:-$$HOME/.nvm}"; if [ -s "$$NVM_DIR/nvm.sh" ]; then . "$$NVM_DIR/nvm.sh" && nvm install && nvm use; fi
+CI_TEST_BUDGET_SECONDS := 300
 
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start storybook storybook-ci storybook-image storybook-image-smoke storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check discord-blueprint-check adr-audit contract ci-quality-js ui-ci ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli discord disable register signed-smoke dither-kit
+.PHONY: help init install build dev start storybook storybook-ci storybook-image storybook-image-smoke storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check discord-blueprint-check adr-audit contract ci-config-check ci-config-fix ci-quality-js ci-test ui-ci ui-ci-build ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli discord disable register signed-smoke dither-kit
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -39,11 +40,15 @@ help:
 	@echo "  make adr-audit            - Regenerate ADR/RFC indexes and embodiment audit reports"
 	@echo "  make lint-check specs     - Check docs/specs/ follow the Spec-lite structural template"
 	@echo "  make test adr             - Run the adr package's own unit test suite (also covers spec-lint)"
-	@echo "  make contract <cmd>       - Contract tools (audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|storage-check|doc|test|test-ci)"
+	@echo "  make contract <cmd>       - Contract tools (audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|snapshot-check-ci|storage-check|doc|test|test-ci)"
 	@echo "  make contract <owner-cmd> <testnet|mainnet> - Owner actions (pause|unpause|accept-ownership)"
-	@echo "  make ci-quality-js        - Run the non-contract CI quality shard"
+	@echo "  make ci-config-check      - Check CI workflow and benchmark script formatting"
+	@echo "  make ci-config-fix        - Format CI workflow and benchmark script"
+	@echo "  make ci-quality-js        - Run non-test JavaScript CI checks"
+	@echo "  make ci-test              - Run a five-minute-budgeted CI test shard"
 	@echo "  make ui-ci                - Run the full Storybook and production web UI gate"
-	@echo "  make ui-ci-e2e            - Build and run the CI E2E shard (UI_CI_PROJECT optional)"
+	@echo "  make ui-ci-build          - Build the production web artifact for CI E2E shards"
+	@echo "  make ui-ci-e2e            - Run a CI E2E shard (UI_CI_PROJECT/UI_CI_SHARD optional)"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
 	@echo "  make clean                - Clean build artifacts"
 	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-agent-registry-chain|retry-orphaned-refunds|migrate-reward-hook-state)"
@@ -566,7 +571,8 @@ storybook-ci:
 	pnpm --filter @taskmarket/shared build && \
 	pnpm --filter @taskmarket/web storybook:coverage && \
 	pnpm --filter @taskmarket/web storybook:build && \
-	pnpm --filter @taskmarket/web storybook:test
+	node scripts/run-ci-test.mjs storybook $(CI_TEST_BUDGET_SECONDS) -- \
+		pnpm --filter @taskmarket/web storybook:test
 
 storybook-image:
 	docker build -f apps/web/Dockerfile.storybook -t taskmarket-storybook:local .
@@ -589,9 +595,12 @@ storybook-install-browsers:
 skill-conformance:
 	$(ENV_LOADER) && \
 	pnpm --filter @taskmarket/shared build && \
-	pnpm --filter @taskmarket/backend exec vitest run test/unit/skill-conformance.test.ts test/integration/middleware/validateBody.test.ts && \
-	pnpm --filter @lucid-agents/taskmarket exec vitest run test/unit/skill-conformance.test.ts && \
-	pnpm --filter @taskmarket/web exec vitest run lib/skill-package.test.ts lib/skill.test.ts
+	node scripts/run-ci-test.mjs skill-backend $(CI_TEST_BUDGET_SECONDS) -- \
+		pnpm --filter @taskmarket/backend exec vitest run test/unit/skill-conformance.test.ts test/integration/middleware/validateBody.test.ts && \
+	node scripts/run-ci-test.mjs skill-cli $(CI_TEST_BUDGET_SECONDS) -- \
+		pnpm --filter @lucid-agents/taskmarket exec vitest run test/unit/skill-conformance.test.ts && \
+	node scripts/run-ci-test.mjs skill-web $(CI_TEST_BUDGET_SECONDS) -- \
+		pnpm --filter @taskmarket/web exec vitest run lib/skill-package.test.ts lib/skill.test.ts
 
 skill-export:
 	@if [ -z "$(SKILLS_MARKET_OUTPUT)" ]; then \
@@ -608,7 +617,7 @@ docs-og-check:
 contract:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|storage-check|doc|test|test-ci"; \
+		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|snapshot-check-ci|storage-check|doc|test|test-ci"; \
 		echo "       make contract <pause|unpause|accept-ownership> <testnet|mainnet>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "audit" ]; then \
@@ -628,6 +637,9 @@ contract:
 		cd packages/contracts && forge snapshot -j 1; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot-check" ]; then \
 		cd packages/contracts && forge snapshot --check --tolerance 1 -j 1; \
+	elif [ "$(word 1,$(ARGS))" = "snapshot-check-ci" ]; then \
+		cd packages/contracts && node ../../scripts/run-ci-test.mjs contract-snapshot $(CI_TEST_BUDGET_SECONDS) -- \
+			forge snapshot --check --tolerance 1 -j 1; \
 	elif [ "$(word 1,$(ARGS))" = "storage-check" ]; then \
 		forge build --root packages/contracts && \
 		cd packages/contracts && \
@@ -668,7 +680,8 @@ contract:
 	elif [ "$(word 1,$(ARGS))" = "test" ]; then \
 		cd packages/contracts && forge test -j 1 --summary; \
 	elif [ "$(word 1,$(ARGS))" = "test-ci" ]; then \
-		cd packages/contracts && FOUNDRY_PROFILE=ci forge test -j 1 --summary; \
+		cd packages/contracts && FOUNDRY_PROFILE=ci node ../../scripts/run-ci-test.mjs contracts-ci $(CI_TEST_BUDGET_SECONDS) -- \
+			forge test -j 1 --summary; \
 	elif [ "$(word 1,$(ARGS))" = "pause" ] || [ "$(word 1,$(ARGS))" = "unpause" ] || \
 	     [ "$(word 1,$(ARGS))" = "accept-ownership" ]; then \
 		case "$(word 1,$(ARGS))" in \
@@ -703,19 +716,51 @@ contract:
 			--rpc-url $$OWNER_RPC; \
 	else \
 		echo "Unknown command: $(word 1,$(ARGS))"; \
-		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|storage-check|doc|test|test-ci"; \
+		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|snapshot-check-ci|storage-check|doc|test|test-ci"; \
 		echo "       make contract <pause|unpause|accept-ownership> <testnet|mainnet>"; \
 		exit 1; \
 	fi
 
-ci-quality-js:
+ci-config-check:
 	$(ENV_LOADER) && \
-	pnpm turbo build --filter='!@taskmarket/contracts' --filter='!@taskmarket/docs' && \
+	pnpm exec prettier --check .github/workflows/ci.yml scripts/run-ci-test.mjs scripts/run-ci-test.test.mjs && \
+	node --test scripts/run-ci-test.test.mjs
+
+ci-config-fix:
+	$(ENV_LOADER) && \
+	pnpm exec prettier --write .github/workflows/ci.yml scripts/run-ci-test.mjs scripts/run-ci-test.test.mjs
+
+ci-quality-js: ci-config-check
+	$(ENV_LOADER) && \
+	pnpm turbo build --filter='!@taskmarket/contracts' --filter='!@taskmarket/docs' --filter='!@taskmarket/web' && \
 	pnpm turbo lint:check --filter='!@taskmarket/contracts' && \
 	pnpm turbo format:check --filter='!@taskmarket/contracts' && \
 	pnpm turbo type-check --filter='!@taskmarket/contracts' && \
-	pnpm turbo test --filter='!@taskmarket/contracts' --filter='!@taskmarket/docs' && \
 	$(MAKE) discord-blueprint-check
+
+ci-test:
+	@$(ENV_LOADER) && \
+	case "$(CI_TEST_TARGET)" in \
+		backend) \
+			[ -n "$(CI_TEST_SHARD)" ] || { echo "CI_TEST_SHARD is required for backend"; exit 1; }; \
+			pnpm --filter @taskmarket/shared build && \
+			node scripts/run-ci-test.mjs "backend $(CI_TEST_SHARD)" $(CI_TEST_BUDGET_SECONDS) -- \
+				pnpm --filter @taskmarket/backend exec vitest run --shard="$(CI_TEST_SHARD)";; \
+		web) \
+			[ -n "$(CI_TEST_SHARD)" ] || { echo "CI_TEST_SHARD is required for web"; exit 1; }; \
+			node scripts/run-ci-test.mjs "web $(CI_TEST_SHARD)" $(CI_TEST_BUDGET_SECONDS) -- \
+				pnpm --filter @taskmarket/web exec vitest run --project=unit --shard="$(CI_TEST_SHARD)";; \
+		other) \
+			node scripts/run-ci-test.mjs other-js $(CI_TEST_BUDGET_SECONDS) -- \
+				pnpm turbo test \
+					--filter='!@taskmarket/contracts' \
+					--filter='!@taskmarket/docs' \
+					--filter='!@taskmarket/backend' \
+					--filter='!@taskmarket/web';; \
+		*) \
+			echo "Usage: make ci-test CI_TEST_TARGET=<backend|web|other> [CI_TEST_SHARD=1/2]"; \
+			exit 1;; \
+	esac
 
 ui-ci:
 	$(MAKE) storybook-ci
@@ -739,24 +784,31 @@ ui-ci:
 	TASKMARKET_MOCK_WEB_PORT="$$MOCK_WEB_PORT" \
 		pnpm --filter @taskmarket/web test:e2e
 
+ui-ci-build:
+	$(ENV_LOADER) && \
+	MOCK_API_PORT="$${E2E_MOCK_API_PORT:-$${TASKMARKET_MOCK_API_PORT:-3101}}" && \
+	pnpm --filter @taskmarket/shared build && \
+	NEXT_PUBLIC_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
+	TASKMARKET_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
+	NEXT_PUBLIC_PRIVY_APP_ID= \
+		pnpm --filter @taskmarket/web build
+
 ui-ci-e2e:
 	$(ENV_LOADER) && \
 	MOCK_API_PORT="$${E2E_MOCK_API_PORT:-$${TASKMARKET_MOCK_API_PORT:-3101}}" && \
 	MOCK_WEB_PORT="$${TASKMARKET_MOCK_WEB_PORT:-3002}" && \
 	PLAYWRIGHT_ARGS=() && \
 	if [ -n "$(UI_CI_PROJECT)" ]; then PLAYWRIGHT_ARGS+=(--project="$(UI_CI_PROJECT)"); fi && \
-	pnpm --filter @taskmarket/shared build && \
-	NEXT_PUBLIC_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
-	TASKMARKET_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
-	NEXT_PUBLIC_PRIVY_APP_ID= \
-		pnpm --filter @taskmarket/web build && \
+	if [ -n "$(UI_CI_SHARD)" ]; then PLAYWRIGHT_ARGS+=(--shard="$(UI_CI_SHARD)"); fi && \
+	if [ "$(UI_CI_SKIP_BUILD)" != "1" ]; then $(MAKE) ui-ci-build; fi && \
 	NEXT_PUBLIC_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
 	TASKMARKET_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
 	NEXT_PUBLIC_PRIVY_APP_ID= \
 	CI=1 \
 	NODE_ENV=production \
 	TASKMARKET_MOCK_WEB_PORT="$$MOCK_WEB_PORT" \
-		pnpm --filter @taskmarket/web exec playwright test "$${PLAYWRIGHT_ARGS[@]}" $(UI_CI_TEST_ARGS)
+		node scripts/run-ci-test.mjs "e2e $(UI_CI_PROJECT) $(UI_CI_SHARD)" $(CI_TEST_BUDGET_SECONDS) -- \
+			pnpm --filter @taskmarket/web exec playwright test "$${PLAYWRIGHT_ARGS[@]}" $(UI_CI_TEST_ARGS)
 
 ui-ci-install-browsers:
 	$(ENV_LOADER) && cd apps/web && pnpm exec playwright install --with-deps $(if $(UI_CI_BROWSER),$(UI_CI_BROWSER),chromium webkit)

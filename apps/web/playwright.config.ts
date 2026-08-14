@@ -13,7 +13,9 @@ export default defineConfig({
     timeout: 10_000,
   },
   forbidOnly: Boolean(process.env.CI),
-  fullyParallel: false,
+  // CI shards must split large spec files at test granularity. There is still only one worker
+  // per shard, so tests inside a runner remain serial while independent runners share the load.
+  fullyParallel: true,
   outputDir: 'test-results',
   projects: [
     {
