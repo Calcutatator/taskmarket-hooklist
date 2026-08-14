@@ -4,7 +4,7 @@ import type { SubmissionResponse, TaskDetailResponse } from '@taskmarket/shared'
 import { useEffect, useState, type ComponentProps } from 'react';
 import { useAccount } from 'wagmi';
 
-import { TaskDetailPanel, type TaskModeData } from '@/components/market/tasks';
+import { TaskDetailPanel, type TaskModeData } from '@/components/market/task-detail-panel-client';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { getCachedReadAuthAddress, getCachedReadAuthHeaders } from '@/lib/read-auth';
 import { useReadAuthSignatureState } from '@/lib/use-read-auth-signature';

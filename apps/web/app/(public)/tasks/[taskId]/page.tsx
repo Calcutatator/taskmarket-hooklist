@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { cache } from 'react';
 
-import { TaskDetailPanel } from '@/components/market/tasks';
+import { TaskDetailPanel } from '@/components/market/task-detail-panel-client';
 import { PrivateTaskAccessGate } from '@/components/market/private-task-access-gate';
 import {
   fetchMarketStats,

@@ -610,6 +610,14 @@ export const OpenSubmissionGallery: Story = {
     );
     await expect(gallery.getByText('Task default')).toBeVisible();
     await expect(gallery.getByRole('img', { name: 'protocol-review.png' })).toBeVisible();
+
+    const allFilter = gallery.getByRole('button', { name: 'Filter gallery to All' });
+
+    await userEvent.click(allFilter);
+
+    await expect(allFilter).toHaveAttribute('aria-pressed', 'true');
+    await expect(gallery.getByRole('button', { name: 'Previous artifact' })).toBeVisible();
+    await expect(gallery.getByRole('button', { name: 'Next artifact' })).toBeVisible();
   },
 };
 

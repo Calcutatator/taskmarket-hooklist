@@ -1,5 +1,6 @@
 {
   "components/legal-provider-gate.tsx": "Application provider boundary that only selects the legal consent provider and has no standalone visual state.",
   "components/legal-consent-gate.tsx": "Authenticated policy acknowledgement boundary depends on live legal receipt and API state; its visual branches are covered by focused component tests.",
-  "components/market/caller-scoped-task-detail.tsx": "Route integration boundary that silently hydrates an authenticated task projection; its public and caller-scoped branches are covered by route and component tests."
+  "components/market/caller-scoped-task-detail.tsx": "Route integration boundary that silently hydrates an authenticated task projection; its public and caller-scoped branches are covered by route and component tests.",
+  "components/market/task-detail-panel-client.tsx": "Client-only module-boundary facade that re-exports the already-covered TaskDetailPanel and has no standalone visual state."
 }

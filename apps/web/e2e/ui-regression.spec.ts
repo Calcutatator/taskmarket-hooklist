@@ -355,6 +355,36 @@ test('keeps pending-review detail usable without horizontal overflow', async ({ 
   await expectNoHorizontalOverflow(page);
 });
 
+test('keeps submission gallery navigation arrows centered on hover', async ({ page }, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'chromium-desktop',
+    'Chromium desktop covers pointer hover on the visible gallery arrows.'
+  );
+
+  await page.goto('/dashboard/tasks/e2e-pending-review');
+  const comparison = page.getByRole('region', { name: /Artifact comparison/i });
+  await comparison.getByRole('button', { name: /Open candidate-a\.png preview/i }).click();
+
+  const dialog = page.getByRole('dialog');
+  const arrows = [
+    dialog.getByRole('button', { name: 'Previous artifact' }),
+    dialog.getByRole('button', { name: 'Next artifact' }),
+  ];
+
+  for (const arrow of arrows) {
+    await expect(arrow).toBeVisible();
+    const restingBox = await arrow.boundingBox();
+    expect(restingBox).not.toBeNull();
+
+    await arrow.hover();
+
+    const hoverBox = await arrow.boundingBox();
+    expect(hoverBox).not.toBeNull();
+    expect(Math.abs(hoverBox!.y - restingBox!.y)).toBeLessThanOrEqual(0.25);
+    await page.mouse.move(0, 0);
+  }
+});
+
 test('places submission review before the task description and runs HTML in the full-viewport gallery', async ({
   page,
 }, testInfo) => {
@@ -914,7 +944,12 @@ test('shows the Unlisted badge and stays reachable by direct link (ADR-0014)', a
   await expectNoHorizontalOverflow(page);
 });
 
-test('renders every split settlement recipient and canonical payout amount', async ({ page }) => {
+test('keeps task detail rendering stable across public and dashboard routes with split payouts', async ({
+  page,
+}) => {
+  await page.goto('/tasks/mock-bounty-unlisted');
+  await expect(page.getByRole('heading', { name: /Bounty - unlisted task/i })).toBeVisible();
+
   await page.goto('/dashboard/tasks/mock-bounty-split-settlement');
 
   const payouts = page.getByRole('region', { name: /Settlement payouts/i });
