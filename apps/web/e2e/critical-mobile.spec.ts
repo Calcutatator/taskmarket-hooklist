@@ -323,11 +323,10 @@ test('keeps grouped submission review usable at edge mobile widths', async ({ pa
   await page.keyboard.press('Escape');
   await expect(artifactDrawer).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Next page' }).tap();
   await expectTouchTarget(historyButton);
   await historyButton.tap();
   await expect(page.getByRole('heading', { name: 'Submitter history' })).toBeVisible();
-  await expect(page.getByRole('region', { name: /^Submission \d+ of 150 from/ })).toHaveCount(10);
+  await expect(page.getByRole('region', { name: /^Submission \d+ of 150 from/ })).toHaveCount(12);
   await expectNoHorizontalOverflow(page);
 
   const backButton = page.getByRole('button', { name: 'Back to all submitters' });

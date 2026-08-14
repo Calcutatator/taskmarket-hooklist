@@ -1591,13 +1591,13 @@ describe('Task marketplace components', () => {
 
   it('paginates and sorts a large submitter review queue', async () => {
     const user = userEvent.setup();
-    const submissions: SubmissionResponse[] = Array.from({ length: 12 }, (_, index) => ({
+    const submissions: SubmissionResponse[] = Array.from({ length: 13 }, (_, index) => ({
       artifacts: [],
       fileUrl: 'ipfs://deliverable',
       id: `sub-${index}`,
       signature: '0xsig',
-      // Oldest first in the seed order; index 0 is the oldest, index 11 the newest.
-      submittedAt: new Date(Date.now() - (12 - index) * 60_000).toISOString(),
+      // Oldest first in the seed order; index 0 is the oldest, index 12 the newest.
+      submittedAt: new Date(Date.now() - (13 - index) * 60_000).toISOString(),
       taskId: task.id,
       workerAddress: `0x${(index + 1).toString().padStart(40, '0')}`,
       workerStats: {
@@ -1610,25 +1610,25 @@ describe('Task marketplace components', () => {
 
     renderReviewSubmissions(submissions);
 
-    // 12 submitters at 10 per page -> 2 pages, showing 1-10 first. Scope the
+    // 13 submitters at 12 per page -> 2 pages, showing 1-12 first. Scope the
     // article query to submission cards -- the reward/status DetailMetric
     // summaries are also <article>s and would otherwise inflate the count.
-    expect(screen.getByText('Showing 1-10 of 12 submitters')).toBeInTheDocument();
+    expect(screen.getByText('Showing 1-12 of 13 submitters')).toBeInTheDocument();
     expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-    expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(10);
+    expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(12);
 
     await user.click(screen.getByRole('button', { name: /next page/i }));
-    expect(screen.getByText('Showing 11-12 of 12 submitters')).toBeInTheDocument();
-    expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(2);
+    expect(screen.getByText('Showing 13-13 of 13 submitters')).toBeInTheDocument();
+    expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(1);
 
     await user.selectOptions(
       screen.getByRole('combobox', { name: /sort submissions/i }),
       'credibility'
     );
     // Sorting resets back to page 1, now ordered by most-experienced worker first
-    // (index 11 has the highest completedTasks of the seed).
+    // (index 12 has the highest completedTasks of the seed).
     expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-    const mostExperiencedWorker = submissions[11]?.workerAddress ?? '';
+    const mostExperiencedWorker = submissions[12]?.workerAddress ?? '';
     expect(
       screen.getAllByRole('link', { name: compactAddressLabel(mostExperiencedWorker) })[0]
     ).toBeInTheDocument();
@@ -1637,34 +1637,34 @@ describe('Task marketplace components', () => {
   it('collapses repeated submissions into one submitter and drills into inline history', async () => {
     const user = userEvent.setup();
     const workerAddress = '0x3333333333333333333333333333333333333333';
-    const submissions: SubmissionResponse[] = Array.from({ length: 12 }, (_, index) => ({
+    const submissions: SubmissionResponse[] = Array.from({ length: 13 }, (_, index) => ({
       artifacts: [],
       fileUrl: `ipfs://deliverable-${index + 1}`,
       id: `sub-${index + 1}`,
       signature: '0xsig',
-      submittedAt: new Date(Date.now() - (12 - index) * 60_000).toISOString(),
+      submittedAt: new Date(Date.now() - (13 - index) * 60_000).toISOString(),
       taskId: task.id,
       workerAddress,
     }));
 
     renderReviewSubmissions(submissions);
 
-    expect(screen.getByText('12 submissions from 1 submitter')).toBeInTheDocument();
+    expect(screen.getByText('13 submissions from 1 submitter')).toBeInTheDocument();
     expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(1);
     expect(
       screen.getByRole('group', {
-        name: `Submitter ${compactAddressLabel(workerAddress)}, 12 submissions`,
+        name: `Submitter ${compactAddressLabel(workerAddress)}, 13 submissions`,
       })
     ).toBeInTheDocument();
     expect(screen.queryByText(/page 1 of 2/i)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /^View all 12 submissions from/ }));
+    await user.click(screen.getByRole('button', { name: /^View all 13 submissions from/ }));
 
     const historyHeading = await screen.findByRole('heading', { name: 'Submitter history' });
     expect(historyHeading).toHaveFocus();
     expect(screen.getByTestId('submitter-history')).toBeInTheDocument();
-    expect(screen.getAllByRole('region', { name: /^Submission \d+ of 12 from/ })).toHaveLength(10);
-    expect(screen.getByText('Showing 1-10 of 12 submissions')).toBeInTheDocument();
+    expect(screen.getAllByRole('region', { name: /^Submission \d+ of 13 from/ })).toHaveLength(12);
+    expect(screen.getByText('Showing 1-12 of 13 submissions')).toBeInTheDocument();
     expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /back to all submitters/i }));

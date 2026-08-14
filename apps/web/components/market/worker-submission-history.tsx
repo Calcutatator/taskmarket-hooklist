@@ -24,7 +24,7 @@ import { actorDisplayName } from '@/lib/format';
 import type { WorkerSubmissionGroup } from '@/lib/market/submission-review';
 import { cn } from '@/lib/utils';
 
-const PAGE_SIZE = 10;
+const SUBMISSIONS_PER_PAGE = 12;
 
 type HistorySort = 'newest' | 'oldest';
 type HistoryView = 'gallery' | 'list';
@@ -88,10 +88,10 @@ export function WorkerSubmissionHistory({
       ),
     [group]
   );
-  const totalPages = Math.max(1, Math.ceil(orderedSubmissions.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(orderedSubmissions.length / SUBMISSIONS_PER_PAGE));
   const currentPage = Math.min(page, totalPages);
-  const pageStart = (currentPage - 1) * PAGE_SIZE;
-  const pageEnd = pageStart + PAGE_SIZE;
+  const pageStart = (currentPage - 1) * SUBMISSIONS_PER_PAGE;
+  const pageEnd = pageStart + SUBMISSIONS_PER_PAGE;
   const pagedSubmissions = orderedSubmissions.slice(pageStart, pageEnd);
   const galleryEntries = submissionMediaEntries(group.submissions);
 
@@ -229,7 +229,9 @@ export function WorkerSubmissionHistory({
       <div
         className={cn(
           'grid min-w-0',
-          view === 'gallery' ? 'items-stretch gap-5 md:grid-cols-2' : 'items-start gap-3'
+          view === 'gallery'
+            ? 'items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3'
+            : 'items-start gap-3'
         )}
       >
         {pagedSubmissions.map((submission) => {
@@ -273,7 +275,7 @@ export function WorkerSubmissionHistory({
         })}
       </div>
 
-      {orderedSubmissions.length > PAGE_SIZE ? (
+      {orderedSubmissions.length > SUBMISSIONS_PER_PAGE ? (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/58 pt-3">
           <p className="font-mono text-xs text-muted-foreground">
             Showing {pageStart + 1}-{Math.min(pageEnd, orderedSubmissions.length)} of{' '}

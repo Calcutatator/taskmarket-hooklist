@@ -63,8 +63,10 @@ const TOAST_DEBOUNCE_MS = 1_500;
 
 // A task can accumulate hundreds of submissions; rendering them all in one scroll pushes
 // the requirements/next-actions panels far down the page and makes manual review
-// impractical. Client-side pagination keeps each page small without adding a fetch.
-const PAGE_SIZE = 10;
+// impractical. Submission pages use complete rows in the three-column desktop gallery,
+// while non-submission activity keeps its denser existing page length.
+const ACTIVITY_PAGE_SIZE = 10;
+const SUBMISSIONS_PER_PAGE = 12;
 
 type ReviewSort = 'newest' | 'oldest' | 'credibility';
 type ReviewView = 'gallery' | 'list';
@@ -684,12 +686,12 @@ function BenchmarkSubmissionsSection({
     setSelectedWorkerKey(null);
   }, [selectedGroup, selectedWorkerKey]);
 
-  const totalPages = Math.max(1, Math.ceil(activeGroups.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(activeGroups.length / SUBMISSIONS_PER_PAGE));
   const currentPage = Math.min(page, totalPages);
-  const pageStart = (currentPage - 1) * PAGE_SIZE;
-  const pageEnd = pageStart + PAGE_SIZE;
+  const pageStart = (currentPage - 1) * SUBMISSIONS_PER_PAGE;
+  const pageEnd = pageStart + SUBMISSIONS_PER_PAGE;
   const pagedActiveGroups = activeGroups.slice(pageStart, pageEnd);
-  const rejectedTotalPages = Math.max(1, Math.ceil(rejectedGroups.length / PAGE_SIZE));
+  const rejectedTotalPages = Math.max(1, Math.ceil(rejectedGroups.length / SUBMISSIONS_PER_PAGE));
   const galleryEntries = submissionMediaEntries(
     activeGroups.map((g) => g.representativeSubmission)
   );
@@ -718,10 +720,12 @@ function BenchmarkSubmissionsSection({
 
     if (currentRejectedIndex >= 0) {
       setRejectedOpen(true);
-      setRejectedPage(Math.floor(currentRejectedIndex / PAGE_SIZE) + 1);
+      setRejectedPage(Math.floor(currentRejectedIndex / SUBMISSIONS_PER_PAGE) + 1);
     } else {
       setPage(
-        currentActiveIndex >= 0 ? Math.floor(currentActiveIndex / PAGE_SIZE) + 1 : origin.page
+        currentActiveIndex >= 0
+          ? Math.floor(currentActiveIndex / SUBMISSIONS_PER_PAGE) + 1
+          : origin.page
       );
       if (origin.source === 'rejected') {
         setRejectedOpen(true);
@@ -851,7 +855,7 @@ function BenchmarkSubmissionsSection({
               className={cn(
                 'grid',
                 reviewView === 'gallery'
-                  ? 'items-stretch gap-5 md:grid-cols-2'
+                  ? 'items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3'
                   : 'items-start gap-3'
               )}
               role="region"
@@ -911,7 +915,7 @@ function BenchmarkSubmissionsSection({
               ))}
             </div>
 
-            {activeGroups.length > PAGE_SIZE ? (
+            {activeGroups.length > SUBMISSIONS_PER_PAGE ? (
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/58 pt-3">
                 <p className="font-mono text-xs text-muted-foreground">
                   Showing {pageStart + 1}-{Math.min(pageEnd, activeGroups.length)} of{' '}
@@ -963,7 +967,10 @@ function BenchmarkSubmissionsSection({
             </summary>
             <div className="mt-4 grid gap-3">
               {rejectedGroups
-                .slice((rejectedPage - 1) * PAGE_SIZE, rejectedPage * PAGE_SIZE)
+                .slice(
+                  (rejectedPage - 1) * SUBMISSIONS_PER_PAGE,
+                  rejectedPage * SUBMISSIONS_PER_PAGE
+                )
                 .map((group) => (
                   <div
                     className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-border/52 bg-background/30 p-3"
@@ -996,7 +1003,7 @@ function BenchmarkSubmissionsSection({
                     </Button>
                   </div>
                 ))}
-              {rejectedGroups.length > PAGE_SIZE ? (
+              {rejectedGroups.length > SUBMISSIONS_PER_PAGE ? (
                 <div className="flex items-center justify-between gap-3">
                   <Button
                     disabled={rejectedPage <= 1}
@@ -1224,10 +1231,11 @@ export function LiveActivityPanel({
   const totalItems = submissionReviewEligible
     ? activeGroups.length
     : submissions.length + pitches.length + proofs.length + bids.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const pageSize = activeMode(task) === 'submissions' ? SUBMISSIONS_PER_PAGE : ACTIVITY_PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const pageStart = (currentPage - 1) * PAGE_SIZE;
-  const pageEnd = pageStart + PAGE_SIZE;
+  const pageStart = (currentPage - 1) * pageSize;
+  const pageEnd = pageStart + pageSize;
   const pagedSubmissions = submissions.slice(pageStart, pageEnd);
   const pagedActiveGroups = activeGroups.slice(pageStart, pageEnd);
   const pagedPitches = pitches.slice(pageStart, pageEnd);
@@ -1399,7 +1407,7 @@ export function LiveActivityPanel({
     });
   }, [optimisticRejectedKeys.size, visibleSubmissions]);
 
-  const rejectedTotalPages = Math.max(1, Math.ceil(rejectedGroups.length / PAGE_SIZE));
+  const rejectedTotalPages = Math.max(1, Math.ceil(rejectedGroups.length / SUBMISSIONS_PER_PAGE));
 
   useEffect(() => {
     setRejectedPage((current) => Math.min(current, rejectedTotalPages));
@@ -1430,10 +1438,12 @@ export function LiveActivityPanel({
 
     if (currentRejectedIndex >= 0) {
       setRejectedOpen(true);
-      setRejectedPage(Math.floor(currentRejectedIndex / PAGE_SIZE) + 1);
+      setRejectedPage(Math.floor(currentRejectedIndex / SUBMISSIONS_PER_PAGE) + 1);
     } else {
       setPage(
-        currentActiveIndex >= 0 ? Math.floor(currentActiveIndex / PAGE_SIZE) + 1 : origin.activePage
+        currentActiveIndex >= 0
+          ? Math.floor(currentActiveIndex / SUBMISSIONS_PER_PAGE) + 1
+          : origin.activePage
       );
       if (origin.source === 'rejected') {
         setRejectedOpen(true);
@@ -1661,7 +1671,9 @@ export function LiveActivityPanel({
             aria-label="Artifact comparison"
             className={cn(
               'grid',
-              reviewView === 'gallery' ? 'items-stretch gap-5 md:grid-cols-2' : 'items-start gap-3'
+              reviewView === 'gallery'
+                ? 'items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3'
+                : 'items-start gap-3'
             )}
             role="region"
           >
@@ -1779,7 +1791,7 @@ export function LiveActivityPanel({
           ))}
         </AnimatePresence>
 
-        {totalItems > PAGE_SIZE ? (
+        {totalItems > pageSize ? (
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/58 pt-3">
             <p className="font-mono text-xs text-muted-foreground">
               Showing {pageStart + 1}-{Math.min(pageEnd, totalItems)} of {totalItems}
@@ -1825,7 +1837,10 @@ export function LiveActivityPanel({
             </summary>
             <div className="mt-4 grid gap-3">
               {rejectedGroups
-                .slice((rejectedPage - 1) * PAGE_SIZE, rejectedPage * PAGE_SIZE)
+                .slice(
+                  (rejectedPage - 1) * SUBMISSIONS_PER_PAGE,
+                  rejectedPage * SUBMISSIONS_PER_PAGE
+                )
                 .map((group) => (
                   <div
                     className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-border/52 bg-background/30 p-3"
@@ -1858,7 +1873,7 @@ export function LiveActivityPanel({
                     </Button>
                   </div>
                 ))}
-              {rejectedGroups.length > PAGE_SIZE ? (
+              {rejectedGroups.length > SUBMISSIONS_PER_PAGE ? (
                 <div className="flex items-center justify-between gap-3">
                   <Button
                     disabled={rejectedPage <= 1}

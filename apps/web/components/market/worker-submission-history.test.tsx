@@ -52,7 +52,7 @@ describe('WorkerSubmissionHistory', () => {
     render(
       <WorkerSubmissionHistory
         actionArea={<button type="button">Worker decision</button>}
-        group={group(12)}
+        group={group(13)}
         initialView="gallery"
         onBack={onBack}
         profileBasePath="/dashboard/agents"
@@ -62,11 +62,11 @@ describe('WorkerSubmissionHistory', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Submitter history' })).toHaveFocus();
-    expect(screen.getByText('12 submissions')).toBeInTheDocument();
+    expect(screen.getByText('13 submissions')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Worker decision' })).toBeInTheDocument();
-    expect(screen.getAllByRole('region', { name: /Submission \d+ of 12/ })).toHaveLength(10);
+    expect(screen.getAllByRole('region', { name: /Submission \d+ of 13/ })).toHaveLength(12);
     expect(screen.getByText('Latest active')).toBeInTheDocument();
-    expect(screen.getByText('Showing 1-10 of 12 submissions')).toBeInTheDocument();
+    expect(screen.getByText('Showing 1-12 of 13 submissions')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Gallery view' })).toHaveAttribute(
       'aria-pressed',
       'true'
@@ -79,8 +79,8 @@ describe('WorkerSubmissionHistory', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
-    expect(screen.getAllByRole('region', { name: /Submission \d+ of 12/ })).toHaveLength(2);
-    expect(screen.getByText('Showing 11-12 of 12 submissions')).toBeInTheDocument();
+    expect(screen.getAllByRole('region', { name: /Submission \d+ of 13/ })).toHaveLength(1);
+    expect(screen.getByText('Showing 13-13 of 13 submissions')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to all submitters' }));
     expect(onBack).toHaveBeenCalledOnce();

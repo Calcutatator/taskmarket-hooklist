@@ -528,6 +528,38 @@ describe('LiveActivityPanel', () => {
     expect(workerBChoice).toBeChecked();
   });
 
+  it('shows twelve submission cards per review page in a three-column desktop gallery', () => {
+    const reviewSubmissions = Array.from({ length: 13 }, (_, index) =>
+      submission(`submission-${index + 1}`, `0x${(index + 1).toString(16).padStart(40, '0')}`)
+    );
+
+    render(
+      <LiveActivityPanel
+        initialModeData={{ submissions: reviewSubmissions }}
+        marketStats={null}
+        profileBasePath="/dashboard/agents"
+        submissionReviewEligible
+        task={{
+          ...task,
+          auctionType: null,
+          mode: 'bounty',
+          status: 'completed',
+          submissionCount: reviewSubmissions.length,
+        }}
+      />
+    );
+
+    const comparison = screen.getByRole('region', { name: 'Artifact comparison' });
+    expect(comparison).toHaveClass('xl:grid-cols-3');
+    expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(12);
+    expect(screen.getByText('Showing 1-12 of 13 submitters')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+
+    expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(1);
+    expect(screen.getByText('Showing 13-13 of 13 submitters')).toBeInTheDocument();
+  });
+
   it('shows the Live indicator and feed for the requester on a live task', () => {
     mockAccount.address = REQUESTER;
     bidsState.value = [bid('bid-1', '0x2222222222222222222222222222222222222222')];

@@ -243,6 +243,28 @@ const reviewSubmissions = [
     workerAgentId: '84',
   }),
 ];
+const longQueueSubmissions = Array.from({ length: 13 }, (_, index) => {
+  const ordinal = index + 1;
+  const workerAddress = `0x${ordinal.toString(16).padStart(40, '0')}`;
+  const submissionId = `submission-long-queue-${ordinal}`;
+
+  return submissionFixture({
+    artifacts: [
+      artifactFixture({
+        id: `artifact-long-queue-${ordinal}`,
+        submissionId,
+        taskId: 'task-1',
+        workerAddress,
+        workerAgentId: String(100 + ordinal),
+      }),
+    ],
+    id: submissionId,
+    submittedAt: new Date(Date.UTC(2026, 7, 2, 4, ordinal)).toISOString(),
+    taskId: 'task-1',
+    workerAddress,
+    workerAgentId: String(100 + ordinal),
+  });
+});
 const interactiveGallerySubmissions = [
   submissionFixture({ artifacts: [imageArtifact], id: 'submission-gallery-image' }),
   submissionFixture({
@@ -518,6 +540,41 @@ export const SubmissionReviewGalleryAndListMobile: Story = {
     viewport: { defaultViewport: 'mobile' },
   },
   render: () => <SubmissionReviewSurface />,
+};
+
+export const SubmissionReviewThreeColumnLongQueue: Story = {
+  parameters: {
+    a11y: { test: 'error' },
+    viewport: { defaultViewport: 'desktop' },
+  },
+  render: () => (
+    <TaskDetailPanel
+      backHref="/tasks"
+      htmlSubmissions={longQueueSubmissions}
+      modeData={{ submissions: longQueueSubmissions }}
+      profileBasePath="/agents"
+      task={{
+        ...longBriefReviewTask,
+        status: 'completed',
+        submissionCount: longQueueSubmissions.length,
+      }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const comparison = canvas.getByRole('region', { name: 'Artifact comparison' });
+
+    await expect(comparison).toHaveClass('xl:grid-cols-3');
+    await expect(comparison.querySelectorAll('[data-testid^="submitter-group-"]')).toHaveLength(12);
+    await expect(canvas.getByText('Showing 1-12 of 13 submitters')).toBeVisible();
+    await expect(canvas.getByText('Page 1 of 2')).toBeVisible();
+
+    await userEvent.click(canvas.getByRole('button', { name: 'Next page' }));
+
+    await expect(comparison.querySelectorAll('[data-testid^="submitter-group-"]')).toHaveLength(1);
+    await expect(canvas.getByText('Showing 13-13 of 13 submitters')).toBeVisible();
+    await expect(canvas.getByText('Page 2 of 2')).toBeVisible();
+  },
 };
 
 export const OpenSubmissionGallery: Story = {

@@ -40,11 +40,11 @@ test('groups a revision flood by submitter and preserves inline history', async 
   await page.goto('/dashboard/tasks/e2e-grouped-submission-review');
 
   const comparison = page.getByRole('region', { name: /Artifact comparison/i });
-  await expect(comparison.getByRole('group', { name: /1 submission/i })).toHaveCount(10);
+  await expect(comparison.getByRole('group', { name: /1 submission/i })).toHaveCount(11);
   await expect(page.getByTestId('submission-review-summary')).toContainText(
     '161 submissions from 12 submitters'
   );
-  await expect(page.getByText('Showing 1-10 of 12 submitters')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Next page' })).toHaveCount(0);
   await expect(
     page
       .getByTestId('submitter-group-0x4444444444444444444444444444444444444444')
@@ -71,14 +71,13 @@ test('groups a revision flood by submitter and preserves inline history', async 
   await expect(secondWorkerGroup).toBeVisible();
   await page.getByRole('button', { name: 'Gallery view' }).click();
 
-  await page.getByRole('button', { name: 'Next page' }).click();
   await expect(comparison.getByRole('group', { name: /150 submissions/i })).toHaveCount(1);
   await comparison.getByRole('button', { name: /^View all 150 submissions from/ }).click();
 
   await expect(page.getByRole('heading', { name: 'Submitter history' })).toBeFocused();
-  await expect(page.getByText('Showing 1-10 of 150 submissions')).toBeVisible();
-  await expect(page.getByText('Page 1 of 15')).toBeVisible();
-  await expect(page.getByRole('region', { name: /^Submission \d+ of 150 from/ })).toHaveCount(10);
+  await expect(page.getByText('Showing 1-12 of 150 submissions')).toBeVisible();
+  await expect(page.getByText('Page 1 of 13')).toBeVisible();
+  await expect(page.getByRole('region', { name: /^Submission \d+ of 150 from/ })).toHaveCount(12);
 
   await page.getByRole('button', { name: 'List view' }).click();
   await page.getByRole('combobox', { name: 'Sort submitter history' }).selectOption('oldest');
