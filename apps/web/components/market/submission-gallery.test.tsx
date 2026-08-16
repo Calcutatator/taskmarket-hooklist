@@ -1171,7 +1171,7 @@ describe('SubmissionGalleryDialog', () => {
     expect(frame).toHaveAttribute('allow', '');
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
     expect(frame).not.toHaveAttribute('src');
-    expect(frame.getAttribute('srcdoc')).toContain('frame-src data:');
+    expect(frame.getAttribute('srcdoc')).toContain('frame-src blob:');
     expect(frame.getAttribute('srcdoc')).toContain('data-taskmarket-game');
     expect(frame.getAttribute('srcdoc')).not.toContain('<output>4</output>');
     expect(
@@ -1939,7 +1939,7 @@ describe('SubmissionGalleryDialog mobile surface', () => {
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
     expect(frame).toHaveAttribute('allow', '');
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
-    expect(frame.getAttribute('srcdoc')).toContain('frame-src data:');
+    expect(frame.getAttribute('srcdoc')).toContain('frame-src blob:');
     expect(frame.getAttribute('srcdoc')).toContain('data-taskmarket-game');
 
     fetchMock.mockRestore();

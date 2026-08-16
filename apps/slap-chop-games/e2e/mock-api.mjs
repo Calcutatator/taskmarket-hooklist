@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 
 const port = Number(process.env.SLAP_CHOP_E2E_API_PORT ?? 3107);
+const fixtureProfile = process.env.SLAP_CHOP_FIXTURE_PROFILE === 'local' ? 'local' : 'test';
 const defaultGameHtml =
   '<!doctype html><html><body><main id="game-ready">Verified catalog game</main></body></html>';
 const publishedAt = '2026-08-16T00:00:00.000Z';
@@ -72,7 +73,7 @@ const releaseScenario = {
   catalog: { delayMs: 0, status: 200 },
 };
 
-const games = Array.from({ length: 48 }, (_, index) => {
+const testGames = Array.from({ length: 48 }, (_, index) => {
   const ordinal = index + 1;
   const slug =
     ordinal === 1
@@ -111,6 +112,101 @@ const games = Array.from({ length: 48 }, (_, index) => {
   };
 });
 
+const localGames = [
+  {
+    coverAltText: 'A luminous spiral orbit on a midnight field',
+    creatorName: 'Local fixture studio',
+    description: 'Build momentum by catching a signal at the center of a shifting orbit.',
+    downvoteCount: 2,
+    id: 'local-game-1',
+    netVotes: 42,
+    publishedAt,
+    slug: 'memory-rush',
+    tags: ['arcade', 'reflex'],
+    title: 'Memory Rush',
+    upvoteCount: 44,
+  },
+  {
+    coverAltText: 'A broken grid of warm memory fragments',
+    creatorName: 'Local fixture studio',
+    description: 'Recover fragments from an old machine before its memory resets.',
+    downvoteCount: 3,
+    id: 'local-game-2',
+    netVotes: 31,
+    publishedAt,
+    slug: 'used-memory',
+    tags: ['retro', 'puzzle'],
+    title: 'Used Memory',
+    upvoteCount: 34,
+  },
+  {
+    coverAltText: 'Concentric red and cream circles forming a target',
+    creatorName: 'Local fixture studio',
+    description: 'A one-button timing game about landing on the quiet beat.',
+    downvoteCount: 1,
+    id: 'local-game-3',
+    netVotes: 27,
+    publishedAt,
+    slug: 'orbit-tap',
+    tags: ['timing', 'minimal'],
+    title: 'Orbit Tap',
+    upvoteCount: 28,
+  },
+  {
+    coverAltText: 'Green pixel leaves growing across a dark square',
+    creatorName: 'Local fixture studio',
+    description: 'Grow a tiny procedural garden one carefully placed pixel at a time.',
+    downvoteCount: 2,
+    id: 'local-game-4',
+    netVotes: 19,
+    publishedAt,
+    slug: 'pixel-garden',
+    tags: ['creative', 'relaxing'],
+    title: 'Pixel Garden',
+    upvoteCount: 21,
+  },
+  {
+    coverAltText: 'A sharp blue line crossing a field of black',
+    creatorName: 'Local fixture studio',
+    description: 'Keep a signal alive as the path accelerates and narrows.',
+    downvoteCount: 4,
+    id: 'local-game-5',
+    netVotes: 13,
+    publishedAt,
+    slug: 'line-runner',
+    tags: ['action', 'endless'],
+    title: 'Line Runner',
+    upvoteCount: 17,
+  },
+  {
+    coverAltText: 'A violet loop folded into a compact maze',
+    creatorName: 'Local fixture studio',
+    description: 'Find the short route through a loop that rearranges after every move.',
+    downvoteCount: 1,
+    id: 'local-game-6',
+    netVotes: 8,
+    publishedAt,
+    slug: 'pocket-loop',
+    tags: ['maze', 'strategy'],
+    title: 'Pocket Loop',
+    upvoteCount: 9,
+  },
+].map((game) => ({
+  ...game,
+  coverUrl: `http://127.0.0.1:${port}/covers/${game.slug}.svg`,
+}));
+
+const games = fixtureProfile === 'local' ? localGames : testGames;
+
+const localGameColors = {
+  'line-runner': ['#07111f', '#76b7ff'],
+  'memory-rush': ['#130d2b', '#fdc95d'],
+  'orbit-tap': ['#26100d', '#ff765e'],
+  'pixel-garden': ['#081c16', '#79dd9a'],
+  'pocket-loop': ['#170d26', '#bd8cff'],
+  'used-memory': ['#211a0d', '#e9b86e'],
+};
+
 function writeJson(response, value, status = 200) {
   response.writeHead(status, {
     'access-control-allow-origin': '*',
@@ -120,13 +216,25 @@ function writeJson(response, value, status = 200) {
   response.end(JSON.stringify(value));
 }
 
-function writeCover(response) {
+function escapeHtml(value) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function writeCover(response, game) {
+  const [background, accent] = localGameColors[game.slug] ?? ['#191915', '#f4f1e8'];
+  const title = escapeHtml(game.title);
+
   response.writeHead(200, {
     'cache-control': 'no-store',
     'content-type': 'image/svg+xml; charset=utf-8',
   });
   response.end(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800"><rect width="800" height="800" fill="#191915"/><circle cx="400" cy="400" r="180" fill="#f4f1e8"/></svg>'
+    `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800"><rect width="800" height="800" fill="${background}"/><circle cx="400" cy="350" r="190" fill="none" stroke="${accent}" stroke-width="36"/><circle cx="400" cy="350" r="70" fill="${accent}"/><text x="400" y="690" fill="${accent}" font-family="monospace" font-size="48" font-weight="700" text-anchor="middle">${title}</text></svg>`
   );
 }
 
@@ -180,6 +288,48 @@ async function configureReleaseScenario(request) {
 }
 
 function artifactHtml(game) {
+  if (fixtureProfile === 'local') {
+    const [background, accent] = localGameColors[game.slug] ?? ['#191915', '#f4f1e8'];
+    const title = escapeHtml(game.title);
+    const description = escapeHtml(game.description);
+
+    return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>${title}</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body { display: grid; place-items: center; overflow: hidden; background: ${background}; color: ${accent}; font-family: ui-monospace, monospace; }
+      main { width: min(34rem, calc(100vw - 2rem)); text-align: center; }
+      p { line-height: 1.5; opacity: 0.8; }
+      button { width: min(15rem, 60vw); aspect-ratio: 1; margin-top: 1.5rem; border: 0.35rem solid ${accent}; border-radius: 50%; background: transparent; color: inherit; font: inherit; font-size: clamp(1rem, 4vw, 1.5rem); cursor: pointer; }
+      button:active { background: ${accent}; color: ${background}; transform: scale(0.96); }
+      output { display: block; margin-top: 1.5rem; font-size: 1.25rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${title}</h1>
+      <p>${description}</p>
+      <button id="target" type="button">Catch signal</button>
+      <output id="score">Score 0</output>
+    </main>
+    <script>
+      let score = 0;
+      const target = document.getElementById('target');
+      const output = document.getElementById('score');
+      target.addEventListener('click', function () {
+        score += 1;
+        output.textContent = 'Score ' + score;
+      });
+    </script>
+  </body>
+</html>`;
+  }
+
   if (game.slug === 'sandbox-jail-data-probe') {
     return sandboxJailDataProbeHtml;
   }
@@ -301,7 +451,7 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    writeCover(response);
+    writeCover(response, game);
     return;
   }
 

@@ -12,6 +12,7 @@ describe('game navigation', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '/');
     window.sessionStorage.clear();
+    document.documentElement.removeAttribute('data-slap-chop-game-launch');
     Object.defineProperty(window, 'scrollY', { configurable: true, value: 624 });
   });
 
@@ -52,8 +53,9 @@ describe('game navigation', () => {
     rememberGameLaunch({ query: 'old-query', slug: 'silent-orbit' });
     window.history.pushState(null, '', '/games/silent-orbit?q=arcade');
 
-    // A full page navigation starts a new module instance, so it has no in-memory click nonce.
-    // The storage value may survive in a duplicated tab but cannot become a history return path.
+    // A full page navigation creates a new document, so it has no same-document click nonce. The
+    // storage value may survive in a duplicated tab but cannot become a history return path.
+    document.documentElement.removeAttribute('data-slap-chop-game-launch');
     vi.resetModules();
     const navigation = await import('./game-navigation');
 

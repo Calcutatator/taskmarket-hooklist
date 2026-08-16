@@ -169,6 +169,20 @@ export const Catalog: Story = {
   },
 };
 
+export const LiveReadonly: Story = {
+  args: {
+    initialQuery: '',
+    result: { games: games.slice(0, 2), ok: true },
+    votingEnabled: false,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByRole('link', { name: 'Play Silent Orbit, score +18' })).toBeVisible();
+    await expect(canvas.queryByRole('button', { name: /Upvote/ })).not.toBeInTheDocument();
+  },
+};
+
 export const Phone: Story = {
   args: Catalog.args,
   globals: {

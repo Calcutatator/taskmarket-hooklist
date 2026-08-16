@@ -433,3 +433,8 @@ adrs:
     title: "Slap-Chop ranking uses a seven-day Hot score"
     status: Accepted
     date: "2026-08-16"
+  - number: "0091"
+    file: "0091-slap-chop-devnet-reads-pinned-production-games-without-production-writes.md"
+    title: "Slap-Chop DEVNET reads pinned production games without production writes"
+    status: Accepted
+    date: "2026-08-16"

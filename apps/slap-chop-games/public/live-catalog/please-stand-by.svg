@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <rect width="1200" height="1200" fill="#090a08"/>
+  <g opacity="0.7">
+    <path d="M0 150h1200v22H0zM0 222h1200v11H0zM0 290h1200v28H0zM0 382h1200v14H0zM0 454h1200v31H0zM0 550h1200v12H0zM0 640h1200v24H0zM0 734h1200v10H0zM0 820h1200v28H0z" fill="#d6caa5"/>
+  </g>
+  <circle cx="600" cy="520" r="260" fill="#161815" stroke="#d6caa5" stroke-width="28"/>
+  <circle cx="600" cy="520" r="166" fill="none" stroke="#c7974d" stroke-width="18"/>
+  <path d="M600 520 742 408" stroke="#f0ddab" stroke-linecap="round" stroke-width="28"/>
+  <circle cx="600" cy="520" r="28" fill="#f0ddab"/>
+  <text x="600" y="1040" fill="#f0ddab" font-family="ui-monospace, monospace" font-size="62" font-weight="700" text-anchor="middle">PLEASE STAND BY</text>
+</svg>

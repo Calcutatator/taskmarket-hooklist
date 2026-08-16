@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <rect width="1200" height="1200" fill="#16120d"/>
+  <g fill="none" stroke="#d9a441" stroke-width="18" opacity="0.72">
+    <path d="M154 188h260v260H154zM470 188h260v260H470zM786 188h260v260H786z"/>
+    <path d="M154 504h260v260H154zM786 504h260v260H786z"/>
+    <path d="M154 820h260v226H154zM470 820h260v226H470zM786 820h260v226H786z"/>
+  </g>
+  <rect x="470" y="504" width="260" height="260" rx="22" fill="#f0bf58"/>
+  <rect x="534" y="568" width="132" height="132" rx="12" fill="#16120d"/>
+  <text x="600" y="1130" fill="#f0bf58" font-family="ui-monospace, monospace" font-size="70" font-weight="700" text-anchor="middle">USED MEMORY</text>
+</svg>

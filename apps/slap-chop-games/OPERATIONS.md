@@ -16,20 +16,28 @@ integrity checks, iframe policy, or curator authorization to recover an incident
 
 The application service needs these values in every deployed environment:
 
-| Variable                      | Production value or source                           |
-| ----------------------------- | ---------------------------------------------------- |
-| `NEXT_PUBLIC_SITE_URL`        | `https://games.taskmarket.dev`                       |
-| `TASKMARKET_API_URL`          | the environment's Taskmarket backend origin          |
-| `NEXT_PUBLIC_API_URL`         | the browser-reachable Taskmarket backend origin      |
-| `NEXT_PUBLIC_PRIVY_APP_ID`    | the approved Taskmarket Privy application ID         |
-| `NEXT_PUBLIC_PRIVY_CLIENT_ID` | the approved public Privy client ID, when configured |
-| `DEPLOY_ENVIRONMENT`          | `production`, `devnet`, or `preview`                 |
-| `COMMIT_SHA`                  | the exact Git commit being deployed                  |
+| Variable                        | Production value or source                             |
+| ------------------------------- | ------------------------------------------------------ |
+| `NEXT_PUBLIC_SITE_URL`          | `https://games.taskmarket.dev`                         |
+| `TASKMARKET_API_URL`            | the environment's Taskmarket backend origin            |
+| `NEXT_PUBLIC_API_URL`           | the browser-reachable Taskmarket backend origin        |
+| `NEXT_PUBLIC_PRIVY_APP_ID`      | the approved Taskmarket Privy application ID           |
+| `NEXT_PUBLIC_PRIVY_CLIENT_ID`   | the approved public Privy client ID, when configured   |
+| `DEPLOY_ENVIRONMENT`            | `production`, `devnet`, or `preview`                   |
+| `SLAP_CHOP_DATA_MODE`           | `environment` in production; `live-readonly` in DEVNET |
+| `SLAP_CHOP_LIVE_SOURCE_API_URL` | `https://api.taskmarket.dev` in live-readonly mode     |
+| `COMMIT_SHA`                    | the exact Git commit being deployed                    |
 
 The backend additionally needs `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, and a non-empty
 `SLAP_CHOP_CURATOR_PRIVY_USER_IDS` allowlist before curation can be enabled. The public app ID must
 match the server app ID. Missing or invalid identity configuration must leave voting unavailable
 and curation fail closed.
+
+DEVNET deliberately reads its small allowlist of game artifacts from the public production market.
+The app validates public completion, primary-award provenance, exact artifact metadata and hashes,
+then serves verified bytes through a same-origin, exact-slug proxy. This mode never forwards a vote
+or curation write to production and is rejected when `DEPLOY_ENVIRONMENT=production`. Keep normal
+fixtures for deterministic CI and use the isolated environment backend for mutation testing.
 
 The repository secret `RAILWAY_SLAP_CHOP_GAMES_SERVICE_NAME` must contain the exact production
 Railway service name. `RAILWAY_SLAP_CHOP_GAMES_DEVNET_SERVICE_NAME` names the isolated DEVNET
@@ -72,6 +80,23 @@ Use the real `/curate` workspace; direct database inserts are not release eviden
 
 Keep the initial catalog deliberately small. Record each seed game's task, submission, artifact,
 hashes, curator preview result, and public slug in the release issue without copying game bytes.
+
+### DEVNET live-readonly pins
+
+DEVNET pins use the same review standard but are checked into the exact production allowlist. Start
+the review packet from the repository root:
+
+```sh
+make slap-chop pin https://taskmarket.dev/tasks/<task-id>
+```
+
+The command verifies public completion, primary-award provenance, one accepted submission, HTML
+eligibility, a fresh HTTPS delivery URL, exact byte size, and SHA-256. It records the production
+Keccak-256 and storage hostname without exposing the signed delivery URL. The output is not a
+publication action: play the candidate in the Slap-Chop sandbox, review its metadata, add and
+describe its square cover, then copy the manifest entry into `lib/live-catalog.ts` in a reviewed
+pull request. Use `SLAP_CHOP_PIN_ARTIFACT_ID=<artifact-id>` only after manually choosing among
+multiple eligible HTML artifacts.
 
 ## Operational signals
 

@@ -70,6 +70,7 @@ describe('CatalogExperience', () => {
   });
 
   it('renders title, score, and a query-preserving game route for each tile', () => {
+    window.history.replaceState(null, '', '/?q=orbit');
     render(<CatalogExperience initialQuery="orbit" result={{ games, ok: true }} />);
 
     const orbitLink = screen.getByRole('link', { name: 'Play Silent Orbit, score +18' });
@@ -83,7 +84,23 @@ describe('CatalogExperience', () => {
     expect(screen.queryByRole('link', { name: /Moss Puzzle/ })).not.toBeInTheDocument();
   });
 
+  // Verifies: ADR-0091
+  it('omits mutation controls in the production-content read-only mode', () => {
+    render(
+      <CatalogExperience
+        initialQuery=""
+        result={{ games: [games[0]!], ok: true }}
+        votingEnabled={false}
+      />
+    );
+
+    expect(screen.getByRole('link', { name: 'Play Silent Orbit, score +18' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Upvote Silent Orbit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Downvote Silent Orbit' })).not.toBeInTheDocument();
+  });
+
   it('does not leave a player return marker for a modified tile click', () => {
+    window.history.replaceState(null, '', '/?q=orbit');
     render(<CatalogExperience initialQuery="orbit" result={{ games, ok: true }} />);
 
     fireEvent.click(screen.getByRole('link', { name: 'Play Silent Orbit, score +18' }), {
@@ -116,12 +133,14 @@ describe('CatalogExperience', () => {
   });
 
   it('renders clear empty and unavailable states', () => {
+    window.history.replaceState(null, '', '/?q=missing');
     const { rerender } = render(
       <CatalogExperience initialQuery="missing" result={{ games, ok: true }} />
     );
 
     expect(screen.getByRole('heading', { name: 'No games match this search.' })).toBeVisible();
 
+    window.history.replaceState(null, '', '/');
     rerender(
       <CatalogExperience
         initialQuery=""
