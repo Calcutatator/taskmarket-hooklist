@@ -28,6 +28,6 @@ test("preview teardown fails closed while keeping already-absent resources idemp
   );
   assert.match(
     teardown,
-    /delete_service "\$ANVIL_SERVICE_NAME" \|\| exit 1[\s\S]*?delete_service "\$FACILITATOR_SERVICE_NAME" \|\| exit 1[\s\S]*?delete_service "\$STORYBOOK_SERVICE_NAME" \|\| exit 1[\s\S]*?delete_environment \|\| exit 1/,
+    /delete_service "\$ANVIL_SERVICE_NAME" \|\| exit 1[\s\S]*?delete_service "\$FACILITATOR_SERVICE_NAME" \|\| exit 1[\s\S]*?delete_service "\$STORYBOOK_SERVICE_NAME" \|\| exit 1[\s\S]*?delete_service "\$SLAP_CHOP_SERVICE_NAME" \|\| exit 1[\s\S]*?delete_environment \|\| exit 1/,
   );
 });

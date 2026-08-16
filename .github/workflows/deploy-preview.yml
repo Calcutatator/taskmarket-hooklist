@@ -41,16 +41,17 @@ env:
   ANVIL_SERVICE_NAME: anvil-pr-${{ github.event.pull_request.number }}
   FACILITATOR_SERVICE_NAME: facilitator-pr-${{ github.event.pull_request.number }}
   STORYBOOK_SERVICE_NAME: storybook-pr-${{ github.event.pull_request.number }}
+  SLAP_CHOP_SERVICE_NAME: slap-chop-games-pr-${{ github.event.pull_request.number }}
 
 jobs:
   teardown:
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
-    # Each of the four deletes below retries against transient Railway API errors
+    # Each of the five deletes below retries against transient Railway API errors
     # ("Problem processing request") for up to ~10 minutes on its own -- observed in
     # practice to intermittently fail on one delete call while an identical call for a
     # different service in the same run succeeds seconds later, so it's Railway-side
-    # flakiness, not a request-shape bug. 45 minutes covers three service retry budgets,
+    # flakiness, not a request-shape bug. 45 minutes covers four service retry budgets,
     # the environment retry budget, and the CLI install step.
     timeout-minutes: 45
     steps:
@@ -93,6 +94,7 @@ jobs:
           delete_service "$ANVIL_SERVICE_NAME" || exit 1
           delete_service "$FACILITATOR_SERVICE_NAME" || exit 1
           delete_service "$STORYBOOK_SERVICE_NAME" || exit 1
+          delete_service "$SLAP_CHOP_SERVICE_NAME" || exit 1
 
           delete_environment() {
             for i in $(seq 1 20); do
@@ -481,15 +483,19 @@ jobs:
               --detach --ci
           done
 
-      # A Slap-Chop preview must be a release-quality app preview. The secret names the dedicated
-      # service; if it is absent, the PR must fail rather than report a partial preview as ready.
+      # A Slap-Chop preview must be a release-quality app preview. Give each PR its own
+      # local-source service just like Anvil and Storybook: the persistent production service
+      # has no instance in the preview template, and Railway cannot upload to a service without
+      # an instance in the target environment.
       - name: Deploy Slap-Chop Games shell
         id: slap_chop
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-          RAILWAY_SERVICE_NAME: ${{ secrets.RAILWAY_SLAP_CHOP_GAMES_SERVICE_NAME }}
         run: |
-          [ -n "$RAILWAY_SERVICE_NAME" ] || { echo "RAILWAY_SLAP_CHOP_GAMES_SERVICE_NAME is required for a Slap-Chop preview." >&2; exit 1; }
+          ./scripts/railway-preview-service.sh link \
+            "${{ secrets.RAILWAY_PROJECT_ID }}" "$RAILWAY_WORKSPACE_ID" \
+            "$ENV_NAME" "@taskmarket/backend"
+          ./scripts/railway-preview-service.sh ensure "$SLAP_CHOP_SERVICE_NAME"
 
           # A new per-environment service has no domain until its first deployment. Deploy a
           # bootstrap build with the API origin, then resolve/create its domain, stamp the
@@ -519,31 +525,27 @@ jobs:
             "TASKMARKET_API_URL=https://$BACKEND_DOMAIN" \
             "NEXT_PUBLIC_API_URL=https://$BACKEND_DOMAIN"; do
             railway variable set "$kv" \
-              --service "$RAILWAY_SERVICE_NAME" \
+              --service "$SLAP_CHOP_SERVICE_NAME" \
               --environment "$ENV_NAME" \
               --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
               --skip-deploys --json
           done
 
-          railway up --service "$RAILWAY_SERVICE_NAME" \
-            --environment "$ENV_NAME" \
-            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
-            --ci
+          ./scripts/railway-preview-service.sh deploy "$SLAP_CHOP_SERVICE_NAME" \
+            "$ENV_NAME" "${{ secrets.RAILWAY_PROJECT_ID }}"
 
-          SLAP_CHOP_DOMAIN=$(resolve_domain "$RAILWAY_SERVICE_NAME") || { echo "Could not resolve the Slap-Chop Games preview domain after bootstrap deployment" >&2; exit 1; }
+          SLAP_CHOP_DOMAIN=$(resolve_domain "$SLAP_CHOP_SERVICE_NAME") || { echo "Could not resolve the Slap-Chop Games preview domain after bootstrap deployment" >&2; exit 1; }
           for kv in \
             "COMMIT_SHA=${{ github.sha }}" \
             "NEXT_PUBLIC_SITE_URL=https://$SLAP_CHOP_DOMAIN"; do
             railway variable set "$kv" \
-              --service "$RAILWAY_SERVICE_NAME" \
+              --service "$SLAP_CHOP_SERVICE_NAME" \
               --environment "$ENV_NAME" \
               --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
               --skip-deploys --json
           done
-          railway up --service "$RAILWAY_SERVICE_NAME" \
-            --environment "$ENV_NAME" \
-            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
-            --detach --ci
+          ./scripts/railway-preview-service.sh deploy "$SLAP_CHOP_SERVICE_NAME" \
+            "$ENV_NAME" "${{ secrets.RAILWAY_PROJECT_ID }}"
           echo "url=https://$SLAP_CHOP_DOMAIN" >> "$GITHUB_OUTPUT"
 
       - name: Verify Slap-Chop Games preview serves this commit
