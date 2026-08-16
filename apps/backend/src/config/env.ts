@@ -48,6 +48,31 @@ const officialTaskDropOwnerAddresses = z
     return uniqueAddresses;
   });
 
+// Implements: ADR-0088. Privy IDs are deliberately preserved byte-for-byte after trimming:
+// they are opaque, case-sensitive identities, not wallet addresses. An absent or blank value
+// therefore produces an empty allowlist and no one can become a curator by default.
+const slapChopCuratorPrivyUserIds = z
+  .string()
+  .default('')
+  .transform((value, ctx) => {
+    const userIds = value
+      .split(',')
+      .map((userId) => userId.trim())
+      .filter(Boolean);
+    const uniqueUserIds = [...new Set(userIds)];
+
+    for (const userId of uniqueUserIds) {
+      if (!/^did:privy:[A-Za-z0-9_-]{1,255}$/.test(userId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Invalid Slap-Chop curator Privy user ID',
+        });
+      }
+    }
+
+    return uniqueUserIds;
+  });
+
 const databaseUrlSchema = z
   .string()
   .trim()
@@ -246,8 +271,24 @@ const envSchema = z
     PRIVY_APP_SECRET: z.string().optional(),
     PRIVY_JWT_VERIFICATION_KEY: z.string().optional(),
     NEXT_PUBLIC_PRIVY_APP_ID: z.string().optional(),
+    SLAP_CHOP_CURATOR_PRIVY_USER_IDS: slapChopCuratorPrivyUserIds,
+    // Implements: ADR-0090. The only production rollback is newest-first; formula constants
+    // stay in services/game-ranking.ts and are not configurable without a decision amendment.
+    SLAP_CHOP_RANKING_MODE: z.enum(['hot', 'new']).default('hot'),
   })
   .superRefine((data, ctx) => {
+    if (
+      data.SLAP_CHOP_CURATOR_PRIVY_USER_IDS.length > 0 &&
+      (!data.PRIVY_APP_ID || !data.PRIVY_APP_SECRET)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'PRIVY_APP_ID and PRIVY_APP_SECRET are required when Slap-Chop curators are configured',
+        path: ['SLAP_CHOP_CURATOR_PRIVY_USER_IDS'],
+      });
+    }
+
     if (data.LEGAL_ENFORCEMENT_ENABLED) {
       const activationIssues = getCurrentLegalBundleActivationIssues();
       if (activationIssues.length > 0) {

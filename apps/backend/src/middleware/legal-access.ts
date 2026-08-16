@@ -26,6 +26,10 @@ const EXIT_OR_PUBLIC_WRITE_ROUTES = [
   /^\/api\/tasks\/[^/]+\/submissions\/[^/]+\/preview$/,
 ];
 
+// Implements: ADR-0089. Keep the casual Slap-Chop vote carve-out method- and path-exact. A
+// sibling games write, a renamed route, or a different HTTP verb falls back to default-deny.
+const SLAP_CHOP_GAME_VOTE_ROUTE = /^\/api\/games\/[^/]+\/vote$/;
+
 const EXIT_OR_PUBLIC_TRPC_PROCEDURES = new Set([
   'claims.forfeit',
   'acceptance.accept',
@@ -37,6 +41,8 @@ const EXIT_OR_PUBLIC_TRPC_PROCEDURES = new Set([
   'evaluations.evaluatorTimeout',
   'evaluations.finalizeVerdict',
   'evaluations.resolveDispute',
+  // Implements: ADR-0089. This is the tRPC half of the one deliberate game-write exemption.
+  'games.vote',
   'legal.acceptWallet',
   'legal.acceptWeb',
   'legal.challenge',
@@ -158,6 +164,7 @@ export function isLegalReceiptExempt(req: Request): boolean {
       procedures.every((procedure) => EXIT_OR_PUBLIC_TRPC_PROCEDURES.has(procedure))
     );
   }
+  if (req.method === 'POST' && SLAP_CHOP_GAME_VOTE_ROUTE.test(path)) return true;
   return EXIT_OR_PUBLIC_WRITE_ROUTES.some((pattern) => pattern.test(path));
 }
 

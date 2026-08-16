@@ -11,6 +11,10 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@taskmarket/html-sandbox': path.resolve(
+        __dirname,
+        '../../packages/html-sandbox/src/index.ts'
+      ),
       '@': __dirname,
       '@taskmarket/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
     },

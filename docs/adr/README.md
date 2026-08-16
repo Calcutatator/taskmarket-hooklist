@@ -302,6 +302,10 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0084 — A published path carries no decision references, and declares its own severity](0084-published-paths-carry-no-decision-references.md)
 - [0085 — The header region is bounded by its section heading, not by contiguity](0085-the-header-region-is-bounded-by-its-section-heading.md)
 - [0086 — CI correctness-test shards have a five-minute budget](0086-ci-correctness-test-shards-have-a-five-minute-budget.md)
+- [0087 — Slap-Chop Games is a separate app over immutable Taskmarket artifacts](0087-slap-chop-is-a-separate-app-over-immutable-taskmarket-artifacts.md)
+- [0088 — Slap-Chop curation is fail-closed and covers use catalog-owned keys](0088-slap-chop-curation-is-fail-closed-and-covers-use-catalog-owned-keys.md)
+- [0089 — Slap-Chop votes use Privy without marketplace legal assent](0089-slap-chop-votes-use-privy-without-marketplace-legal-assent.md)
+- [0090 — Slap-Chop ranking uses a seven-day Hot score](0090-slap-chop-ranking-uses-a-seven-day-hot-score.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

@@ -69,29 +69,52 @@ jobs:
           # (20 attempts, 30s apart) against transient Railway API errors before giving up
           # -- previously a single `|| true` silently swallowed these, leaving the
           # "permanent orphaned service" outcome this comment says it prevents.
+          is_already_absent() {
+            local output="$1"
+            printf '%s' "$output" | grep -Eqi 'not[[:space:]_-]?found|does not exist|already deleted'
+          }
+
           delete_service() {
             local service_name="$1"
             for i in $(seq 1 20); do
               OUTPUT=$(railway service delete --service "$service_name" --environment "$ENV_NAME" --yes --json 2>&1) && { echo "$OUTPUT"; return 0; }
+              if is_already_absent "$OUTPUT"; then
+                echo "railway service $service_name is already absent"
+                return 0
+              fi
               echo "railway service delete --service $service_name attempt $i failed, retrying: $OUTPUT" >&2
-              sleep 30
+              if [ "$i" -lt 20 ]; then
+                sleep 30
+              fi
             done
             echo "railway service delete --service $service_name still failing after 20 attempts, giving up -- may be orphaned, check the Railway dashboard" >&2
+            return 1
           }
-          delete_service "$ANVIL_SERVICE_NAME"
-          delete_service "$FACILITATOR_SERVICE_NAME"
-          delete_service "$STORYBOOK_SERVICE_NAME"
+          delete_service "$ANVIL_SERVICE_NAME" || exit 1
+          delete_service "$FACILITATOR_SERVICE_NAME" || exit 1
+          delete_service "$STORYBOOK_SERVICE_NAME" || exit 1
 
-          for i in $(seq 1 20); do
-            OUTPUT=$(railway environment delete "$ENV_NAME" --yes --json 2>&1) && { echo "$OUTPUT"; break; }
-            echo "railway environment delete $ENV_NAME attempt $i failed, retrying: $OUTPUT" >&2
-            sleep 30
-          done
+          delete_environment() {
+            for i in $(seq 1 20); do
+              OUTPUT=$(railway environment delete "$ENV_NAME" --yes --json 2>&1) && { echo "$OUTPUT"; return 0; }
+              if is_already_absent "$OUTPUT"; then
+                echo "railway environment $ENV_NAME is already absent"
+                return 0
+              fi
+              echo "railway environment delete $ENV_NAME attempt $i failed, retrying: $OUTPUT" >&2
+              if [ "$i" -lt 20 ]; then
+                sleep 30
+              fi
+            done
+            echo "railway environment delete $ENV_NAME still failing after 20 attempts, check the Railway dashboard" >&2
+            return 1
+          }
+          delete_environment || exit 1
 
   deploy:
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
 
     steps:
       - uses: actions/checkout@v7
@@ -104,8 +127,8 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version-file: '.nvmrc'
-          cache: 'pnpm'
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
@@ -286,10 +309,10 @@ jobs:
         id: contracts
         env:
           FORGE_RPC_URL_PREVIEW: ${{ steps.anvil.outputs.rpc_url }}
-          FORGE_DEV_PRIVATE_KEY_PREVIEW: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
-          FORGE_FEE_RECIPIENT_ADDRESS_PREVIEW: '0x14dC79964da2C08b23698B3D3cc7Ca32193d9955'
-          FORGE_DEFAULT_PLATFORM_FEE_BPS_PREVIEW: '750'
-          FORGE_SERVER_ADDRESS_PREVIEW: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
+          FORGE_DEV_PRIVATE_KEY_PREVIEW: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+          FORGE_FEE_RECIPIENT_ADDRESS_PREVIEW: "0x14dC79964da2C08b23698B3D3cc7Ca32193d9955"
+          FORGE_DEFAULT_PLATFORM_FEE_BPS_PREVIEW: "750"
+          FORGE_SERVER_ADDRESS_PREVIEW: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
         run: |
           REPO_ROOT="$(pwd)"
 
@@ -458,10 +481,83 @@ jobs:
               --detach --ci
           done
 
+      # A Slap-Chop preview must be a release-quality app preview. The secret names the dedicated
+      # service; if it is absent, the PR must fail rather than report a partial preview as ready.
+      - name: Deploy Slap-Chop Games shell
+        id: slap_chop
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          RAILWAY_SERVICE_NAME: ${{ secrets.RAILWAY_SLAP_CHOP_GAMES_SERVICE_NAME }}
+        run: |
+          [ -n "$RAILWAY_SERVICE_NAME" ] || { echo "RAILWAY_SLAP_CHOP_GAMES_SERVICE_NAME is required for a Slap-Chop preview." >&2; exit 1; }
+
+          # A new per-environment service has no domain until its first deployment. Deploy a
+          # bootstrap build with the API origin, then resolve/create its domain, stamp the
+          # canonical site URL, and deploy the final exact configuration.
+          resolve_domain() {
+            local service="$1" out=""
+            for i in $(seq 1 5); do
+              RAW=$(railway domain --service "$service" \
+                --environment "$ENV_NAME" \
+                --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json 2>&1)
+              out=$(echo "$RAW" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('domain') or (d.get('domains') or [''])[0])" 2>/dev/null)
+              if [ -n "$out" ]; then
+                echo "${out#https://}"
+                return 0
+              fi
+              echo "railway domain ($service) returned: $RAW" >&2
+              sleep 3
+            done
+            return 1
+          }
+
+          BACKEND_DOMAIN=$(resolve_domain "@taskmarket/backend") || { echo "Could not resolve the preview backend domain" >&2; exit 1; }
+
+          for kv in \
+            "COMMIT_SHA=bootstrap-${{ github.sha }}" \
+            "DEPLOY_ENVIRONMENT=preview" \
+            "TASKMARKET_API_URL=https://$BACKEND_DOMAIN" \
+            "NEXT_PUBLIC_API_URL=https://$BACKEND_DOMAIN"; do
+            railway variable set "$kv" \
+              --service "$RAILWAY_SERVICE_NAME" \
+              --environment "$ENV_NAME" \
+              --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+              --skip-deploys --json
+          done
+
+          railway up --service "$RAILWAY_SERVICE_NAME" \
+            --environment "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+            --ci
+
+          SLAP_CHOP_DOMAIN=$(resolve_domain "$RAILWAY_SERVICE_NAME") || { echo "Could not resolve the Slap-Chop Games preview domain after bootstrap deployment" >&2; exit 1; }
+          for kv in \
+            "COMMIT_SHA=${{ github.sha }}" \
+            "NEXT_PUBLIC_SITE_URL=https://$SLAP_CHOP_DOMAIN"; do
+            railway variable set "$kv" \
+              --service "$RAILWAY_SERVICE_NAME" \
+              --environment "$ENV_NAME" \
+              --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+              --skip-deploys --json
+          done
+          railway up --service "$RAILWAY_SERVICE_NAME" \
+            --environment "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+            --detach --ci
+          echo "url=https://$SLAP_CHOP_DOMAIN" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Slap-Chop Games preview serves this commit
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+          EXPECTED_DEPLOY_ENVIRONMENT: preview
+          SLAP_CHOP_HEALTH_URL: ${{ steps.slap_chop.outputs.url }}
+        run: make slap-chop-health
+
       - name: Comment PR with environment URL
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLAP_CHOP_URL: ${{ steps.slap_chop.outputs.url }}
         run: |
           # A service with no domain yet returns {"domain": "..."} (freshly created); a
           # service that already has one (e.g. inherited from the preview template) returns
@@ -497,6 +593,6 @@ jobs:
             sleep 15
           done
 
-          BODY=$(printf 'Preview environment ready.\n\n| Service | URL |\n| --- | --- |\n| Frontend | https://%s |\n| Storybook | %s |\n| Backend | https://%s |\n| Docs | https://%s |\n| Facilitator | https://%s |\n| Anvil RPC | %s |\n' \
-            "$FRONTEND_DOMAIN" "${{ steps.storybook.outputs.url }}" "$BACKEND_DOMAIN" "$DOCS_DOMAIN" "$FACILITATOR_DOMAIN" "${{ steps.anvil.outputs.rpc_url }}")
+          BODY=$(printf 'Preview environment ready.\n\n| Service | URL |\n| --- | --- |\n| Frontend | https://%s |\n| Storybook | %s |\n| Backend | https://%s |\n| Docs | https://%s |\n| Facilitator | https://%s |\n| Slap-Chop Games | %s |\n| Anvil RPC | %s |\n' \
+            "$FRONTEND_DOMAIN" "${{ steps.storybook.outputs.url }}" "$BACKEND_DOMAIN" "$DOCS_DOMAIN" "$FACILITATOR_DOMAIN" "$SLAP_CHOP_URL" "${{ steps.anvil.outputs.rpc_url }}")
           gh pr comment "${{ github.event.pull_request.number }}" --body "$BODY"

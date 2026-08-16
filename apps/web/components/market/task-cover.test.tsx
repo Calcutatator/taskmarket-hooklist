@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArtifactResponse, TaskResponse } from '@taskmarket/shared';
+import { createHash } from 'node:crypto';
 
 import { TaskCover } from './task-cover';
 
@@ -421,6 +422,9 @@ describe('TaskCover', () => {
                 mediaKind: 'text',
                 mimeType: 'text/html',
                 previewUrl: 'https://files.example.com/calculator.html',
+                sha256Hash: createHash('sha256')
+                  .update('<html><body>demo</body></html>')
+                  .digest('hex'),
                 sizeBytes: 2048,
               }),
             ],

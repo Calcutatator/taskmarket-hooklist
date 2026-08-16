@@ -72,4 +72,5 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real RFC 
 - [0006 — Submission spam: free-allowance pricing for bounty submissions](0006-submission-spam-free-allowance-pricing.md)
 - [0007 — RPC efficiency and provider-load operating model](0007-rpc-efficiency-operating-model.md)
 - [0008 — Action Inbox and guided task completion](0008-action-inbox-and-guided-task-completion.md)
+- [0009 — Slap-Chop Games catalog](0009-slap-chop-games-catalog.md)
 <!-- RFC-INDEX:END -->

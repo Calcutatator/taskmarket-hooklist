@@ -6,7 +6,7 @@ CI_TEST_BUDGET_SECONDS := 300
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start storybook storybook-ci storybook-image storybook-image-smoke storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check discord-blueprint-check adr-audit contract ci-config-check ci-config-fix ci-quality-js ci-test ui-ci ui-ci-build ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli discord disable register signed-smoke dither-kit
+.PHONY: help init install build dev start storybook storybook-ci storybook-image storybook-image-smoke storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test e2e slap-chop-health skill-conformance skill-export docs-og-check discord-blueprint-check adr-audit contract ci-config-check ci-config-fix ci-quality-js ci-test ui-ci ui-ci-build ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli discord disable register signed-smoke dither-kit
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -15,16 +15,16 @@ help:
 	@echo "  make install              - Same as init"
 	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet|preview)"
 	@echo "  make release              - Tag and push a production release (deploys backend + frontend)"
-	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|discord-app|shared|contracts|storybook|all); 'contracts' also regenerates packages/contracts/abi/ (JSON + typed bindings)"
+	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|slap-chop-games|slap-chop-games-storybook|docs|discord-app|shared|html-sandbox|contracts|storybook|all); 'contracts' also regenerates packages/contracts/abi/ (JSON + typed bindings)"
 	@echo "  make dev [storybook]      - Start all dev servers, optionally with Storybook"
-	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|discord-app|discord-stack|mock-api|mock-web|docs|anvil|storybook)"
+	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|slap-chop-games|discord-app|discord-stack|mock-api|mock-web|docs|anvil|storybook)"
 	@echo "  make discord <register|disable|smoke|signed-smoke> - Manage commands and verify Discord app seams"
 	@echo "  make discord-blueprint-check - Validate Discord operating YAML and Markdown"
-	@echo "  make storybook            - Start the component library on port 6006"
-	@echo "  make storybook-ci         - Check catalogue coverage, build, and test every story"
+	@echo "  make storybook [app]      - Start a component library (web on 6006, slap-chop-games on 6007)"
+	@echo "  make storybook-ci [app]   - Check catalogue coverage, build, and test every story"
 	@echo "  make storybook-image      - Build the production Storybook container"
 	@echo "  make storybook-image-smoke - Build and smoke-test the Storybook container"
-	@echo "  make storybook-install-browsers - Install Chromium for Storybook tests"
+	@echo "  make storybook-install-browsers [app] - Install Chromium for Storybook tests"
 	@echo "  make lint-check <app|all> - Check linting for specific app or all"
 	@echo "  make lint-fix <app|all>   - Fix linting for specific app or all"
 	@echo "  make format-check <app|all> - Check formatting for specific app or all"
@@ -33,6 +33,8 @@ help:
 	@echo "  make check all            - Run all checks (lint + format + type-check)"
 	@echo "  make fix all              - Fix all issues (lint + format)"
 	@echo "  make test [app]           - Run all tests, or just one package's tests"
+	@echo "  make e2e <app>            - Run browser end-to-end tests (slap-chop-games)"
+	@echo "  make slap-chop-health     - Verify an exact Slap-Chop Games health response"
 	@echo "  make skill-conformance    - Check shipped skill against platform contracts"
 	@echo "  make skill-export SKILLS_MARKET_OUTPUT=<dir> - Export the canonical skills.sh package"
 	@echo "  make docs-og-check        - Check docs pages have required og/twitter meta tags"
@@ -315,7 +317,7 @@ release:
 build:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make build <backend|frontend|web|docs|discord-app|shared|contracts|storybook|all>"; \
+		echo "Usage: make build <backend|frontend|web|slap-chop-games|slap-chop-games-storybook|docs|discord-app|shared|html-sandbox|contracts|storybook|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo build && \
@@ -326,6 +328,14 @@ build:
 		pnpm --filter @taskmarket/frontend build; \
 	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
 		pnpm --filter @taskmarket/web build; \
+	elif [ "$(word 1,$(ARGS))" = "slap-chop-games" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
+		pnpm --filter @taskmarket/slap-chop-games build; \
+	elif [ "$(word 1,$(ARGS))" = "slap-chop-games-storybook" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
+		pnpm --filter @taskmarket/slap-chop-games storybook:build; \
 	elif [ "$(word 1,$(ARGS))" = "storybook" ]; then \
 		pnpm --filter @taskmarket/web storybook:build; \
 	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
@@ -334,12 +344,14 @@ build:
 		pnpm --filter @taskmarket/discord-app build; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		pnpm --filter @taskmarket/shared build; \
+	elif [ "$(word 1,$(ARGS))" = "html-sandbox" ]; then \
+		pnpm --filter @taskmarket/html-sandbox build; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		forge build --root packages/contracts && \
 		cd packages/contracts && pnpm generate-abi; \
 	else \
 		echo "Unknown app or package: $(word 1,$(ARGS))"; \
-		echo "Usage: make build <backend|frontend|web|docs|discord-app|shared|contracts|storybook|all>"; \
+		echo "Usage: make build <backend|frontend|web|slap-chop-games|slap-chop-games-storybook|docs|discord-app|shared|html-sandbox|contracts|storybook|all>"; \
 		exit 1; \
 	fi
 
@@ -364,6 +376,14 @@ start:
 		pnpm --filter @taskmarket/frontend dev; \
 	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
 		pnpm --filter @taskmarket/web dev; \
+	elif [ "$(word 1,$(ARGS))" = "slap-chop-games" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
+		if [ "$${SLAP_CHOP_RUN_MODE:-}" = "production" ]; then \
+			NODE_ENV=production PORT="$${SLAP_CHOP_PORT:-$$PORT}" pnpm --filter @taskmarket/slap-chop-games start; \
+		else \
+			pnpm --filter @taskmarket/slap-chop-games dev; \
+		fi; \
 	elif [ "$(word 1,$(ARGS))" = "storybook" ]; then \
 		pnpm --filter @taskmarket/web storybook; \
 	elif [ "$(word 1,$(ARGS))" = "mock-api" ]; then \
@@ -385,7 +405,7 @@ start:
 	elif [ "$(word 1,$(ARGS))" = "anvil" ]; then \
 		anvil; \
 	else \
-		echo "Usage: make start <db|backend|frontend|web|discord-app|discord-stack|mock-api|mock-web|docs|anvil>"; \
+		echo "Usage: make start <db|backend|frontend|web|slap-chop-games|discord-app|discord-stack|mock-api|mock-web|docs|anvil>"; \
 		exit 1; \
 	fi
 
@@ -411,7 +431,7 @@ lint-check:
 lint-fix:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make lint-fix <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|all>"; \
+		echo "Usage: make lint-fix <backend|frontend|web|slap-chop-games|docs|shared|contracts|email-worker|discord-app|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo lint:write; \
@@ -421,6 +441,8 @@ lint-fix:
 		cd apps/frontend && pnpm lint:write; \
 	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
 		cd apps/web && pnpm lint:write; \
+	elif [ "$(word 1,$(ARGS))" = "slap-chop-games" ]; then \
+		cd apps/slap-chop-games && pnpm lint:write; \
 	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
 		cd apps/docs && pnpm lint:write; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
@@ -433,7 +455,7 @@ lint-fix:
 		cd apps/discord-app && pnpm lint:write; \
 	else \
 		echo "Unknown app or package: $(word 1,$(ARGS))"; \
-		echo "Usage: make lint-fix <backend|frontend|web|docs|shared|contracts|email-worker|discord-app|all>"; \
+		echo "Usage: make lint-fix <backend|frontend|web|slap-chop-games|docs|shared|contracts|email-worker|discord-app|all>"; \
 		exit 1; \
 	fi
 
@@ -474,18 +496,26 @@ format-fix:
 type-check:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make type-check <backend|frontend|web|shared|email-worker|cli|discord-app|all>"; \
+		echo "Usage: make type-check <backend|frontend|web|slap-chop-games|shared|html-sandbox|email-worker|cli|discord-app|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo type-check; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
 		cd apps/backend && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		cd apps/frontend && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
 		cd apps/web && pnpm type-check; \
+	elif [ "$(word 1,$(ARGS))" = "slap-chop-games" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
+		cd apps/slap-chop-games && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm type-check; \
+	elif [ "$(word 1,$(ARGS))" = "html-sandbox" ]; then \
+		cd packages/html-sandbox && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "cli" ]; then \
@@ -494,7 +524,7 @@ type-check:
 		cd apps/discord-app && pnpm type-check; \
 	else \
 		echo "Unknown app or package: $(word 1,$(ARGS))"; \
-		echo "Usage: make type-check <backend|frontend|web|shared|email-worker|discord-app|cli|all>"; \
+		echo "Usage: make type-check <backend|frontend|web|slap-chop-games|shared|html-sandbox|email-worker|discord-app|cli|all>"; \
 		exit 1; \
 	fi
 
@@ -548,6 +578,14 @@ test:
 	$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
 		pnpm turbo test; \
+	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
+		cd apps/backend && pnpm test; \
+	elif [ "$(word 1,$(ARGS))" = "slap-chop-games" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
+		cd apps/slap-chop-games && pnpm test; \
 	elif [ -d "apps/$(word 1,$(ARGS))" ]; then \
 		cd apps/$(word 1,$(ARGS)) && pnpm test; \
 	elif [ -d "packages/$(word 1,$(ARGS))" ]; then \
@@ -560,19 +598,53 @@ test:
 		exit 1; \
 	fi
 
+e2e:
+	$(ENV_LOADER) && \
+	if [ "$(word 1,$(ARGS))" = "slap-chop-games" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
+		node scripts/run-ci-test.mjs slap-chop-games-e2e $(CI_TEST_BUDGET_SECONDS) -- \
+			pnpm --filter @taskmarket/slap-chop-games test:e2e; \
+	else \
+		echo "Usage: make e2e slap-chop-games"; \
+		exit 1; \
+	fi
+
 storybook:
 	@if [ "$(word 1,$(MAKECMDGOALS))" = "build" ] || [ "$(word 1,$(MAKECMDGOALS))" = "dev" ] || [ "$(word 1,$(MAKECMDGOALS))" = "start" ] || [ "$(word 1,$(MAKECMDGOALS))" = "test" ]; then \
 		exit 0; \
 	fi; \
-	$(ENV_LOADER) && pnpm --filter @taskmarket/web storybook
+	$(ENV_LOADER) && \
+	if [ -z "$(word 1,$(ARGS))" ] || [ "$(word 1,$(ARGS))" = "web" ]; then \
+		pnpm --filter @taskmarket/web storybook; \
+	elif [ "$(word 1,$(ARGS))" = "slap-chop-games" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
+		pnpm --filter @taskmarket/slap-chop-games storybook; \
+	else \
+		echo "Usage: make storybook [web|slap-chop-games]"; \
+		exit 1; \
+	fi
 
 storybook-ci:
 	$(ENV_LOADER) && \
-	pnpm --filter @taskmarket/shared build && \
-	pnpm --filter @taskmarket/web storybook:coverage && \
-	pnpm --filter @taskmarket/web storybook:build && \
-	node scripts/run-ci-test.mjs storybook $(CI_TEST_BUDGET_SECONDS) -- \
-		pnpm --filter @taskmarket/web storybook:test
+	if [ -z "$(word 1,$(ARGS))" ] || [ "$(word 1,$(ARGS))" = "web" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/web storybook:coverage && \
+		pnpm --filter @taskmarket/web storybook:build && \
+		node scripts/run-ci-test.mjs storybook $(CI_TEST_BUDGET_SECONDS) -- \
+			pnpm --filter @taskmarket/web storybook:test; \
+	elif [ "$(word 1,$(ARGS))" = "slap-chop-games" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
+		pnpm --filter @taskmarket/slap-chop-games storybook:coverage && \
+		pnpm --filter @taskmarket/slap-chop-games storybook:build && \
+		node scripts/run-ci-test.mjs slap-chop-games-storybook $(CI_TEST_BUDGET_SECONDS) -- \
+			pnpm --filter @taskmarket/slap-chop-games storybook:test; \
+	else \
+		echo "Usage: make storybook-ci [web|slap-chop-games]"; \
+		exit 1; \
+	fi
 
 storybook-image:
 	docker build -f apps/web/Dockerfile.storybook -t taskmarket-storybook:local .
@@ -590,7 +662,15 @@ storybook-image-smoke: storybook-image
 	echo "Storybook container smoke test passed"
 
 storybook-install-browsers:
-	$(ENV_LOADER) && pnpm --filter @taskmarket/web exec playwright install --with-deps chromium
+	$(ENV_LOADER) && \
+	if [ -z "$(word 1,$(ARGS))" ] || [ "$(word 1,$(ARGS))" = "web" ]; then \
+		pnpm --filter @taskmarket/web exec playwright install --with-deps chromium; \
+	elif [ "$(word 1,$(ARGS))" = "slap-chop-games" ]; then \
+		pnpm --filter @taskmarket/slap-chop-games exec playwright install --with-deps chromium; \
+	else \
+		echo "Usage: make storybook-install-browsers [web|slap-chop-games]"; \
+		exit 1; \
+	fi
 
 skill-conformance:
 	$(ENV_LOADER) && \
@@ -723,12 +803,15 @@ contract:
 
 ci-config-check:
 	$(ENV_LOADER) && \
-	pnpm exec prettier --check .github/workflows/ci.yml scripts/run-ci-test.mjs scripts/run-ci-test.test.mjs && \
-	node --test scripts/run-ci-test.test.mjs
+	pnpm exec prettier --check .github/workflows/ci.yml .github/workflows/deploy-preview.yml .github/workflows/deploy-production.yml .github/workflows/deploy-testnet.yml .github/workflows/rollback-slap-chop-games.yml scripts/run-ci-test.mjs scripts/run-ci-test.test.mjs scripts/verify-preview-teardown.test.mjs scripts/verify-slap-chop-health.mjs scripts/verify-slap-chop-health.test.mjs && \
+	node --test scripts/run-ci-test.test.mjs scripts/verify-preview-teardown.test.mjs scripts/verify-slap-chop-health.test.mjs
 
 ci-config-fix:
 	$(ENV_LOADER) && \
-	pnpm exec prettier --write .github/workflows/ci.yml scripts/run-ci-test.mjs scripts/run-ci-test.test.mjs
+	pnpm exec prettier --write .github/workflows/ci.yml .github/workflows/deploy-preview.yml .github/workflows/deploy-production.yml .github/workflows/deploy-testnet.yml .github/workflows/rollback-slap-chop-games.yml scripts/run-ci-test.mjs scripts/run-ci-test.test.mjs scripts/verify-preview-teardown.test.mjs scripts/verify-slap-chop-health.mjs scripts/verify-slap-chop-health.test.mjs
+
+slap-chop-health:
+	$(ENV_LOADER) && node scripts/verify-slap-chop-health.mjs
 
 ci-quality-js: ci-config-check
 	$(ENV_LOADER) && \
@@ -744,6 +827,7 @@ ci-test:
 		backend) \
 			[ -n "$(CI_TEST_SHARD)" ] || { echo "CI_TEST_SHARD is required for backend"; exit 1; }; \
 			pnpm --filter @taskmarket/shared build && \
+			pnpm --filter @taskmarket/html-sandbox build && \
 			node scripts/run-ci-test.mjs "backend $(CI_TEST_SHARD)" $(CI_TEST_BUDGET_SECONDS) -- \
 				pnpm --filter @taskmarket/backend exec vitest run --shard="$(CI_TEST_SHARD)";; \
 		web) \

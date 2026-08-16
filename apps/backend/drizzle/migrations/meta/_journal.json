@@ -344,6 +344,20 @@
       "when": 1786482576000,
       "tag": "0048_email_sender_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1786845831000,
+      "tag": "0049_add_slap_chop_games",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1786852014000,
+      "tag": "0050_add_game_vote_rate_limits",
+      "breakpoints": true
     }
   ]
 }

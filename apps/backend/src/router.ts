@@ -23,6 +23,8 @@ import { requesterRouter } from './routers/requester.router';
 import { taskDropsRouter } from './routers/task-drops.router';
 import { legalRouter } from './routers/legal.router';
 import { intentsRouter } from './routers/intents.router';
+import { gamesRouter } from './routers/games.router';
+import { gameCurationRouter } from './routers/game-curation.router';
 
 export const appRouter = router({
   health: healthRouter,
@@ -49,6 +51,8 @@ export const appRouter = router({
   requester: requesterRouter,
   legal: legalRouter,
   intents: intentsRouter,
+  games: gamesRouter,
+  gameCuration: gameCurationRouter,
 });
 
 export type AppRouter = typeof appRouter;

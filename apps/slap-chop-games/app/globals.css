@@ -1,0 +1,130 @@
+@import 'tailwindcss';
+
+:root {
+  --catalog-canvas: #11110f;
+  --catalog-ink: #f4f1e8;
+  --catalog-surface: #191915;
+  --catalog-muted: #aaa79e;
+  --catalog-border: #37362f;
+  --catalog-focus: #f4f1e8;
+  color-scheme: dark;
+}
+
+.light {
+  --catalog-canvas: #f4f1e8;
+  --catalog-ink: #191915;
+  --catalog-surface: #e9e5d9;
+  --catalog-muted: #69665e;
+  --catalog-border: #c8c2b4;
+  --catalog-focus: #191915;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-catalog-canvas: var(--catalog-canvas);
+  --color-catalog-ink: var(--catalog-ink);
+  --color-catalog-surface: var(--catalog-surface);
+  --color-catalog-muted: var(--catalog-muted);
+  --color-catalog-border: var(--catalog-border);
+  --color-catalog-focus: var(--catalog-focus);
+  --font-sans: var(--font-instrument-sans);
+}
+
+* {
+  border-color: var(--catalog-border);
+}
+
+html {
+  background: var(--catalog-canvas);
+}
+
+body {
+  min-height: 100dvh;
+  background: var(--catalog-canvas);
+  color: var(--catalog-ink);
+  font-family: var(--font-instrument-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--catalog-ink);
+  color: var(--catalog-canvas);
+}
+
+:focus-visible {
+  outline: 2px solid var(--catalog-focus);
+  outline-offset: 2px;
+}
+
+.player-panel {
+  width: min(100%, 26rem);
+  border: 1px solid var(--catalog-border);
+  background: var(--catalog-surface);
+  padding: 1rem;
+}
+
+.player-panel-kicker {
+  color: var(--catalog-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.player-panel-title {
+  margin-top: 0.5rem;
+  color: var(--catalog-ink);
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+
+.player-panel-copy {
+  margin-top: 0.5rem;
+  color: var(--catalog-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.player-action {
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.player-action-secondary {
+  margin-top: 1rem;
+  border: 1px solid var(--catalog-border);
+  color: var(--catalog-ink);
+}
+
+.player-action-secondary:hover:not(:disabled) {
+  background: var(--catalog-canvas);
+}
+
+.player-action-secondary:disabled {
+  cursor: wait;
+  color: var(--catalog-muted);
+}
+
+.player-back-control {
+  min-height: 2.75rem;
+  border-right: 1px solid var(--catalog-border);
+  padding: 0.5rem 0.75rem;
+  color: var(--catalog-ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.player-back-control:hover {
+  background: var(--catalog-surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+}

@@ -43,3 +43,8 @@ rfcs:
     title: Action Inbox and guided task completion
     status: Accepted
     date: "2026-08-06"
+  - number: "0009"
+    file: "0009-slap-chop-games-catalog.md"
+    title: "Slap-Chop Games catalog"
+    status: Discussion
+    date: "2026-08-16"
