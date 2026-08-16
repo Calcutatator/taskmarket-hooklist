@@ -323,6 +323,8 @@ build:
 		pnpm turbo build && \
 		$(MAKE) build contracts; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
 		pnpm --filter @taskmarket/backend build; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		pnpm --filter @taskmarket/frontend build; \
@@ -377,6 +379,8 @@ start:
 	if [ "$(word 1,$(ARGS))" = "db" ]; then \
 		cd platform/dev && docker compose up -d postgres; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
 		pnpm --filter @taskmarket/backend dev; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		pnpm --filter @taskmarket/frontend dev; \
