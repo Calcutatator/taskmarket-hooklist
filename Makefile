@@ -702,6 +702,7 @@ storybook-install-browsers:
 skill-conformance:
 	$(ENV_LOADER) && \
 	pnpm --filter @taskmarket/shared build && \
+	pnpm --filter @taskmarket/html-sandbox build && \
 	node scripts/run-ci-test.mjs skill-backend $(CI_TEST_BUDGET_SECONDS) -- \
 		pnpm --filter @taskmarket/backend exec vitest run test/unit/skill-conformance.test.ts test/integration/middleware/validateBody.test.ts && \
 	node scripts/run-ci-test.mjs skill-cli $(CI_TEST_BUDGET_SECONDS) -- \
