@@ -327,6 +327,8 @@ build:
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		pnpm --filter @taskmarket/frontend build; \
 	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
 		pnpm --filter @taskmarket/web build; \
 	elif [ "$(word 1,$(ARGS))" = "slap-chop-games" ]; then \
 		pnpm --filter @taskmarket/shared build && \
@@ -337,6 +339,8 @@ build:
 		pnpm --filter @taskmarket/html-sandbox build && \
 		pnpm --filter @taskmarket/slap-chop-games storybook:build; \
 	elif [ "$(word 1,$(ARGS))" = "storybook" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
 		pnpm --filter @taskmarket/web storybook:build; \
 	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
 		pnpm --filter @taskmarket/docs build; \
@@ -357,6 +361,8 @@ build:
 
 dev:
 	@$(ENV_LOADER) && \
+	pnpm --filter @taskmarket/shared build && \
+	pnpm --filter @taskmarket/html-sandbox build && \
 	if [ "$(word 1,$(ARGS))" = "storybook" ]; then \
 		pnpm turbo dev & APP_PID=$$!; \
 		pnpm --filter @taskmarket/web storybook & STORYBOOK_PID=$$!; \
@@ -375,6 +381,8 @@ start:
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		pnpm --filter @taskmarket/frontend dev; \
 	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
 		pnpm --filter @taskmarket/web dev; \
 	elif [ "$(word 1,$(ARGS))" = "slap-chop-games" ]; then \
 		pnpm --filter @taskmarket/shared build && \
@@ -385,10 +393,14 @@ start:
 			pnpm --filter @taskmarket/slap-chop-games dev; \
 		fi; \
 	elif [ "$(word 1,$(ARGS))" = "storybook" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
 		pnpm --filter @taskmarket/web storybook; \
 	elif [ "$(word 1,$(ARGS))" = "mock-api" ]; then \
 		pnpm --filter @taskmarket/backend exec tsx ../../apps/web/e2e/mock-api.ts; \
 	elif [ "$(word 1,$(ARGS))" = "mock-web" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
 		MOCK_API_PORT="$${E2E_MOCK_API_PORT:-$${TASKMARKET_MOCK_API_PORT:-3101}}"; \
 		PORT="$${TASKMARKET_MOCK_WEB_PORT:-3002}" \
 		NEXT_PUBLIC_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
@@ -507,6 +519,8 @@ type-check:
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		cd apps/frontend && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
 		cd apps/web && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "slap-chop-games" ]; then \
 		pnpm --filter @taskmarket/shared build && \
@@ -586,11 +600,17 @@ test:
 		pnpm --filter @taskmarket/shared build && \
 		pnpm --filter @taskmarket/html-sandbox build && \
 		cd apps/slap-chop-games && pnpm test; \
+	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
+		cd apps/web && pnpm test; \
 	elif [ -d "apps/$(word 1,$(ARGS))" ]; then \
 		cd apps/$(word 1,$(ARGS)) && pnpm test; \
 	elif [ -d "packages/$(word 1,$(ARGS))" ]; then \
 		cd packages/$(word 1,$(ARGS)) && pnpm test; \
 	elif [ "$(word 1,$(ARGS))" = "storybook" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
 		pnpm --filter @taskmarket/web storybook:test; \
 	else \
 		echo "Unknown app or package: $(word 1,$(ARGS))"; \
@@ -616,6 +636,8 @@ storybook:
 	fi; \
 	$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ] || [ "$(word 1,$(ARGS))" = "web" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
 		pnpm --filter @taskmarket/web storybook; \
 	elif [ "$(word 1,$(ARGS))" = "slap-chop-games" ]; then \
 		pnpm --filter @taskmarket/shared build && \
@@ -630,6 +652,7 @@ storybook-ci:
 	$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ] || [ "$(word 1,$(ARGS))" = "web" ]; then \
 		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
 		pnpm --filter @taskmarket/web storybook:coverage && \
 		pnpm --filter @taskmarket/web storybook:build && \
 		node scripts/run-ci-test.mjs storybook $(CI_TEST_BUDGET_SECONDS) -- \
@@ -832,6 +855,8 @@ ci-test:
 				pnpm --filter @taskmarket/backend exec vitest run --shard="$(CI_TEST_SHARD)";; \
 		web) \
 			[ -n "$(CI_TEST_SHARD)" ] || { echo "CI_TEST_SHARD is required for web"; exit 1; }; \
+			pnpm --filter @taskmarket/shared build && \
+			pnpm --filter @taskmarket/html-sandbox build && \
 			node scripts/run-ci-test.mjs "web $(CI_TEST_SHARD)" $(CI_TEST_BUDGET_SECONDS) -- \
 				pnpm --filter @taskmarket/web exec vitest run --project=unit --shard="$(CI_TEST_SHARD)";; \
 		other) \
@@ -854,6 +879,7 @@ ui-ci:
 	pnpm --filter @taskmarket/web lint:check && \
 	pnpm --filter @taskmarket/web format:check && \
 	pnpm --filter @taskmarket/shared build && \
+	pnpm --filter @taskmarket/html-sandbox build && \
 	pnpm --filter @taskmarket/web type-check && \
 	pnpm --filter @taskmarket/web test && \
 	NEXT_PUBLIC_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
@@ -872,6 +898,7 @@ ui-ci-build:
 	$(ENV_LOADER) && \
 	MOCK_API_PORT="$${E2E_MOCK_API_PORT:-$${TASKMARKET_MOCK_API_PORT:-3101}}" && \
 	pnpm --filter @taskmarket/shared build && \
+	pnpm --filter @taskmarket/html-sandbox build && \
 	NEXT_PUBLIC_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
 	TASKMARKET_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
 	NEXT_PUBLIC_PRIVY_APP_ID= \
