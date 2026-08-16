@@ -1064,6 +1064,137 @@ export const relayedIntents = pgTable(
   })
 );
 
+// Implements: ADR-0087 -- a published catalog record pins one exact Taskmarket artifact rather
+// than resolving a task's latest submission at play time. The storage URI stays server-only; the
+// public games router mints a short-lived cover URL and never serializes this field directly.
+export const games = pgTable(
+  'games',
+  {
+    id: text('id').primaryKey(),
+    slug: text('slug').notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    creatorName: text('creator_name'),
+    tags: text('tags').array().notNull().default([]),
+    status: text('status').notNull().default('draft'),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    submissionId: text('submission_id')
+      .notNull()
+      .references(() => submissions.id),
+    artifactId: text('artifact_id')
+      .notNull()
+      .references(() => artifacts.id),
+    artifactSha256Hash: text('artifact_sha256_hash').notNull(),
+    artifactKeccak256Hash: text('artifact_keccak256_hash').notNull(),
+    artifactMimeType: text('artifact_mime_type').notNull(),
+    artifactSizeBytes: integer('artifact_size_bytes').notNull(),
+    // Covers can remain pinned Taskmarket artifacts or be catalog-owned assets. Both retain
+    // provenance in the database, but neither storage reference is exposed in catalog DTOs.
+    coverSource: text('cover_source'),
+    coverArtifactId: text('cover_artifact_id').references(() => artifacts.id),
+    coverStorageUri: text('cover_storage_uri'),
+    coverSha256Hash: text('cover_sha256_hash'),
+    coverMimeType: text('cover_mime_type'),
+    coverWidth: integer('cover_width'),
+    coverHeight: integer('cover_height'),
+    coverAltText: text('cover_alt_text'),
+    // Written only after the curator has loaded the exact source under the shared production
+    // sandbox policy. M3 owns the workflow which populates it.
+    previewedAt: timestamp('previewed_at', { withTimezone: true }),
+    upvoteCount: integer('upvote_count').notNull().default(0),
+    downvoteCount: integer('downvote_count').notNull().default(0),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    hiddenAt: timestamp('hidden_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    slugUnique: uniqueIndex('uidx_games_slug').on(table.slug),
+    publishedIdx: index('idx_games_status_published_at').on(table.status, table.publishedAt),
+    taskIdx: index('idx_games_task').on(table.taskId),
+    submissionIdx: index('idx_games_submission').on(table.submissionId),
+    artifactIdx: index('idx_games_artifact').on(table.artifactId),
+    statusCheck: check(
+      'games_status_check',
+      sql`${table.status} IN ('draft', 'published', 'hidden')`
+    ),
+    voteCountsCheck: check(
+      'games_vote_counts_check',
+      sql`${table.upvoteCount} >= 0 AND ${table.downvoteCount} >= 0`
+    ),
+    artifactSizeCheck: check('games_artifact_size_check', sql`${table.artifactSizeBytes} >= 0`),
+    coverSourceCheck: check(
+      'games_cover_source_check',
+      sql`${table.coverSource} IS NULL OR ${table.coverSource} IN ('artifact', 'catalog_asset')`
+    ),
+    coverDimensionsCheck: check(
+      'games_cover_dimensions_check',
+      sql`(${table.coverWidth} IS NULL OR ${table.coverWidth} > 0)
+          AND (${table.coverHeight} IS NULL OR ${table.coverHeight} > 0)`
+    ),
+  })
+);
+
+// Implements: ADR-0089 (M8 owns mutation/authentication). The unique constraint is the durable
+// one-vote-per-Privy-user invariant; cached totals on games are an ordering optimization only.
+export const gameVotes = pgTable(
+  'game_votes',
+  {
+    id: text('id').primaryKey(),
+    gameId: text('game_id')
+      .notNull()
+      .references(() => games.id, { onDelete: 'cascade' }),
+    privyUserId: text('privy_user_id').notNull(),
+    value: smallint('value').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    gameIdx: index('idx_game_votes_game').on(table.gameId),
+    gamePrivyUserUnique: uniqueIndex('uidx_game_votes_game_privy_user').on(
+      table.gameId,
+      table.privyUserId
+    ),
+    valueCheck: check('game_votes_value_check', sql`${table.value} IN (-1, 1)`),
+  })
+);
+
+// Implements: ADR-0089. These hashed, independent keys are the durable shared sliding-window
+// limits for vote writes: one key for the verified Privy user and one for the request IP as
+// derived by Express after the configured trusted-proxy boundary. No raw IP is retained here.
+export const gameVoteRateLimits = pgTable('game_vote_rate_limits', {
+  key: text('rate_limit_key').primaryKey(),
+  windowStartedAt: timestamp('window_started_at', { precision: 3, withTimezone: true }).notNull(),
+  attempts: integer('attempts').notNull(),
+  updatedAt: timestamp('updated_at', { precision: 3, withTimezone: true }).defaultNow().notNull(),
+});
+
+// Implements: ADR-0088 -- an append-only curator audit trail. M3 owns the write paths and
+// transition policy; JSON snapshots preserve the before/after metadata without exposing it from
+// the public catalog API.
+export const gameCurationEvents = pgTable(
+  'game_curation_events',
+  {
+    id: text('id').primaryKey(),
+    gameId: text('game_id')
+      .notNull()
+      .references(() => games.id),
+    actorPrivyUserId: text('actor_privy_user_id').notNull(),
+    action: text('action').notNull(),
+    beforeMetadata: jsonb('before_metadata'),
+    afterMetadata: jsonb('after_metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    gameCreatedIdx: index('idx_game_curation_events_game_created_at').on(
+      table.gameId,
+      table.createdAt
+    ),
+  })
+);
+
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type ServerWalletNonce = typeof serverWalletNonces.$inferSelect;
@@ -1120,3 +1251,9 @@ export type TaskAllowedViewer = typeof taskAllowedViewers.$inferSelect;
 export type NewTaskAllowedViewer = typeof taskAllowedViewers.$inferInsert;
 export type TaskAccessGrant = typeof taskAccessGrants.$inferSelect;
 export type NewTaskAccessGrant = typeof taskAccessGrants.$inferInsert;
+export type Game = typeof games.$inferSelect;
+export type NewGame = typeof games.$inferInsert;
+export type GameVote = typeof gameVotes.$inferSelect;
+export type NewGameVote = typeof gameVotes.$inferInsert;
+export type GameCurationEvent = typeof gameCurationEvents.$inferSelect;
+export type NewGameCurationEvent = typeof gameCurationEvents.$inferInsert;

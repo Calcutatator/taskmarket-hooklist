@@ -13,6 +13,11 @@ import { appRouter } from './router';
 import { createContext } from './context';
 import { feedbackFileHandler } from './routes/feedback';
 import { logger, morganStream } from './lib/logger';
+import {
+  classifySlapChopHttpOperation,
+  logSlapChopHttpRequest,
+  slapChopDurationMs,
+} from './lib/slap-chop-observability';
 import { generateOpenAPI } from './lib/openapi';
 import { getServerConfig } from './config/env';
 import {
@@ -212,7 +217,30 @@ app.use(
 );
 app.use(compression());
 app.use(cors(buildCorsOptions(config.CORS_ORIGIN)));
-app.use(morgan('combined', { stream: morganStream }));
+app.use((req, res, next) => {
+  const operation = classifySlapChopHttpOperation(req.path);
+  if (!operation) {
+    next();
+    return;
+  }
+
+  const startedAt = performance.now();
+  res.once('finish', () => {
+    logSlapChopHttpRequest({
+      durationMs: slapChopDurationMs(startedAt),
+      method: req.method,
+      operation,
+      statusCode: res.statusCode,
+    });
+  });
+  next();
+});
+app.use(
+  morgan('combined', {
+    skip: (req) => classifySlapChopHttpOperation(req.path) !== null,
+    stream: morganStream,
+  })
+);
 app.use(express.json({ limit: '50mb' }));
 
 app.get('/legal-documents/:version/:slug/:contentHash', (req, res) => {

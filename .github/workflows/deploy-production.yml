@@ -3,7 +3,7 @@ name: Deploy to Railway Production
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -12,7 +12,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
 
     steps:
       - uses: actions/checkout@v7
@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version-file: '.nvmrc'
+          node-version-file: ".nvmrc"
 
       - name: Verify CI passed on tagged commit
         env:
@@ -65,6 +65,11 @@ jobs:
             --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
             --environment PRODUCTION \
             --skip-deploys
+          railway variable set \
+            "RAILPACK_BUILD_CMD=make build backend" \
+            --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
+            --environment PRODUCTION \
+            --skip-deploys
           railway up \
             --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
             --environment PRODUCTION
@@ -73,6 +78,11 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
+          railway variable set \
+            "RAILPACK_BUILD_CMD=make build web" \
+            --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
+            --environment PRODUCTION \
+            --skip-deploys
           railway up \
             --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
             --environment PRODUCTION
@@ -84,6 +94,40 @@ jobs:
           railway up \
             --service "${{ secrets.RAILWAY_DOCS_SERVICE_NAME }}" \
             --environment PRODUCTION
+
+      # The dedicated service and games.taskmarket.dev are production release prerequisites.
+      - name: Stamp and deploy Slap-Chop Games to Railway production
+        id: slap_chop
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE_NAME: ${{ secrets.RAILWAY_SLAP_CHOP_GAMES_SERVICE_NAME }}
+        run: |
+          [ -n "$RAILWAY_SERVICE_NAME" ] || { echo "RAILWAY_SLAP_CHOP_GAMES_SERVICE_NAME is required for a Slap-Chop production release." >&2; exit 1; }
+
+          for kv in \
+            "COMMIT_SHA=${{ github.sha }}" \
+            "DEPLOY_ENVIRONMENT=production" \
+            "RAILPACK_BUILD_CMD=make build slap-chop-games" \
+            "RAILPACK_START_CMD=pnpm --filter @taskmarket/slap-chop-games start" \
+            "TASKMARKET_API_URL=https://api.taskmarket.dev" \
+            "NEXT_PUBLIC_API_URL=https://api.taskmarket.dev" \
+            "NEXT_PUBLIC_SITE_URL=https://games.taskmarket.dev"; do
+            railway variable set "$kv" \
+              --service "$RAILWAY_SERVICE_NAME" \
+              --environment PRODUCTION \
+              --skip-deploys
+          done
+
+          railway up \
+            --service "$RAILWAY_SERVICE_NAME" \
+            --environment PRODUCTION
+
+      - name: Verify Slap-Chop Games production serves this commit
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+          EXPECTED_DEPLOY_ENVIRONMENT: production
+          SLAP_CHOP_HEALTH_URL: https://games.taskmarket.dev
+        run: make slap-chop-health
 
       # The deploy steps above prove the build succeeded. This proves the *running* process is
       # the one that was just built -- a successful build that never became the live version is
@@ -107,4 +151,4 @@ jobs:
           exit 1
 
       - name: Report deployment
-        run: echo "Deployed ${{ github.ref_name }} to Railway production (backend + web + docs)"
+        run: echo "Deployed ${{ github.ref_name }} to Railway production (backend + web + docs + Slap-Chop Games)"

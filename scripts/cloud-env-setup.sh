@@ -615,8 +615,10 @@ NEXT_PUBLIC_CHAIN_ID=84532
 NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL=$ANVIL_RPC_URL
 EOF
 
-echo "==> [10/14] Build the CLI"
+echo "==> [10/14] Build the CLI and backend workspace dependencies"
 make cli
+make build shared
+make build html-sandbox
 
 echo "==> [11/14] Playwright browsers for apps/web e2e tests (make ui-ci)"
 # The version this installs is whatever @taskmarket/web's package.json pins for

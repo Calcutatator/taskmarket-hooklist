@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -5,6 +6,8 @@ import type { ArtifactResponse } from '@taskmarket/shared';
 
 import { InteractiveHtmlPreview } from './interactive-html-preview';
 import { MAX_INTERACTIVE_HTML_BYTES } from '@/lib/sandboxed-html';
+
+const previewHtml = '<html><body>Recovered result</body></html>';
 
 const htmlArtifact: ArtifactResponse = {
   displayOrder: 0,
@@ -14,7 +17,7 @@ const htmlArtifact: ArtifactResponse = {
   mediaKind: 'text',
   mimeType: 'text/html',
   role: 'final',
-  sha256Hash: '1'.repeat(64),
+  sha256Hash: createHash('sha256').update(previewHtml).digest('hex'),
   sizeBytes: 1024,
   storageUri: 's3://taskmarket/result.html',
   submissionId: 'submission-1',
@@ -84,7 +87,7 @@ describe('InteractiveHtmlPreview', () => {
         body: null,
         headers: new Headers(),
         ok: true,
-        text: async () => '<html><body>Recovered result</body></html>',
+        text: async () => previewHtml,
       });
     const onRetry = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('fetch', fetchMock);
@@ -103,5 +106,55 @@ describe('InteractiveHtmlPreview', () => {
 
     expect(onRetry).toHaveBeenCalledOnce();
     expect(await screen.findByTitle('Interactive preview of result.html')).toBeInTheDocument();
+  });
+
+  it('uses the capability-closed iframe attributes supplied by the shared runtime', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        body: null,
+        headers: new Headers(),
+        ok: true,
+        text: async () => previewHtml,
+      })
+    );
+
+    render(
+      <InteractiveHtmlPreview artifact={htmlArtifact} previewUrl="https://files/result.html" />
+    );
+
+    const iframe = await screen.findByTitle('Interactive preview of result.html');
+    expect(iframe).toHaveAttribute('allow', '');
+    expect(iframe).toHaveAttribute('referrerpolicy', 'no-referrer');
+    expect(iframe).toHaveAttribute('sandbox', 'allow-scripts');
+    expect(iframe.getAttribute('sandbox')).not.toContain('allow-same-origin');
+    expect(iframe.getAttribute('sandbox')).not.toContain('allow-popups');
+    expect(iframe.getAttribute('sandbox')).not.toContain('allow-top-navigation');
+  });
+
+  it('does not execute bytes that do not match the pinned artifact hash', async () => {
+    const trustedHtml = '<html><body>Trusted result</body></html>';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        body: null,
+        headers: new Headers(),
+        ok: true,
+        text: async () => '<html><body>Tampered result</body></html>',
+      })
+    );
+
+    render(
+      <InteractiveHtmlPreview
+        artifact={{
+          ...htmlArtifact,
+          sha256Hash: createHash('sha256').update(trustedHtml).digest('hex'),
+        }}
+        previewUrl="https://files/tampered.html"
+      />
+    );
+
+    expect(await screen.findByText(/failed to verify html preview integrity/i)).toBeVisible();
+    expect(screen.queryByTitle('Interactive preview of result.html')).not.toBeInTheDocument();
   });
 });

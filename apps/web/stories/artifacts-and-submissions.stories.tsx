@@ -120,6 +120,7 @@ const htmlArtifact = artifactFixture({
   mimeType: 'text/html',
   previewUrl: `data:text/html;charset=utf-8,${htmlSource}`,
   role: 'final',
+  sha256Hash: '4699a6f3308e3540f970a6c2a0b75c349990083fe9a8e915f3e652f1a4849a7d',
   sizeBytes: 812,
   storageUri: 'ipfs://bafybeifake/interactive-report.html',
 });

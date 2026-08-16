@@ -1,8 +1,10 @@
 import winston from 'winston';
 import { getServerConfig } from '../config/env';
 
+const isProduction = getServerConfig().NODE_ENV === 'production';
+
 export const logger = winston.createLogger({
-  level: getServerConfig().NODE_ENV === 'production' ? 'http' : 'debug',
+  level: isProduction ? 'http' : 'debug',
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),
@@ -10,7 +12,11 @@ export const logger = winston.createLogger({
   ),
   transports: [
     new winston.transports.Console({
-      format: winston.format.combine(winston.format.colorize(), winston.format.simple()),
+      // Production logs are ingested as structured JSON. Local output remains colorized and
+      // compact for a developer tailing the process.
+      format: isProduction
+        ? winston.format.json()
+        : winston.format.combine(winston.format.colorize(), winston.format.simple()),
     }),
   ],
 });

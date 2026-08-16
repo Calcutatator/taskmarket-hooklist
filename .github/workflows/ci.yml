@@ -496,6 +496,71 @@ jobs:
           path: apps/web/storybook-static
           retention-days: 14
 
+  # Slap-Chop Games has a deliberately separate component catalogue and production artifact.
+  # Keep its checks isolated from the existing marketplace UI so a foundation regression is
+  # directly attributable and the app remains independently deployable.
+  slap-chop-games:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      - run: make install
+
+      - name: Run isolated Slap-Chop Games checks
+        run: |
+          make lint-check slap-chop-games
+          make format-check slap-chop-games
+          make type-check slap-chop-games
+          make test slap-chop-games
+          make build slap-chop-games
+
+      - run: make storybook-install-browsers slap-chop-games
+
+      - run: make storybook-ci slap-chop-games
+        env:
+          CI: true
+
+      - run: make e2e slap-chop-games
+        env:
+          CI: true
+
+      - name: Upload Slap-Chop Games Storybook
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slap-chop-games-storybook-static
+          path: apps/slap-chop-games/storybook-static
+          retention-days: 14
+
+      - name: Upload Slap-Chop Games Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slap-chop-games-playwright-report
+          path: apps/slap-chop-games/playwright-report
+          retention-days: 14
+
+      - name: Upload Slap-Chop Games Playwright results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slap-chop-games-playwright-test-results
+          path: apps/slap-chop-games/test-results
+          retention-days: 14
+
   quality:
     if: always()
     needs:
@@ -509,6 +574,7 @@ jobs:
         skill-conformance,
         adr,
         storybook,
+        slap-chop-games,
       ]
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -532,6 +598,7 @@ jobs:
           test "${{ needs.skill-conformance.result }}" = "success"
           test "${{ needs.adr.result }}" = "success"
           test "${{ needs.storybook.result }}" = "success"
+          test "${{ needs.slap-chop-games.result }}" = "success"
 
   ui-e2e:
     needs: web-build
@@ -618,7 +685,16 @@ jobs:
 
   ui:
     if: always()
-    needs: [quality-js, backend-tests, js-tests, web-build, storybook, ui-e2e]
+    needs:
+      [
+        quality-js,
+        backend-tests,
+        js-tests,
+        web-build,
+        storybook,
+        slap-chop-games,
+        ui-e2e,
+      ]
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -630,4 +706,5 @@ jobs:
           test "${{ needs.js-tests.result }}" = "success"
           test "${{ needs.web-build.result }}" = "success"
           test "${{ needs.storybook.result }}" = "success"
+          test "${{ needs.slap-chop-games.result }}" = "success"
           test "${{ needs.ui-e2e.result }}" = "success"

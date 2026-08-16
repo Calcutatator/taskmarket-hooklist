@@ -2,9 +2,14 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArtifactResponse } from '@taskmarket/shared';
+import { createHash } from 'node:crypto';
 import { createContext, useContext, type ReactNode } from 'react';
 
 import { ArtifactMediaHero, ArtifactMediaTile } from './artifact-preview-button';
+
+function sha256Html(html: string) {
+  return createHash('sha256').update(html).digest('hex');
+}
 
 // A controllable IntersectionObserver stub for asserting the "not yet in view"
 // state distinctly from "in view" -- unlike IntersectionObserverStub below (which
@@ -238,7 +243,7 @@ describe('ArtifactPreviewTrigger mobile/desktop branch', () => {
       ok: true,
       text: async () => htmlContent,
     } as Response);
-    const htmlArtifact = artifact();
+    const htmlArtifact = artifact({ sha256Hash: sha256Html(htmlContent) });
     render(<ArtifactMediaTile artifact={htmlArtifact} taskId="task-1" />);
     const user = await openPreview();
 
@@ -269,7 +274,7 @@ describe('ArtifactPreviewTrigger mobile/desktop branch', () => {
       ok: true,
       text: async () => htmlContent,
     } as Response);
-    const htmlArtifact = artifact();
+    const htmlArtifact = artifact({ sha256Hash: sha256Html(htmlContent) });
     render(<ArtifactMediaTile artifact={htmlArtifact} taskId="task-1" />);
     const user = await openPreview();
 
@@ -301,7 +306,7 @@ describe('ArtifactPreviewTrigger mobile/desktop branch', () => {
       ok: true,
       text: async () => htmlContent,
     } as Response);
-    const htmlArtifact = artifact();
+    const htmlArtifact = artifact({ sha256Hash: sha256Html(htmlContent) });
     render(<ArtifactMediaTile artifact={htmlArtifact} taskId="task-1" />);
     await openPreview();
 
@@ -309,7 +314,8 @@ describe('ArtifactPreviewTrigger mobile/desktop branch', () => {
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
     expect(frame).toHaveAttribute('allow', '');
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
-    expect(frame.getAttribute('srcdoc')).toContain("default-src 'none'");
+    expect(frame.getAttribute('srcdoc')).toContain('frame-src data:');
+    expect(frame.getAttribute('srcdoc')).toContain('data-taskmarket-game');
 
     fetchMock.mockRestore();
   });
@@ -391,7 +397,9 @@ describe('ArtifactMediaTile poster (closed, pre-click)', () => {
       ok: true,
       text: async () => '<html><body>demo</body></html>',
     } as Response);
-    const htmlArtifact = artifact();
+    const htmlArtifact = artifact({
+      sha256Hash: sha256Html('<html><body>demo</body></html>'),
+    });
     render(<ArtifactMediaTile artifact={htmlArtifact} taskId="task-1" />);
 
     const tile = screen.getByRole('button', { name: /open candidate-a-calculator\.html/i });
@@ -410,7 +418,9 @@ describe('ArtifactMediaTile poster (closed, pre-click)', () => {
       ok: true,
       text: async () => '<html><body>demo</body></html>',
     } as Response);
-    const htmlArtifact = artifact();
+    const htmlArtifact = artifact({
+      sha256Hash: sha256Html('<html><body>demo</body></html>'),
+    });
     render(<ArtifactMediaTile artifact={htmlArtifact} taskId="task-1" />);
 
     const tile = screen.getByRole('button', { name: /open candidate-a-calculator\.html/i });
@@ -430,7 +440,8 @@ describe('ArtifactMediaTile poster (closed, pre-click)', () => {
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
     expect(frame).toHaveAttribute('allow', '');
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
-    expect(frame.getAttribute('srcdoc')).toContain("default-src 'none'");
+    expect(frame.getAttribute('srcdoc')).toContain('frame-src data:');
+    expect(frame.getAttribute('srcdoc')).toContain('data-taskmarket-game');
 
     fetchMock.mockRestore();
   });
@@ -478,7 +489,9 @@ describe('ArtifactMediaTile poster (closed, pre-click)', () => {
       ok: true,
       text: async () => '<html><body>demo</body></html>',
     } as Response);
-    const htmlArtifact = artifact();
+    const htmlArtifact = artifact({
+      sha256Hash: sha256Html('<html><body>demo</body></html>'),
+    });
     render(<ArtifactMediaTile artifact={htmlArtifact} taskId="task-1" />);
 
     const tile = screen.getByRole('button', { name: /open candidate-a-calculator\.html/i });

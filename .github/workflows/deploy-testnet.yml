@@ -26,7 +26,7 @@ name: Deploy to Railway Testnet
 
 on:
   workflow_run:
-    workflows: ['CI']
+    workflows: ["CI"]
     types: [completed]
     branches: [main]
 
@@ -38,7 +38,7 @@ jobs:
   deploy:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v7
@@ -48,7 +48,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version-file: '.nvmrc'
+          node-version-file: ".nvmrc"
 
       - name: Install Railway CLI
         run: npm install -g @railway/cli
@@ -57,6 +57,11 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_TESTNET }}
         run: |
+          railway variable set \
+            "RAILPACK_BUILD_CMD=make build backend" \
+            --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
+            --environment DEVNET \
+            --skip-deploys
           railway up \
             --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
             --environment DEVNET \
@@ -66,6 +71,11 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_TESTNET }}
         run: |
+          railway variable set \
+            "RAILPACK_BUILD_CMD=make build web" \
+            --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
+            --environment DEVNET \
+            --skip-deploys
           railway up \
             --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
             --environment DEVNET \
@@ -80,5 +90,71 @@ jobs:
             --environment DEVNET \
             --detach
 
+      # DEVNET must include the dedicated game catalog. The service secret is a release
+      # prerequisite; a missing value fails rather than reporting a partial deployment.
+      - name: Deploy Slap-Chop Games to Railway testnet
+        id: slap_chop
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_TESTNET }}
+          RAILWAY_SERVICE_NAME: ${{ secrets.RAILWAY_SLAP_CHOP_GAMES_DEVNET_SERVICE_NAME }}
+        run: |
+          [ -n "$RAILWAY_SERVICE_NAME" ] || { echo "RAILWAY_SLAP_CHOP_GAMES_DEVNET_SERVICE_NAME is required for a Slap-Chop DEVNET release." >&2; exit 1; }
+
+          resolve_domain() {
+            local service="$1" out=""
+            for i in $(seq 1 5); do
+              RAW=$(railway domain --service "$service" --environment DEVNET --json 2>&1)
+              out=$(echo "$RAW" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('domain') or (d.get('domains') or [''])[0])" 2>/dev/null)
+              if [ -n "$out" ]; then
+                echo "${out#https://}"
+                return 0
+              fi
+              echo "railway domain ($service) returned: $RAW" >&2
+              sleep 3
+            done
+            return 1
+          }
+
+          BACKEND_DOMAIN=$(resolve_domain "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}") || { echo "Could not resolve the DEVNET backend domain" >&2; exit 1; }
+
+          for kv in \
+            "COMMIT_SHA=bootstrap-${{ github.event.workflow_run.head_sha }}" \
+            "DEPLOY_ENVIRONMENT=devnet" \
+            "RAILPACK_BUILD_CMD=make build slap-chop-games" \
+            "RAILPACK_START_CMD=pnpm --filter @taskmarket/slap-chop-games start" \
+            "TASKMARKET_API_URL=https://$BACKEND_DOMAIN" \
+            "NEXT_PUBLIC_API_URL=https://$BACKEND_DOMAIN"; do
+            railway variable set "$kv" \
+              --service "$RAILWAY_SERVICE_NAME" \
+              --environment DEVNET \
+              --skip-deploys
+          done
+
+          railway up \
+            --service "$RAILWAY_SERVICE_NAME" \
+            --environment DEVNET
+
+          SLAP_CHOP_DOMAIN=$(resolve_domain "$RAILWAY_SERVICE_NAME") || { echo "Could not resolve the Slap-Chop Games DEVNET domain after bootstrap deployment" >&2; exit 1; }
+          for kv in \
+            "COMMIT_SHA=${{ github.event.workflow_run.head_sha }}" \
+            "NEXT_PUBLIC_SITE_URL=https://$SLAP_CHOP_DOMAIN"; do
+            railway variable set "$kv" \
+              --service "$RAILWAY_SERVICE_NAME" \
+              --environment DEVNET \
+              --skip-deploys
+          done
+          railway up \
+            --service "$RAILWAY_SERVICE_NAME" \
+            --environment DEVNET \
+            --detach
+          echo "url=https://$SLAP_CHOP_DOMAIN" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Slap-Chop Games testnet serves this commit
+        env:
+          EXPECTED_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          EXPECTED_DEPLOY_ENVIRONMENT: devnet
+          SLAP_CHOP_HEALTH_URL: ${{ steps.slap_chop.outputs.url }}
+        run: make slap-chop-health
+
       - name: Report deployment
-        run: echo "Deployed ${{ github.event.workflow_run.head_sha }} to Railway testnet (backend + web + docs)"
+        run: echo "Deployed ${{ github.event.workflow_run.head_sha }} to Railway testnet (backend + web + docs + Slap-Chop Games)"

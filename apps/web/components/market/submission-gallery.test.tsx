@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ArtifactResponse, SubmissionResponse, TaskDetailResponse } from '@taskmarket/shared';
+import { createHash } from 'node:crypto';
 import { createContext, useContext, type ReactNode } from 'react';
 
 import { LiveActivityPanel } from './live-activity';
@@ -11,6 +12,13 @@ import {
   type SubmissionMediaEntry,
 } from './submission-gallery';
 import { INTERACTIVE_HTML_ESCAPE_MESSAGE, MAX_INTERACTIVE_HTML_BYTES } from '@/lib/sandboxed-html';
+
+function htmlArtifactWithHash(artifactValue: ArtifactResponse, html: string): ArtifactResponse {
+  return {
+    ...artifactValue,
+    sha256Hash: createHash('sha256').update(html).digest('hex'),
+  };
+}
 
 // vaul drives its bottom-sheet drag gesture off Pointer Events + CSS transform APIs
 // that jsdom does not implement, so mounting a real vaul Drawer throws. Mirrors the
@@ -291,6 +299,9 @@ const gameHtml = artifact({
   mediaKind: 'text',
   mimeType: 'text/html',
   previewUrl: 'https://files.example.com/game.html',
+  sha256Hash: createHash('sha256')
+    .update('<html><body><output>ready</output></body></html>')
+    .digest('hex'),
   submissionId: 'sub-html',
 });
 
@@ -1143,8 +1154,11 @@ describe('SubmissionGalleryDialog', () => {
       text: async () => htmlContent,
     } as Response);
     const user = userEvent.setup();
+    const htmlArtifact = htmlArtifactWithHash(gameHtml, htmlContent);
 
-    renderPanel([submission('sub-html', '0x7777777777777777777777777777777777777777', [gameHtml])]);
+    renderPanel([
+      submission('sub-html', '0x7777777777777777777777777777777777777777', [htmlArtifact]),
+    ]);
 
     await user.click(screen.getByRole('button', { name: /gallery/i }));
 
@@ -1157,8 +1171,9 @@ describe('SubmissionGalleryDialog', () => {
     expect(frame).toHaveAttribute('allow', '');
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
     expect(frame).not.toHaveAttribute('src');
-    expect(frame.getAttribute('srcdoc')).toContain("default-src 'none'");
-    expect(frame.getAttribute('srcdoc')).toContain('<output>4</output>');
+    expect(frame.getAttribute('srcdoc')).toContain('frame-src data:');
+    expect(frame.getAttribute('srcdoc')).toContain('data-taskmarket-game');
+    expect(frame.getAttribute('srcdoc')).not.toContain('<output>4</output>');
     expect(
       within(dialog).getByText(/untrusted interactive html.*do not enter passwords/i)
     ).toBeInTheDocument();
@@ -1168,12 +1183,14 @@ describe('SubmissionGalleryDialog', () => {
   });
 
   it('accepts the fullscreen Escape bridge only from the current HTML slide', async () => {
+    const htmlContent = '<html><body><button>Interactive control</button></body></html>';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
-      text: async () => '<html><body><button>Interactive control</button></body></html>',
+      text: async () => htmlContent,
     } as Response);
+    const htmlArtifact = htmlArtifactWithHash(gameHtml, htmlContent);
     const neighborHtml = artifact({
-      ...gameHtml,
+      ...htmlArtifact,
       fileName: 'neighbor.html',
       id: 'artifact-html-neighbor',
       previewUrl: 'https://files.example.com/neighbor.html',
@@ -1182,7 +1199,7 @@ describe('SubmissionGalleryDialog', () => {
     const user = userEvent.setup();
 
     renderPanel([
-      submission('sub-html', '0x7777777777777777777777777777777777777777', [gameHtml]),
+      submission('sub-html', '0x7777777777777777777777777777777777777777', [htmlArtifact]),
       submission('sub-html-neighbor', '0x8888888888888888888888888888888888888888', [neighborHtml]),
     ]);
 
@@ -1217,12 +1234,14 @@ describe('SubmissionGalleryDialog', () => {
   });
 
   it('unmounts the previous interactive HTML document when advancing to another HTML slide', async () => {
+    const htmlContent = '<html><body><button>Interactive control</button></body></html>';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
-      text: async () => '<html><body><button>Interactive control</button></body></html>',
+      text: async () => htmlContent,
     } as Response);
+    const htmlArtifact = htmlArtifactWithHash(gameHtml, htmlContent);
     const nextHtml = artifact({
-      ...gameHtml,
+      ...htmlArtifact,
       fileName: 'next-game.html',
       id: 'artifact-html-next',
       previewUrl: 'https://files.example.com/next-game.html',
@@ -1234,7 +1253,7 @@ describe('SubmissionGalleryDialog', () => {
       submission(
         'sub-html',
         '0x7777777777777777777777777777777777777777',
-        [gameHtml],
+        [htmlArtifact],
         '2026-01-02T00:00:00.000Z'
       ),
       submission(
@@ -1302,6 +1321,7 @@ describe('SubmissionGalleryDialog', () => {
         mediaKind: 'text',
         mimeType: 'text/html',
         previewUrl: `https://files.example.com/game-${index}.html`,
+        sha256Hash: createHash('sha256').update(htmlContent).digest('hex'),
         submissionId: `sub-html-${index}`,
       })
     );
@@ -1340,6 +1360,7 @@ describe('SubmissionGalleryDialog', () => {
         mediaKind: 'text',
         mimeType: 'text/html',
         previewUrl: `https://files.example.com/game-${index}.html`,
+        sha256Hash: createHash('sha256').update(htmlContent).digest('hex'),
         submissionId: `sub-html-${index}`,
       })
     );
@@ -1849,6 +1870,7 @@ describe('SubmissionGalleryDialog mobile surface', () => {
         mediaKind: 'text',
         mimeType: 'text/html',
         previewUrl: `https://files.example.com/game-${index}.html`,
+        sha256Hash: createHash('sha256').update(htmlContent).digest('hex'),
         submissionId: `sub-html-${index}`,
       })
     );
@@ -1917,7 +1939,8 @@ describe('SubmissionGalleryDialog mobile surface', () => {
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
     expect(frame).toHaveAttribute('allow', '');
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
-    expect(frame.getAttribute('srcdoc')).toContain("default-src 'none'");
+    expect(frame.getAttribute('srcdoc')).toContain('frame-src data:');
+    expect(frame.getAttribute('srcdoc')).toContain('data-taskmarket-game');
 
     fetchMock.mockRestore();
   });

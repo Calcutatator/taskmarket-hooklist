@@ -1,0 +1,5 @@
+{
+  "components/configured-slap-chop-privy-provider.tsx": "Configured-only identity adapter requires a real Privy app and has focused provider configuration coverage.",
+  "components/game-player.tsx": "Stateful route adapter fetches ephemeral delivery URLs and is visually covered by GamePlayerSurface state stories.",
+  "components/slap-chop-privy-provider.tsx": "Identity loading boundary has no standalone visual state and is covered by anonymous readiness tests."
+}

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import type {
   ArtifactResponse,
   SubmissionResponse,
@@ -13,6 +14,10 @@ import { getAcceptWorkerAddress } from './actions/accept-button';
 import { compactAddress } from '@/lib/format';
 import { taskFullTitle, taskTitle } from '@/lib/market/task-title';
 import { MAX_INTERACTIVE_HTML_BYTES } from '@/lib/sandboxed-html';
+
+function sha256Html(html: string) {
+  return createHash('sha256').update(html).digest('hex');
+}
 
 function compactAddressLabel(value: string) {
   return compactAddress(value);
@@ -2048,6 +2053,7 @@ describe('Task marketplace components', () => {
             mediaKind: 'text',
             mimeType: 'text/html',
             previewUrl: 'https://files.example.com/game.html',
+            sha256Hash: sha256Html(htmlContent),
           }),
         ],
         fileUrl: 'ipfs://deliverable',
@@ -2439,6 +2445,7 @@ describe('Task marketplace components', () => {
         id: 'artifact-html',
         mediaKind: 'text',
         mimeType: 'text/html; charset=utf-8',
+        sha256Hash: sha256Html(htmlContent),
       }),
     ]);
 
@@ -2450,8 +2457,9 @@ describe('Task marketplace components', () => {
     expect(frame).toHaveAttribute('allow', '');
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
     expect(frame).not.toHaveAttribute('src');
-    expect(frame.getAttribute('srcdoc')).toContain("default-src 'none'");
-    expect(frame.getAttribute('srcdoc')).toContain('document.body.dataset.ready');
+    expect(frame.getAttribute('srcdoc')).toContain('frame-src data:');
+    expect(frame.getAttribute('srcdoc')).toContain('data-taskmarket-game');
+    expect(frame.getAttribute('srcdoc')).not.toContain('document.body.dataset.ready');
     expect(
       within(dialog).getByText(/untrusted interactive html.*do not enter passwords/i)
     ).toBeInTheDocument();
@@ -2537,6 +2545,7 @@ describe('Task marketplace components', () => {
 
   it('retries a failed HTML body fetch inside the dialog', async () => {
     const presignedUrl = 'https://files.example.com/retry.html';
+    const recoveredHtml = '<html><body>Recovered calculator</body></html>';
     let bodyAttempts = 0;
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
       if (typeof url === 'string' && url.includes('/artifacts/')) {
@@ -2555,7 +2564,7 @@ describe('Task marketplace components', () => {
       }
       return {
         ok: true,
-        text: async () => '<html><body>Recovered calculator</body></html>',
+        text: async () => recoveredHtml,
       } as Response;
     });
     const user = userEvent.setup();
@@ -2566,6 +2575,7 @@ describe('Task marketplace components', () => {
         id: 'artifact-html-retry',
         mediaKind: 'text',
         mimeType: 'text/html',
+        sha256Hash: sha256Html(recoveredHtml),
       }),
     ]);
 

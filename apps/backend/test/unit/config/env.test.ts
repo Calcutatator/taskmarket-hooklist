@@ -238,6 +238,61 @@ describe('getServerConfig official Task Drop owner parsing', () => {
   });
 });
 
+describe('getServerConfig Slap-Chop curator allowlist parsing', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      ...REQUIRED_ENV,
+    };
+    delete process.env.SLAP_CHOP_CURATOR_PRIVY_USER_IDS;
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  it('fails closed with no configured curator identities', () => {
+    expect(getServerConfig().SLAP_CHOP_CURATOR_PRIVY_USER_IDS).toEqual([]);
+  });
+
+  it('trims and deduplicates exact Privy user IDs', () => {
+    process.env.PRIVY_APP_ID = 'privy-app-id';
+    process.env.PRIVY_APP_SECRET = 'privy-app-secret';
+    process.env.SLAP_CHOP_CURATOR_PRIVY_USER_IDS =
+      ' did:privy:curator_1,did:privy:curator_1 , did:privy:curator-2 ';
+
+    expect(getServerConfig().SLAP_CHOP_CURATOR_PRIVY_USER_IDS).toEqual([
+      'did:privy:curator_1',
+      'did:privy:curator-2',
+    ]);
+  });
+
+  it('rejects malformed curator IDs', () => {
+    process.env.PRIVY_APP_ID = 'privy-app-id';
+    process.env.PRIVY_APP_SECRET = 'privy-app-secret';
+    process.env.SLAP_CHOP_CURATOR_PRIVY_USER_IDS = 'not-a-privy-id';
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('process exited');
+    }) as never);
+
+    expect(() => getServerConfig()).toThrow('process exited');
+  });
+
+  it('refuses a configured allowlist without server Privy credentials', () => {
+    process.env.SLAP_CHOP_CURATOR_PRIVY_USER_IDS = 'did:privy:curator_1';
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('process exited');
+    }) as never);
+
+    expect(() => getServerConfig()).toThrow('process exited');
+  });
+});
+
 describe('getServerConfig DREAMS_HOOK_SEED_BLOCK env parsing', () => {
   const originalEnv = { ...process.env };
 
@@ -318,6 +373,38 @@ describe('getServerConfig task award backfill env parsing', () => {
     getServerConfig();
 
     expect(exit).toHaveBeenCalledWith(1);
+  });
+});
+
+// Verifies: ADR-0090
+describe('getServerConfig Slap-Chop ranking mode', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv, ...REQUIRED_ENV };
+    delete process.env.SLAP_CHOP_RANKING_MODE;
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  it('defaults to Hot ranking and permits newest-first rollback only', () => {
+    expect(getServerConfig().SLAP_CHOP_RANKING_MODE).toBe('hot');
+
+    process.env.SLAP_CHOP_RANKING_MODE = 'new';
+    expect(getServerConfig().SLAP_CHOP_RANKING_MODE).toBe('new');
+  });
+
+  it('rejects an unapproved ranking mode', () => {
+    process.env.SLAP_CHOP_RANKING_MODE = 'best';
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new Error(`process exited with ${code}`);
+    });
+
+    expect(() => getServerConfig()).toThrow('process exited with 1');
   });
 });
 

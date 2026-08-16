@@ -476,7 +476,9 @@ test('places submission review before the task description and runs HTML in the 
   expect(galleryFrameBox).not.toBeNull();
   expect(galleryFrameBox!.height).toBeGreaterThan(viewport!.height * 0.65);
 
-  const frame = page.frameLocator(`iframe[title="${frameTitle}"]`);
+  const frame = page
+    .frameLocator(`iframe[title="${frameTitle}"]`)
+    .frameLocator('iframe[title="Game content"]');
   await expect(frame.getByRole('heading', { name: 'Submission calculator' })).toBeVisible();
   await frame.getByLabel('First number').fill('21');
   await frame.getByLabel('Second number').fill('21');
@@ -748,7 +750,9 @@ test('runs submitted HTML inline while isolating it from the platform and networ
   await expect(frameElement).toHaveAttribute('referrerpolicy', 'no-referrer');
   await expect(dialog.getByRole('link', { name: /Open artifact/i })).toHaveCount(0);
 
-  const frame = page.frameLocator(`iframe[title="${frameTitle}"]`);
+  const frame = page
+    .frameLocator(`iframe[title="${frameTitle}"]`)
+    .frameLocator('iframe[title="Game content"]');
   await expect(frame.getByRole('heading', { name: 'Submission calculator' })).toBeVisible();
   await expect(frame.getByText('Parent access blocked')).toBeVisible();
   await expect(frame.getByText('Network access blocked')).toBeVisible();
@@ -792,6 +796,7 @@ test('opens a shared HTML result directly and returns to the stable task URL on 
   await expect(
     dialog
       .frameLocator(`iframe[title="${frameTitle}"]`)
+      .frameLocator('iframe[title="Game content"]')
       .getByRole('heading', { name: 'Make room for the work that matters.' })
   ).toBeVisible();
 
@@ -843,7 +848,9 @@ test('offers dedicated HTML showcase tasks with distinct interactive submissions
     const frameElement = dialog.getByTitle(frameTitle);
     await expect(frameElement).toHaveAttribute('sandbox', 'allow-scripts');
 
-    const frame = dialog.frameLocator(`iframe[title="${frameTitle}"]`);
+    const frame = dialog
+      .frameLocator(`iframe[title="${frameTitle}"]`)
+      .frameLocator('iframe[title="Game content"]');
     await expect(frame.getByRole('heading', { name: showcase.heading })).toBeVisible();
     await expect(frame.locator('html')).toHaveAttribute('data-ready', 'true');
     await expect(async () => {

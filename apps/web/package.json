@@ -34,6 +34,7 @@
     "@tanstack/react-query": "^5.100.9",
     "@tanstack/react-table": "^8.21.3",
     "@taskmarket/backend": "workspace:*",
+    "@taskmarket/html-sandbox": "workspace:*",
     "@taskmarket/shared": "workspace:*",
     "@trpc/client": "^11.17.0",
     "@trpc/react-query": "^11.17.0",

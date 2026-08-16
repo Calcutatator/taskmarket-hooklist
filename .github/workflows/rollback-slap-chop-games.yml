@@ -1,0 +1,157 @@
+name: Roll back Slap-Chop Games on Railway
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Railway environment to restore
+        required: true
+        type: choice
+        options: [DEVNET, PRODUCTION]
+      ref:
+        description: Immutable 40-character known-good commit SHA
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: deploy-slap-chop-games-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Verify immutable known-good release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ROLLBACK_REF: ${{ inputs.ref }}
+        run: |
+          if ! [[ "$ROLLBACK_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "Rollback ref must be a full immutable commit SHA."
+            exit 1
+          fi
+
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$ROLLBACK_REF" origin/main; then
+            echo "Rollback commit is not reachable from origin/main."
+            exit 1
+          fi
+
+          CONCLUSION=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${ROLLBACK_REF}" \
+            --jq '[.workflow_runs[] | select(.name == "CI" and .event == "push" and .head_branch == "main")] | .[0].conclusion // "not_found"')
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "Main CI did not pass for this known-good commit (status: ${CONCLUSION})."
+            exit 1
+          fi
+
+          # Only after validation may workflow tools read files from the supplied revision.
+          git checkout --detach "$ROLLBACK_REF"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: ".nvmrc"
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@5.26.1
+
+      - name: Stamp and deploy known-good Slap-Chop Games
+        id: slap_chop
+        env:
+          RAILWAY_TOKEN: ${{ inputs.environment == 'PRODUCTION' && secrets.RAILWAY_TOKEN || secrets.RAILWAY_TOKEN_TESTNET }}
+          RAILWAY_SERVICE_NAME: ${{ secrets.RAILWAY_SLAP_CHOP_GAMES_SERVICE_NAME }}
+          RAILWAY_BACKEND_SERVICE_NAME: ${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}
+          RAILWAY_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          [ -n "$RAILWAY_SERVICE_NAME" ] || { echo "RAILWAY_SLAP_CHOP_GAMES_SERVICE_NAME is required for rollback." >&2; exit 1; }
+
+          resolve_domain() {
+            local service="$1" out=""
+            for i in $(seq 1 5); do
+              RAW=$(railway domain --service "$service" --environment "$RAILWAY_ENVIRONMENT" --json 2>&1)
+              out=$(echo "$RAW" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('domain') or (d.get('domains') or [''])[0])" 2>/dev/null)
+              if [ -n "$out" ]; then
+                echo "${out#https://}"
+                return 0
+              fi
+              echo "railway domain ($service) returned: $RAW" >&2
+              sleep 3
+            done
+            return 1
+          }
+
+          if [ "$RAILWAY_ENVIRONMENT" = "PRODUCTION" ]; then
+            DEPLOY_ENVIRONMENT=production
+            BACKEND_DOMAIN=api.taskmarket.dev
+            SLAP_CHOP_DOMAIN=games.taskmarket.dev
+          else
+            DEPLOY_ENVIRONMENT=devnet
+            [ -n "$RAILWAY_BACKEND_SERVICE_NAME" ] || { echo "RAILWAY_BACKEND_SERVICE_NAME is required for DEVNET rollback." >&2; exit 1; }
+            BACKEND_DOMAIN=$(resolve_domain "$RAILWAY_BACKEND_SERVICE_NAME") || { echo "Could not resolve the DEVNET backend domain" >&2; exit 1; }
+          fi
+
+          DEPLOY_SHA="$(git rev-parse HEAD)"
+          if [ "$RAILWAY_ENVIRONMENT" = "PRODUCTION" ]; then
+            for kv in \
+              "COMMIT_SHA=${DEPLOY_SHA}" \
+              "DEPLOY_ENVIRONMENT=${DEPLOY_ENVIRONMENT}" \
+              "TASKMARKET_API_URL=https://${BACKEND_DOMAIN}" \
+              "NEXT_PUBLIC_API_URL=https://${BACKEND_DOMAIN}" \
+              "NEXT_PUBLIC_SITE_URL=https://${SLAP_CHOP_DOMAIN}"; do
+              railway variable set "$kv" \
+                --service "$RAILWAY_SERVICE_NAME" \
+                --environment "$RAILWAY_ENVIRONMENT" \
+                --skip-deploys
+            done
+            railway up \
+              --service "$RAILWAY_SERVICE_NAME" \
+              --environment "$RAILWAY_ENVIRONMENT"
+          else
+            # A DEVNET service has no domain until its first deployment. Bootstrap with the API
+            # origin, resolve the new domain, then rebuild with the canonical site URL.
+            for kv in \
+              "COMMIT_SHA=bootstrap-${DEPLOY_SHA}" \
+              "DEPLOY_ENVIRONMENT=${DEPLOY_ENVIRONMENT}" \
+              "TASKMARKET_API_URL=https://${BACKEND_DOMAIN}" \
+              "NEXT_PUBLIC_API_URL=https://${BACKEND_DOMAIN}"; do
+              railway variable set "$kv" \
+                --service "$RAILWAY_SERVICE_NAME" \
+                --environment "$RAILWAY_ENVIRONMENT" \
+                --skip-deploys
+            done
+            railway up \
+              --service "$RAILWAY_SERVICE_NAME" \
+              --environment "$RAILWAY_ENVIRONMENT"
+            SLAP_CHOP_DOMAIN=$(resolve_domain "$RAILWAY_SERVICE_NAME") || { echo "Could not resolve the Slap-Chop Games DEVNET domain after bootstrap deployment" >&2; exit 1; }
+            for kv in \
+              "COMMIT_SHA=${DEPLOY_SHA}" \
+              "NEXT_PUBLIC_SITE_URL=https://${SLAP_CHOP_DOMAIN}"; do
+              railway variable set "$kv" \
+                --service "$RAILWAY_SERVICE_NAME" \
+                --environment "$RAILWAY_ENVIRONMENT" \
+                --skip-deploys
+            done
+            railway up \
+              --service "$RAILWAY_SERVICE_NAME" \
+              --environment "$RAILWAY_ENVIRONMENT"
+          fi
+          echo "commit_sha=${DEPLOY_SHA}" >> "$GITHUB_OUTPUT"
+          echo "deploy_environment=${DEPLOY_ENVIRONMENT}" >> "$GITHUB_OUTPUT"
+          echo "health_url=https://${SLAP_CHOP_DOMAIN}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify rollback serves the known-good release
+        env:
+          EXPECTED_COMMIT_SHA: ${{ steps.slap_chop.outputs.commit_sha }}
+          EXPECTED_DEPLOY_ENVIRONMENT: ${{ steps.slap_chop.outputs.deploy_environment }}
+          SLAP_CHOP_HEALTH_URL: ${{ steps.slap_chop.outputs.health_url }}
+        run: make slap-chop-health

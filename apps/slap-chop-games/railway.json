@@ -1,0 +1,15 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "buildCommand": "make build slap-chop-games",
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "healthcheckPath": "/api/health",
+    "healthcheckTimeout": 120,
+    "numReplicas": 1,
+    "restartPolicyMaxRetries": 5,
+    "restartPolicyType": "ON_FAILURE",
+    "startCommand": "pnpm --filter @taskmarket/slap-chop-games start"
+  }
+}

@@ -21,7 +21,10 @@ vi.mock('../../../src/config/env', () => ({
 
 vi.mock('../../../src/lib/privy-auth', () => ({ verifyPrivyAccessToken }));
 
-import { createLegalAccessMiddleware } from '../../../src/middleware/legal-access';
+import {
+  createLegalAccessMiddleware,
+  isLegalReceiptExempt,
+} from '../../../src/middleware/legal-access';
 
 const legalAccessMiddleware = createLegalAccessMiddleware({ db: {} as never });
 
@@ -86,6 +89,41 @@ describe('legal access middleware', () => {
         method: 'POST',
         path: '/taskDrops.subscribe%2CtaskDrops.subscribeOfficial',
         originalUrl: '/trpc/taskDrops.subscribe%2CtaskDrops.subscribeOfficial?batch=1',
+        headers: {},
+      } as never,
+      response(),
+      next
+    );
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(verifyLegalReceipt).not.toHaveBeenCalled();
+  });
+
+  // Verifies: ADR-0089. The vote exception is intentionally narrow on both transport surfaces.
+  it('exempts only the exact Slap-Chop vote REST route and tRPC procedure', () => {
+    const request = (method: string, originalUrl: string) =>
+      ({ method, originalUrl } as Parameters<typeof isLegalReceiptExempt>[0]);
+
+    expect(isLegalReceiptExempt(request('POST', '/api/games/game-1/vote'))).toBe(true);
+    expect(isLegalReceiptExempt(request('DELETE', '/api/games/game-1/vote'))).toBe(false);
+    expect(isLegalReceiptExempt(request('POST', '/api/games/game-1/votes'))).toBe(false);
+    expect(isLegalReceiptExempt(request('POST', '/api/games/game-1/curation'))).toBe(false);
+    expect(isLegalReceiptExempt(request('POST', '/trpc/games.vote?batch=1'))).toBe(true);
+    expect(isLegalReceiptExempt(request('POST', '/trpc/games.vote%2Cgames.list?batch=1'))).toBe(
+      false
+    );
+    expect(isLegalReceiptExempt(request('POST', '/trpc/games.voteState?batch=1'))).toBe(false);
+    expect(isLegalReceiptExempt(request('POST', '/trpc/gameCuration.publish?batch=1'))).toBe(false);
+  });
+
+  it('allows the exact vote write without a marketplace legal receipt', async () => {
+    const next = vi.fn();
+
+    await legalAccessMiddleware(
+      {
+        method: 'POST',
+        path: '/games/game-1/vote',
+        originalUrl: '/api/games/game-1/vote',
         headers: {},
       } as never,
       response(),

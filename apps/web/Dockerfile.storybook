@@ -13,6 +13,7 @@ COPY . .
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @taskmarket/shared build && \
+    pnpm --filter @taskmarket/html-sandbox build && \
     pnpm --filter @taskmarket/web storybook:build
 
 FROM caddy:2.10.2-alpine

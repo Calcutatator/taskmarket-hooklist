@@ -413,3 +413,23 @@ adrs:
     title: "CI correctness-test shards have a five-minute budget"
     status: Proposed
     date: "2026-08-14"
+  - number: "0087"
+    file: "0087-slap-chop-is-a-separate-app-over-immutable-taskmarket-artifacts.md"
+    title: "Slap-Chop Games is a separate app over immutable Taskmarket artifacts"
+    status: Accepted
+    date: "2026-08-16"
+  - number: "0088"
+    file: "0088-slap-chop-curation-is-fail-closed-and-covers-use-catalog-owned-keys.md"
+    title: "Slap-Chop curation is fail-closed and covers use catalog-owned keys"
+    status: Accepted
+    date: "2026-08-16"
+  - number: "0089"
+    file: "0089-slap-chop-votes-use-privy-without-marketplace-legal-assent.md"
+    title: "Slap-Chop votes use Privy without marketplace legal assent"
+    status: Accepted
+    date: "2026-08-16"
+  - number: "0090"
+    file: "0090-slap-chop-ranking-uses-a-seven-day-hot-score.md"
+    title: "Slap-Chop ranking uses a seven-day Hot score"
+    status: Accepted
+    date: "2026-08-16"
