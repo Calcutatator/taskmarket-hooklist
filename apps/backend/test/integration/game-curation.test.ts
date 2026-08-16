@@ -1,7 +1,15 @@
 // Verifies: ADR-0087 and ADR-0088
 import { randomUUID } from 'node:crypto';
 import { eq, inArray } from 'drizzle-orm';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../src/lib/logger', () => ({
+  logger: {
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+  },
+}));
 
 import { GameCurationResolveTaskInputSchema, type GameCurationUpsertInput } from '@taskmarket/shared';
 

@@ -1,5 +1,13 @@
 // Verifies: ADR-0087 and ADR-0088
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../../src/lib/logger', () => ({
+  logger: {
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+  },
+}));
 
 import {
   GameCurationError,
