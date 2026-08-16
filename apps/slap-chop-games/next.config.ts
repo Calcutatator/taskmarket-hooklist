@@ -19,6 +19,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  distDir: process.env.SLAP_CHOP_NEXT_DIST_DIR ?? '.next',
   reactStrictMode: true,
   typedRoutes: true,
   async headers() {
@@ -30,7 +31,7 @@ const nextConfig: NextConfig = {
     ];
   },
   async rewrites() {
-    if (!apiUrl) {
+    if (!apiUrl || environment.SLAP_CHOP_DATA_MODE === 'live-readonly') {
       return [];
     }
 

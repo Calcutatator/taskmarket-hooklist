@@ -2457,7 +2457,7 @@ describe('Task marketplace components', () => {
     expect(frame).toHaveAttribute('allow', '');
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
     expect(frame).not.toHaveAttribute('src');
-    expect(frame.getAttribute('srcdoc')).toContain('frame-src data:');
+    expect(frame.getAttribute('srcdoc')).toContain('frame-src blob:');
     expect(frame.getAttribute('srcdoc')).toContain('data-taskmarket-game');
     expect(frame.getAttribute('srcdoc')).not.toContain('document.body.dataset.ready');
     expect(

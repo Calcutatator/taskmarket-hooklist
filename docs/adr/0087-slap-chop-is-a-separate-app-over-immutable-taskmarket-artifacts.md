@@ -18,7 +18,7 @@
 - **Deciders:** Oscar Mander-Jones — explicit approval in Conductor on 2026-08-16
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
+- **Amends / Amended-by:** Amended by ADR-0091
 - **Pending Amends / Amended-by:** —
 
 ## Context

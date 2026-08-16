@@ -31,7 +31,7 @@ async function expectTrustedNestedJail(page: Page, gameTitle: string) {
   await expect(outerFrame).toHaveAttribute('referrerpolicy', 'no-referrer');
 
   const outerSource = await outerFrame.getAttribute('srcdoc');
-  expect(outerSource).toContain('frame-src data:');
+  expect(outerSource).toContain('frame-src blob:');
   expect(outerSource).toContain('data-taskmarket-game');
   expect(outerSource).not.toContain(securitySinkUrl);
 
@@ -42,14 +42,14 @@ async function expectTrustedNestedJail(page: Page, gameTitle: string) {
   await expect(nestedFrame).toHaveAttribute('sandbox', 'allow-scripts');
   await expect(nestedFrame).toHaveAttribute('allow', '');
   await expect(nestedFrame).toHaveAttribute('referrerpolicy', 'no-referrer');
-  await expect(nestedFrame).toHaveAttribute('src', /^data:text\/html;base64,/);
+  await expect(nestedFrame).toHaveAttribute('src', /^blob:/);
 
   return page.frameLocator(outerSelector).frameLocator('iframe[data-taskmarket-game-frame]');
 }
 
-// Verifies: ADR-0087. The game may enter a data document, but that document inherits the
-// trusted wrapper policy. Its own image, fetch, and meta-refresh attempts must not reach a sink.
-test('keeps egress blocked after the nested game self-navigates to a data document', async ({
+// Verifies: ADR-0087. The blob-only wrapper policy rejects a game attempting to replace its
+// reviewed document with a data document before that document can execute or reach a sink.
+test('blocks self-navigation from the nested game to a data document', async ({
   page,
   request,
 }) => {
@@ -65,15 +65,15 @@ test('keeps egress blocked after the nested game self-navigates to a data docume
   );
   await expect.poll(() => probeLogs.includes(sandboxJailDataProbeReadyLog)).toBe(true);
   await expect.poll(() => probeLogs.includes(sandboxJailDataNavigationLog)).toBe(true);
-  await expect.poll(() => probeLogs.includes(sandboxJailDataDocumentReadyLog)).toBe(true);
-  await expect.poll(() => probeLogs.includes(sandboxJailDataDocumentAttacksLog)).toBe(true);
 
   await page.waitForTimeout(500);
+  expect(probeLogs).not.toContain(sandboxJailDataDocumentReadyLog);
+  expect(probeLogs).not.toContain(sandboxJailDataDocumentAttacksLog);
   await expect.poll(() => getSecuritySinkCount(request)).toBe(0);
   await expect(page).toHaveURL(/\/games\/sandbox-jail-data-probe$/);
 });
 
-// Verifies: ADR-0087. A direct HTTP self-navigation is rejected by the wrapper's data-only
+// Verifies: ADR-0087. A direct HTTP self-navigation is rejected by the wrapper's blob-only
 // frame policy before a request can leave the nested game frame.
 test('blocks direct HTTP self-navigation from the nested game', async ({ page, request }) => {
   const reset = await request.post(`${securitySinkUrl}/reset`);

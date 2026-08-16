@@ -17,7 +17,7 @@ help:
 	@echo "  make release              - Tag and push a production release (deploys backend + frontend)"
 	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|slap-chop-games|slap-chop-games-storybook|docs|discord-app|shared|html-sandbox|contracts|storybook|all); 'contracts' also regenerates packages/contracts/abi/ (JSON + typed bindings)"
 	@echo "  make dev [storybook]      - Start all dev servers, optionally with Storybook"
-	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|slap-chop-games|discord-app|discord-stack|mock-api|mock-web|docs|anvil|storybook)"
+	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|slap-chop-games|slap-chop-games-local|slap-chop-games-live|discord-app|discord-stack|mock-api|mock-web|docs|anvil|storybook)"
 	@echo "  make discord <register|disable|smoke|signed-smoke> - Manage commands and verify Discord app seams"
 	@echo "  make discord-blueprint-check - Validate Discord operating YAML and Markdown"
 	@echo "  make storybook [app]      - Start a component library (web on 6006, slap-chop-games on 6007)"
@@ -396,6 +396,50 @@ start:
 		else \
 			pnpm --filter @taskmarket/slap-chop-games dev; \
 		fi; \
+	elif [ "$(word 1,$(ARGS))" = "slap-chop-games-local" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
+		MOCK_API_PORT="$${SLAP_CHOP_LOCAL_API_PORT:-3107}"; \
+		APP_PORT="$${SLAP_CHOP_LOCAL_APP_PORT:-3007}"; \
+		SLAP_CHOP_E2E_API_PORT="$$MOCK_API_PORT" \
+		SLAP_CHOP_FIXTURE_PROFILE=local \
+		node apps/slap-chop-games/e2e/mock-api.mjs & \
+		MOCK_API_PID=$$!; \
+		cleanup() { kill "$$MOCK_API_PID" 2>/dev/null || true; wait "$$MOCK_API_PID" 2>/dev/null || true; }; \
+		trap cleanup EXIT INT TERM; \
+		READY=0; \
+		for ATTEMPT in $$(seq 1 50); do \
+			if curl --fail --silent --max-time 1 "http://127.0.0.1:$$MOCK_API_PORT/health" >/dev/null; then READY=1; break; fi; \
+			if ! kill -0 "$$MOCK_API_PID" 2>/dev/null; then wait "$$MOCK_API_PID"; exit $$?; fi; \
+			sleep 0.1; \
+		done; \
+		if [ "$$READY" -ne 1 ]; then echo "Slap-Chop local fixture API did not become ready." >&2; exit 1; fi; \
+		echo "Slap-Chop local catalog: http://localhost:$$APP_PORT"; \
+		DEPLOY_ENVIRONMENT=local \
+		NEXT_PUBLIC_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
+		NEXT_PUBLIC_PRIVY_APP_ID= \
+		NEXT_PUBLIC_PRIVY_CLIENT_ID= \
+		NEXT_PUBLIC_SITE_URL="http://localhost:$$APP_PORT" \
+		PORT="$$APP_PORT" \
+		SLAP_CHOP_NEXT_DIST_DIR=.next-local \
+		TASKMARKET_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
+		pnpm --filter @taskmarket/slap-chop-games dev; \
+	elif [ "$(word 1,$(ARGS))" = "slap-chop-games-live" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
+		APP_PORT="$${SLAP_CHOP_LOCAL_APP_PORT:-3007}"; \
+		echo "Slap-Chop live read-only catalog: http://localhost:$$APP_PORT"; \
+		DEPLOY_ENVIRONMENT=local \
+		NEXT_PUBLIC_API_URL="http://127.0.0.1:3000" \
+		NEXT_PUBLIC_PRIVY_APP_ID= \
+		NEXT_PUBLIC_PRIVY_CLIENT_ID= \
+		NEXT_PUBLIC_SITE_URL="http://localhost:$$APP_PORT" \
+		PORT="$$APP_PORT" \
+		SLAP_CHOP_DATA_MODE=live-readonly \
+		SLAP_CHOP_LIVE_SOURCE_API_URL="https://api.taskmarket.dev" \
+		SLAP_CHOP_NEXT_DIST_DIR=.next-live \
+		TASKMARKET_API_URL="http://127.0.0.1:3000" \
+		pnpm --filter @taskmarket/slap-chop-games dev; \
 	elif [ "$(word 1,$(ARGS))" = "storybook" ]; then \
 		pnpm --filter @taskmarket/shared build && \
 		pnpm --filter @taskmarket/html-sandbox build && \
@@ -421,7 +465,7 @@ start:
 	elif [ "$(word 1,$(ARGS))" = "anvil" ]; then \
 		anvil; \
 	else \
-		echo "Usage: make start <db|backend|frontend|web|slap-chop-games|discord-app|discord-stack|mock-api|mock-web|docs|anvil>"; \
+		echo "Usage: make start <db|backend|frontend|web|slap-chop-games|slap-chop-games-local|slap-chop-games-live|discord-app|discord-stack|mock-api|mock-web|docs|anvil>"; \
 		exit 1; \
 	fi
 

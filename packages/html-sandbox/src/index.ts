@@ -24,8 +24,8 @@ export const INTERACTIVE_HTML_CSP_DIRECTIVES = [
 ] as const;
 
 // The document loaded by the application iframe is trusted runtime code, not the submitted game.
-// Its data-only frame policy permits the base64 data-document game and blocks HTTP(S) navigation
-// before a request is made. CSP local-scheme inheritance keeps this policy on data navigations.
+// Its blob-only frame policy permits the reconstructed game document and blocks data/HTTP(S)
+// navigation before a request is made. The submitted game remains in an opaque-origin iframe.
 export const INTERACTIVE_HTML_WRAPPER_CSP_DIRECTIVES = [
   "default-src 'none'",
   "script-src 'unsafe-inline'",
@@ -34,7 +34,7 @@ export const INTERACTIVE_HTML_WRAPPER_CSP_DIRECTIVES = [
   'font-src data: blob:',
   'media-src data: blob:',
   "connect-src 'none'",
-  'frame-src data:',
+  'frame-src blob:',
   "worker-src 'none'",
   "object-src 'none'",
   "form-action 'none'",
@@ -189,7 +189,7 @@ export function isInteractiveHtmlParentMessage(data: unknown): boolean {
 }
 
 // Returns a trusted wrapper document. The submitted HTML is never interpolated into executable
-// wrapper source: the wrapper supplies UTF-8 bytes as a nested, separately sandboxed data URL.
+// wrapper source: the wrapper reconstructs UTF-8 bytes into a nested, separately sandboxed blob.
 // This extra boundary keeps a game from self-navigating the app-owned iframe around its own CSP.
 export function buildSandboxedHtmlDocument(rawHtml: string): string {
   if (typeof DOMParser === 'undefined') {
@@ -240,13 +240,25 @@ function buildInteractiveHtmlWrapper(gameDocument: string): string {
         const encodedDocument = document.querySelector('script[data-taskmarket-game]')?.textContent;
         if (!encodedDocument) return;
 
+        const binaryDocument = atob(encodedDocument);
+        const documentBytes = new Uint8Array(binaryDocument.length);
+        for (let index = 0; index < binaryDocument.length; index += 1) {
+          documentBytes[index] = binaryDocument.charCodeAt(index);
+        }
+        const gameUrl = URL.createObjectURL(
+          new Blob([documentBytes], { type: 'text/html;charset=utf-8' })
+        );
+
         const gameFrame = document.createElement('iframe');
         gameFrame.dataset.taskmarketGameFrame = 'true';
         gameFrame.setAttribute('allow', ${nestedAllow});
         gameFrame.setAttribute('referrerpolicy', ${nestedReferrerPolicy});
         gameFrame.setAttribute('sandbox', ${nestedSandbox});
         gameFrame.setAttribute('title', 'Game content');
-        gameFrame.src = 'data:text/html;base64,' + encodedDocument;
+        gameFrame.src = gameUrl;
+        window.addEventListener('pagehide', function () {
+          URL.revokeObjectURL(gameUrl);
+        }, { once: true });
 
         window.addEventListener('message', function (event) {
           if (event.source === gameFrame.contentWindow && event.data === ${escapeMessage}) {

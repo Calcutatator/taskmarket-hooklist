@@ -168,7 +168,7 @@ describe('sandbox document policy', () => {
     expect(policy).not.toContain('unsafe-eval');
     expect(
       wrapper.querySelector('meta[http-equiv="Content-Security-Policy"]')?.getAttribute('content')
-    ).toContain('frame-src data:');
+    ).toContain('frame-src blob:');
   });
 
   it('uses an allow-scripts-only iframe contract with no storage, popup, or navigation privileges', () => {
@@ -200,9 +200,11 @@ describe('sandbox document policy', () => {
     expect(bridge?.textContent).toContain(INTERACTIVE_HTML_ESCAPE_MESSAGE);
     expect(relay?.textContent).toContain('event.source === gameFrame.contentWindow');
     expect(relay?.textContent).toContain(INTERACTIVE_HTML_ESCAPE_MESSAGE);
-    expect(relay?.textContent).toContain(
-      "gameFrame.src = 'data:text/html;base64,' + encodedDocument"
-    );
+    expect(relay?.textContent).toContain('new Blob([documentBytes]');
+    expect(relay?.textContent).toContain('URL.createObjectURL');
+    expect(relay?.textContent).toContain('gameFrame.src = gameUrl');
+    expect(relay?.textContent).toContain('URL.revokeObjectURL(gameUrl)');
+    expect(relay?.textContent).not.toContain('data:text/html;base64,');
     expect(isInteractiveHtmlParentMessage(INTERACTIVE_HTML_ESCAPE_MESSAGE)).toBe(true);
     expect(isInteractiveHtmlParentMessage({ type: INTERACTIVE_HTML_ESCAPE_MESSAGE })).toBe(false);
   });

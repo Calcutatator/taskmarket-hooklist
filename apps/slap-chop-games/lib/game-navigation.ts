@@ -1,7 +1,7 @@
 const GAME_LAUNCH_STORAGE_KEY = 'slap-chop-games:game-launch';
 const GAME_LAUNCH_VERSION = 1;
 const GAME_LAUNCH_MAX_AGE_MS = 15_000;
-let pendingLaunchId: string | null = null;
+const GAME_LAUNCH_DOCUMENT_ATTRIBUTE = 'data-slap-chop-game-launch';
 
 type StoredGameLaunch = {
   createdAt: number;
@@ -31,6 +31,26 @@ export function getCatalogHref(query: string): string {
   return normalizedQuery ? `/?q=${encodeURIComponent(normalizedQuery)}` : '/';
 }
 
+// A document attribute survives client-route chunk changes and development HMR while remaining
+// unavailable after a full page navigation. That makes it a suitable same-document click nonce:
+// session storage alone can survive a direct entry, while module state can be duplicated between
+// independently loaded Next route chunks during local development.
+function pendingLaunchId(): string | null {
+  return typeof document === 'undefined'
+    ? null
+    : document.documentElement.getAttribute(GAME_LAUNCH_DOCUMENT_ATTRIBUTE);
+}
+
+function setPendingLaunchId(launchId: string | null): void {
+  if (typeof document === 'undefined') return;
+
+  if (launchId) {
+    document.documentElement.setAttribute(GAME_LAUNCH_DOCUMENT_ATTRIBUTE, launchId);
+  } else {
+    document.documentElement.removeAttribute(GAME_LAUNCH_DOCUMENT_ATTRIBUTE);
+  }
+}
+
 // This marker only records a same-tab catalog click. It is deliberately not an
 // authentication, tracking, or persistent game-state mechanism.
 export function rememberGameLaunch({
@@ -55,7 +75,7 @@ export function rememberGameLaunch({
     version: GAME_LAUNCH_VERSION,
   };
 
-  pendingLaunchId = launch.launchId;
+  setPendingLaunchId(launch.launchId);
   window.sessionStorage.setItem(GAME_LAUNCH_STORAGE_KEY, JSON.stringify(launch));
 }
 
@@ -68,14 +88,14 @@ export function claimGameLaunch(slug: string): void {
     !launch ||
     launch.slug !== slug ||
     launch.state !== 'launching' ||
-    launch.launchId !== pendingLaunchId ||
+    launch.launchId !== pendingLaunchId() ||
     Date.now() - launch.createdAt > GAME_LAUNCH_MAX_AGE_MS ||
     window.history.length !== launch.sourceHistoryLength + 1
   ) {
     if (launch?.slug === slug) {
       window.sessionStorage.removeItem(GAME_LAUNCH_STORAGE_KEY);
     }
-    pendingLaunchId = null;
+    setPendingLaunchId(null);
     return;
   }
 
@@ -102,7 +122,7 @@ export function prepareGameReturn(slug: string): GameReturnTarget {
     if (launch?.slug === slug) {
       window.sessionStorage.removeItem(GAME_LAUNCH_STORAGE_KEY);
     }
-    pendingLaunchId = null;
+    setPendingLaunchId(null);
     return { href: fallbackHref, kind: 'fallback' };
   }
 
@@ -117,7 +137,7 @@ export function discardGameLaunch(slug: string): void {
 
   if (launch?.slug === slug && launch.state !== 'returning') {
     window.sessionStorage.removeItem(GAME_LAUNCH_STORAGE_KEY);
-    pendingLaunchId = null;
+    setPendingLaunchId(null);
   }
 }
 
@@ -129,7 +149,7 @@ export function consumeCatalogReturnScroll(currentHref: string): number | null {
   }
 
   window.sessionStorage.removeItem(GAME_LAUNCH_STORAGE_KEY);
-  pendingLaunchId = null;
+  setPendingLaunchId(null);
   return launch.scrollY;
 }
 

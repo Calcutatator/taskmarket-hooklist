@@ -1,5 +1,6 @@
 import { GamePlayer } from '@/components/game-player';
 import { GameVoteControl } from '@/components/game-vote-control';
+import { getEnvironment } from '@/lib/environment';
 import { fetchGameDetail } from '@/lib/game-detail-api';
 
 // A delivery URL is intentionally short-lived, so this route must always request a current
@@ -13,12 +14,13 @@ export default async function GamePage({
   params: Promise<{ slug: string }>;
 }>) {
   const { slug } = await params;
-  const result = await fetchGameDetail(slug);
+  const [result, environment] = await Promise.all([fetchGameDetail(slug), getEnvironment()]);
+  const votingEnabled = environment.SLAP_CHOP_DATA_MODE !== 'live-readonly';
 
   return (
     <GamePlayer
       controls={
-        result.ok ? (
+        result.ok && votingEnabled ? (
           <GameVoteControl
             gameId={result.game.id}
             initialDownvoteCount={result.game.downvoteCount}

@@ -137,7 +137,7 @@ describe('buildSandboxedHtmlDocument', () => {
     expect(policy).toContain("form-action 'none'");
     expect(policy).toContain("base-uri 'none'");
     expect(policy).not.toContain('unsafe-eval');
-    expect(wrapperPolicy).toContain('frame-src data:');
+    expect(wrapperPolicy).toContain('frame-src blob:');
   });
 
   it('does not grant external scripts to submitted HTML', () => {

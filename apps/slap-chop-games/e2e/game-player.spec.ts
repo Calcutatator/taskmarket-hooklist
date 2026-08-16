@@ -31,6 +31,31 @@ test('returns from a verified game route to the exact catalog query and scroll p
     .toBeGreaterThanOrEqual(scrollBeforeLaunch - 2);
 });
 
+test('returns to a query created by client-side search before launching a game', async ({
+  page,
+}) => {
+  await page.goto('/');
+
+  const search = page.getByRole('search').getByLabel('Search games');
+  await search.fill('Solar Orbit 37');
+  await expect(page).toHaveURL((url) => url.searchParams.get('q') === 'Solar Orbit 37');
+
+  await page.getByRole('link', { name: 'Play Solar Orbit 37, score +23' }).click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === '/games/solar-orbit-37' && url.searchParams.get('q') === 'Solar Orbit 37'
+  );
+  await expect(page.getByTitle('Solar Orbit 37 game')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Back to catalog' }).click();
+
+  await expect(page).toHaveURL(
+    (url) => url.pathname === '/' && url.searchParams.get('q') === 'Solar Orbit 37'
+  );
+  await expect(search).toHaveValue('Solar Orbit 37');
+  await expect(page.getByRole('link', { name: 'Play Solar Orbit 37, score +23' })).toBeVisible();
+});
+
 test('uses the catalog root for a direct game entry and ignores stale same-slug session storage', async ({
   page,
 }) => {

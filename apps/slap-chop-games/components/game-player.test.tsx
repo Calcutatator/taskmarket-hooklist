@@ -1,7 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { rememberGameLaunch } from '@/lib/game-navigation';
 import { gameFixture, gameHtml } from '@/test/game-fixtures';
 
 const routerReplace = vi.fn();
@@ -88,6 +90,24 @@ describe('GamePlayer', () => {
     await user.click(screen.getByRole('button', { name: 'Back to catalog' }));
 
     expect(routerReplace).toHaveBeenCalledWith('/');
+  });
+
+  it('keeps a same-document catalog return through the Strict Mode effect probe', async () => {
+    window.history.replaceState(null, '', '/?q=orbit');
+    rememberGameLaunch({ query: 'orbit', slug: 'silent-orbit' });
+    window.history.pushState(null, '', '/games/silent-orbit?q=orbit');
+
+    render(
+      <StrictMode>
+        <GamePlayer initialFailure={{ kind: 'not_found' }} initialGame={null} slug="silent-orbit" />
+      </StrictMode>
+    );
+
+    await waitFor(() => {
+      expect(
+        JSON.parse(window.sessionStorage.getItem('slap-chop-games:game-launch') ?? '{}')
+      ).toMatchObject({ returnHref: '/?q=orbit', state: 'claimed' });
+    });
   });
 
   it('reports integrity failure through the bounded player telemetry seam', async () => {

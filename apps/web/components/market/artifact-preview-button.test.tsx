@@ -314,7 +314,7 @@ describe('ArtifactPreviewTrigger mobile/desktop branch', () => {
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
     expect(frame).toHaveAttribute('allow', '');
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
-    expect(frame.getAttribute('srcdoc')).toContain('frame-src data:');
+    expect(frame.getAttribute('srcdoc')).toContain('frame-src blob:');
     expect(frame.getAttribute('srcdoc')).toContain('data-taskmarket-game');
 
     fetchMock.mockRestore();
@@ -440,7 +440,7 @@ describe('ArtifactMediaTile poster (closed, pre-click)', () => {
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
     expect(frame).toHaveAttribute('allow', '');
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
-    expect(frame.getAttribute('srcdoc')).toContain('frame-src data:');
+    expect(frame.getAttribute('srcdoc')).toContain('frame-src blob:');
     expect(frame.getAttribute('srcdoc')).toContain('data-taskmarket-game');
 
     fetchMock.mockRestore();

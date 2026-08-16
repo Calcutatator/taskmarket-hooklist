@@ -102,6 +102,7 @@ export function GamePlayer({
   const router = useRouter();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const hasInitializedProps = useRef(false);
+  const scheduledLaunchDiscard = useRef<{ slug: string; timer: number } | null>(null);
   const [game, setGame] = useState(initialGame);
   const [detailFailure, setDetailFailure] = useState<GameDetailReadFailure | undefined>(
     initialFailure
@@ -128,9 +129,32 @@ export function GamePlayer({
   }, [initialFailure, initialGame, slug]);
 
   useEffect(() => {
-    claimGameLaunch(slug);
+    const scheduledDiscard = scheduledLaunchDiscard.current;
+    const strictModeReattach = scheduledDiscard?.slug === slug;
 
-    return () => discardGameLaunch(slug);
+    if (scheduledDiscard) {
+      window.clearTimeout(scheduledDiscard.timer);
+      scheduledLaunchDiscard.current = null;
+
+      if (!strictModeReattach) {
+        discardGameLaunch(scheduledDiscard.slug);
+      }
+    }
+
+    if (!strictModeReattach) {
+      claimGameLaunch(slug);
+    }
+
+    return () => {
+      const timer = window.setTimeout(() => {
+        discardGameLaunch(slug);
+        if (scheduledLaunchDiscard.current?.timer === timer) {
+          scheduledLaunchDiscard.current = null;
+        }
+      }, 0);
+
+      scheduledLaunchDiscard.current = { slug, timer };
+    };
   }, [slug]);
 
   const returnToCatalog = useCallback(() => {

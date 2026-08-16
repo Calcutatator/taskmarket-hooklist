@@ -122,6 +122,8 @@ jobs:
             "DEPLOY_ENVIRONMENT=devnet" \
             "RAILPACK_BUILD_CMD=make build slap-chop-games" \
             "RAILPACK_START_CMD=pnpm --filter @taskmarket/slap-chop-games start" \
+            "SLAP_CHOP_DATA_MODE=live-readonly" \
+            "SLAP_CHOP_LIVE_SOURCE_API_URL=https://api.taskmarket.dev" \
             "TASKMARKET_API_URL=https://$BACKEND_DOMAIN" \
             "NEXT_PUBLIC_API_URL=https://$BACKEND_DOMAIN"; do
             railway variable set "$kv" \

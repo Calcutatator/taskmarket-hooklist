@@ -21,12 +21,22 @@ export type CatalogReadResult =
 
 type CatalogFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
-export function getTaskmarketApiBaseUrl(): string {
+export function getEnvironmentApiBaseUrl(): string {
   const environment = getEnvironment();
 
   return (
     environment.TASKMARKET_API_URL ?? environment.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:3000'
   );
+}
+
+export function getTaskmarketApiBaseUrl(): string {
+  const environment = getEnvironment();
+
+  if (environment.SLAP_CHOP_DATA_MODE === 'live-readonly') {
+    return environment.NEXT_PUBLIC_SITE_URL;
+  }
+
+  return getEnvironmentApiBaseUrl();
 }
 
 function getCatalogPageUrl(apiBaseUrl: string, cursor?: string): URL {

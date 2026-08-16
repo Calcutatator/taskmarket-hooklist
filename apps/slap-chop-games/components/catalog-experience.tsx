@@ -18,6 +18,7 @@ import {
 type CatalogExperienceProps = {
   initialQuery: string;
   result: CatalogReadResult;
+  votingEnabled?: boolean;
 };
 
 function normalizedSearchTerm(value: string): string {
@@ -147,11 +148,13 @@ function CatalogGameTile({
   index,
   onPlay,
   query,
+  votingEnabled,
 }: Readonly<{
   game: GameCatalogItem;
   index: number;
   onPlay: (event: MouseEvent<HTMLAnchorElement>, slug: string) => void;
   query: string;
+  votingEnabled: boolean;
 }>) {
   const [vote, setVote] = useState<
     Pick<GameVoteResponse, 'downvoteCount' | 'netVotes' | 'upvoteCount'>
@@ -192,29 +195,37 @@ function CatalogGameTile({
           priority={index < 8}
           title={game.title}
         />
-        <span className="flex min-h-11 min-w-0 items-center gap-2 border-t border-catalog-border bg-catalog-canvas/90 px-2 py-1.5 pr-20 text-xs leading-4">
+        <span
+          className={`flex min-h-11 min-w-0 items-center gap-2 border-t border-catalog-border bg-catalog-canvas/90 px-2 py-1.5 text-xs leading-4 ${votingEnabled ? 'pr-20' : ''}`}
+        >
           <span className="min-w-0 flex-1 truncate font-medium">{game.title}</span>
           <span aria-label={`${score} net votes`} className="shrink-0 font-mono text-catalog-muted">
             {score}
           </span>
         </span>
       </Link>
-      <div className="absolute bottom-1.5 right-2 z-10">
-        <GameVoteControl
-          gameId={game.id}
-          initialDownvoteCount={vote.downvoteCount}
-          initialUpvoteCount={vote.upvoteCount}
-          onVoteChange={({ downvoteCount, netVotes, upvoteCount }) => {
-            setVote({ downvoteCount, netVotes, upvoteCount });
-          }}
-          title={game.title}
-        />
-      </div>
+      {votingEnabled ? (
+        <div className="absolute bottom-1.5 right-2 z-10">
+          <GameVoteControl
+            gameId={game.id}
+            initialDownvoteCount={vote.downvoteCount}
+            initialUpvoteCount={vote.upvoteCount}
+            onVoteChange={({ downvoteCount, netVotes, upvoteCount }) => {
+              setVote({ downvoteCount, netVotes, upvoteCount });
+            }}
+            title={game.title}
+          />
+        </div>
+      ) : null}
     </li>
   );
 }
 
-function CatalogGrid({ games, query }: Readonly<{ games: GameCatalogItem[]; query: string }>) {
+function CatalogGrid({
+  games,
+  query,
+  votingEnabled,
+}: Readonly<{ games: GameCatalogItem[]; query: string; votingEnabled: boolean }>) {
   function rememberLaunch(event: MouseEvent<HTMLAnchorElement>, slug: string) {
     if (
       event.defaultPrevented ||
@@ -250,6 +261,7 @@ function CatalogGrid({ games, query }: Readonly<{ games: GameCatalogItem[]; quer
             key={game.id}
             onPlay={rememberLaunch}
             query={query}
+            votingEnabled={votingEnabled}
           />
         ))}
       </ul>
@@ -314,13 +326,20 @@ function CatalogError({ failure }: Readonly<{ failure: CatalogReadFailure }>) {
 }
 
 // Implements: ADR-0090. It renders the backend's catalog order and only filters that snapshot.
-export function CatalogExperience({ initialQuery, result }: Readonly<CatalogExperienceProps>) {
+export function CatalogExperience({
+  initialQuery,
+  result,
+  votingEnabled = true,
+}: Readonly<CatalogExperienceProps>) {
   const [query, setQuery] = useState(initialQuery);
   const games = result.ok ? result.games : [];
   const visibleGames = useMemo(() => filterCatalogGames(games, query), [games, query]);
 
   useEffect(() => {
-    setQuery(initialQuery);
+    // A history return can revive the cached server tree for the catalog entry that existed
+    // before client-side search changed the address. The browser URL is the authoritative query
+    // at that point; initialQuery remains the hydration value for the first render only.
+    setQuery(getUrlQuery());
   }, [initialQuery]);
 
   useEffect(() => {
@@ -351,7 +370,7 @@ export function CatalogExperience({ initialQuery, result }: Readonly<CatalogExpe
     <AppShell rail={<SearchRail onQueryChange={setQuery} query={query} />}>
       {result.ok ? (
         visibleGames.length ? (
-          <CatalogGrid games={visibleGames} query={query} />
+          <CatalogGrid games={visibleGames} query={query} votingEnabled={votingEnabled} />
         ) : (
           <EmptyCatalog query={query} />
         )

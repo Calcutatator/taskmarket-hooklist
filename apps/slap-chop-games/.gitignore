@@ -1,4 +1,6 @@
 .next/
+.next-local/
+.next-live/
 coverage/
 storybook-static/
 playwright-report/

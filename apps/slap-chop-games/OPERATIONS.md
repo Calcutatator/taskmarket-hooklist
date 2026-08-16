@@ -16,20 +16,28 @@ integrity checks, iframe policy, or curator authorization to recover an incident
 
 The application service needs these values in every deployed environment:
 
-| Variable                      | Production value or source                           |
-| ----------------------------- | ---------------------------------------------------- |
-| `NEXT_PUBLIC_SITE_URL`        | `https://games.taskmarket.dev`                       |
-| `TASKMARKET_API_URL`          | the environment's Taskmarket backend origin          |
-| `NEXT_PUBLIC_API_URL`         | the browser-reachable Taskmarket backend origin      |
-| `NEXT_PUBLIC_PRIVY_APP_ID`    | the approved Taskmarket Privy application ID         |
-| `NEXT_PUBLIC_PRIVY_CLIENT_ID` | the approved public Privy client ID, when configured |
-| `DEPLOY_ENVIRONMENT`          | `production`, `devnet`, or `preview`                 |
-| `COMMIT_SHA`                  | the exact Git commit being deployed                  |
+| Variable                        | Production value or source                             |
+| ------------------------------- | ------------------------------------------------------ |
+| `NEXT_PUBLIC_SITE_URL`          | `https://games.taskmarket.dev`                         |
+| `TASKMARKET_API_URL`            | the environment's Taskmarket backend origin            |
+| `NEXT_PUBLIC_API_URL`           | the browser-reachable Taskmarket backend origin        |
+| `NEXT_PUBLIC_PRIVY_APP_ID`      | the approved Taskmarket Privy application ID           |
+| `NEXT_PUBLIC_PRIVY_CLIENT_ID`   | the approved public Privy client ID, when configured   |
+| `DEPLOY_ENVIRONMENT`            | `production`, `devnet`, or `preview`                   |
+| `SLAP_CHOP_DATA_MODE`           | `environment` in production; `live-readonly` in DEVNET |
+| `SLAP_CHOP_LIVE_SOURCE_API_URL` | `https://api.taskmarket.dev` in live-readonly mode     |
+| `COMMIT_SHA`                    | the exact Git commit being deployed                    |
 
 The backend additionally needs `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, and a non-empty
 `SLAP_CHOP_CURATOR_PRIVY_USER_IDS` allowlist before curation can be enabled. The public app ID must
 match the server app ID. Missing or invalid identity configuration must leave voting unavailable
 and curation fail closed.
+
+DEVNET deliberately reads its small allowlist of game artifacts from the public production market.
+The app validates public completion, primary-award provenance, exact artifact metadata and hashes,
+then serves verified bytes through a same-origin, exact-slug proxy. This mode never forwards a vote
+or curation write to production and is rejected when `DEPLOY_ENVIRONMENT=production`. Keep normal
+fixtures for deterministic CI and use the isolated environment backend for mutation testing.
 
 The repository secret `RAILWAY_SLAP_CHOP_GAMES_SERVICE_NAME` must contain the exact production
 Railway service name. `RAILWAY_SLAP_CHOP_GAMES_DEVNET_SERVICE_NAME` names the isolated DEVNET
