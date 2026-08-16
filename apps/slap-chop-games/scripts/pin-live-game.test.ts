@@ -116,7 +116,45 @@ describe('slap-chop pin command', () => {
 
     expect(exitCode).toBe(1);
     expect(stdout).toEqual([]);
-    expect(stderr.join('\n')).toContain('one unambiguous accepted submission');
+    expect(stderr.join('\n')).toContain('SLAP_CHOP_PIN_SUBMISSION_ID=<id>');
+    expect(stderr.join('\n')).toContain('another-submission');
+  });
+
+  it('pins an explicitly selected submission from an ambiguous awarded worker', async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const selected = { ...submissionResponse()[0], id: 'selected-submission' };
+
+    const exitCode = await runPinLiveGameCommand([taskId], {
+      fetcher: commandFetcher({ submissions: [...submissionResponse(), selected] }),
+      now: () => new Date('2026-08-17T10:00:00.000Z'),
+      sourceApiUrl: 'https://api.taskmarket.test',
+      submissionId: selected.id,
+      writeError: (message) => stderr.push(message),
+      writeOutput: (message) => stdout.push(message),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toEqual([]);
+    expect(stdout.join('\n')).toContain('"submissionId": "selected-submission"');
+  });
+
+  it('rejects a selected submission that does not belong to the awarded worker', async () => {
+    const stderr: string[] = [];
+
+    const exitCode = await runPinLiveGameCommand([taskId], {
+      fetcher: commandFetcher(),
+      now: () => new Date('2026-08-17T10:00:00.000Z'),
+      sourceApiUrl: 'https://api.taskmarket.test',
+      submissionId: 'not-an-awarded-submission',
+      writeError: (message) => stderr.push(message),
+      writeOutput: vi.fn(),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join('\n')).toContain(
+      'is not a non-rejected submission from the primary awarded worker'
+    );
   });
 
   it('rejects downloaded bytes that do not match production metadata', async () => {

@@ -5,7 +5,6 @@ import {
   getLiveGameDetail,
   LIVE_GAME_PINS,
   listLiveCatalog,
-  LiveCatalogError,
 } from './live-catalog';
 
 // Verifies: ADR-0091
@@ -89,7 +88,7 @@ describe('live production catalog source', () => {
     });
   });
 
-  it('fails closed when accepted-submission provenance becomes ambiguous', async () => {
+  it('resolves the exact pinned submission when an awarded worker has multiple submissions', async () => {
     const duplicate = {
       ...submissionResponse()[0],
       id: 'another-active-submission',
@@ -101,12 +100,28 @@ describe('live production catalog source', () => {
         siteUrl,
         sourceApiUrl,
       })
-    ).rejects.toEqual(
-      expect.objectContaining<Partial<LiveCatalogError>>({
-        kind: 'source-invalid',
-        message: expect.stringContaining('unambiguous accepted submission'),
+    ).resolves.toMatchObject({
+      slug: pin.slug,
+      source: { submissionId: pin.source.submissionId },
+    });
+  });
+
+  it('fails closed when the exact pinned submission is no longer present', async () => {
+    const replacement = {
+      ...submissionResponse()[0],
+      id: 'replacement-submission',
+    };
+
+    await expect(
+      getLiveGameDetail(pin.slug, {
+        fetcher: sourceFetcher({ submissions: [replacement] }),
+        siteUrl,
+        sourceApiUrl,
       })
-    );
+    ).rejects.toMatchObject({
+      kind: 'source-invalid',
+      message: expect.stringContaining('exact pinned awarded submission'),
+    });
   });
 
   it('rejects expired or unpinned production delivery URLs before proxying bytes', async () => {

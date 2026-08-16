@@ -56,10 +56,10 @@ the environment backend for persistence, voting and curator authorization work.
 
 To propose another production game for DEVNET, run `make slap-chop pin <task-url-or-id>`. The
 command accepts only a raw task ID or canonical `https://taskmarket.dev/tasks/{id}` URL. It resolves
-the completed public task and its primary award, requires one unambiguous accepted submission,
-selects one eligible final or preview HTML artifact, downloads it from a fresh HTTPS delivery URL,
-and verifies its byte length and SHA-256 before printing a `LIVE_GAME_PINS` candidate. It never
-prints the signed storage URL and never edits the catalog.
+the completed public task and its primary award, requires an exact non-rejected submission from the
+awarded worker, selects one eligible final or preview HTML artifact, downloads it from a fresh HTTPS
+delivery URL, and verifies its byte length and SHA-256 before printing a `LIVE_GAME_PINS` candidate.
+It never prints the signed storage URL and never edits the catalog.
 
 Review and play the candidate before copying it into `lib/live-catalog.ts`, add the generated square
 cover path under `public/live-catalog/`, and replace the description and cover-alt placeholders. If
@@ -68,6 +68,16 @@ a submission contains multiple eligible HTML artifacts, select the reviewed one 
 ```sh
 SLAP_CHOP_PIN_ARTIFACT_ID=<artifact-id> make slap-chop pin <task-url-or-id>
 ```
+
+Workers commonly submit revisions. When the awarded worker has multiple non-rejected submissions,
+the command lists their IDs and fails closed until the curator selects the reviewed revision:
+
+```sh
+SLAP_CHOP_PIN_SUBMISSION_ID=<submission-id> make slap-chop pin <task-url-or-id>
+```
+
+The selector cannot choose another worker's submission or a rejected submission. Both selectors can
+be supplied together when the chosen submission also has multiple eligible HTML artifacts.
 
 ## Environment contract
 

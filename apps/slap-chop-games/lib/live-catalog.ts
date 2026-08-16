@@ -332,19 +332,20 @@ async function resolveLiveGame(
     throw new LiveCatalogError('source-invalid', `${pin.slug} is not an accepted public source.`);
   }
 
-  const awardedSubmissions = submissions.filter(
+  const pinnedSubmissions = submissions.filter(
     (submission) =>
       submission.rejectedAt === null &&
+      submission.id === pin.source.submissionId &&
       normalizedAddress(submission.workerAddress) === normalizedAddress(pin.source.workerAddress)
   );
-  if (awardedSubmissions.length !== 1 || awardedSubmissions[0]?.id !== pin.source.submissionId) {
+  if (pinnedSubmissions.length !== 1) {
     throw new LiveCatalogError(
       'source-invalid',
-      `${pin.slug} no longer has one unambiguous accepted submission.`
+      `${pin.slug} no longer has its exact pinned awarded submission.`
     );
   }
 
-  const artifact = awardedSubmissions[0].artifacts.find(
+  const artifact = pinnedSubmissions[0]!.artifacts.find(
     (candidate) => candidate.id === pin.source.artifactId
   );
   if (!artifact) {
