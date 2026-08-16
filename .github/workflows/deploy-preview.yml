@@ -448,6 +448,7 @@ jobs:
 
           for kv in \
             "CHAIN_ID=84532" \
+            "RAILPACK_BUILD_CMD=make build backend" \
             "BASE_RPC_URL=${{ steps.anvil.outputs.rpc_url }}" \
             "CONTRACT_ADDRESS=${{ steps.contracts.outputs.diamond_address }}" \
             "CONTRACT_DEPLOY_BLOCK=0" \
@@ -465,6 +466,7 @@ jobs:
           done
 
           for kv in \
+            "RAILPACK_BUILD_CMD=make build web" \
             "NEXT_PUBLIC_CHAIN_ID=84532" \
             "NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL=${{ steps.anvil.outputs.rpc_url }}"; do
             railway variable set "$kv" \
@@ -518,10 +520,20 @@ jobs:
           }
 
           BACKEND_DOMAIN=$(resolve_domain "@taskmarket/backend") || { echo "Could not resolve the preview backend domain" >&2; exit 1; }
+          FRONTEND_VARIABLES=$(railway variable list \
+            --service "@taskmarket/frontend" \
+            --environment "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json)
+          PRIVY_APP_ID=$(printf '%s' "$FRONTEND_VARIABLES" | python3 -c "import json,sys; print(json.load(sys.stdin).get('NEXT_PUBLIC_PRIVY_APP_ID', ''))")
+          PRIVY_CLIENT_ID=$(printf '%s' "$FRONTEND_VARIABLES" | python3 -c "import json,sys; print(json.load(sys.stdin).get('NEXT_PUBLIC_PRIVY_CLIENT_ID', ''))")
 
           for kv in \
             "COMMIT_SHA=bootstrap-${{ github.sha }}" \
             "DEPLOY_ENVIRONMENT=preview" \
+            "RAILPACK_BUILD_CMD=make build slap-chop-games" \
+            "RAILPACK_START_CMD=SLAP_CHOP_RUN_MODE=production make start slap-chop-games" \
+            "NEXT_PUBLIC_PRIVY_APP_ID=$PRIVY_APP_ID" \
+            "NEXT_PUBLIC_PRIVY_CLIENT_ID=$PRIVY_CLIENT_ID" \
             "TASKMARKET_API_URL=https://$BACKEND_DOMAIN" \
             "NEXT_PUBLIC_API_URL=https://$BACKEND_DOMAIN"; do
             railway variable set "$kv" \

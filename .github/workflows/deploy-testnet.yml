@@ -57,6 +57,11 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_TESTNET }}
         run: |
+          railway variable set \
+            "RAILPACK_BUILD_CMD=make build backend" \
+            --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
+            --environment DEVNET \
+            --skip-deploys
           railway up \
             --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
             --environment DEVNET \
@@ -66,6 +71,11 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_TESTNET }}
         run: |
+          railway variable set \
+            "RAILPACK_BUILD_CMD=make build web" \
+            --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
+            --environment DEVNET \
+            --skip-deploys
           railway up \
             --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
             --environment DEVNET \
@@ -86,9 +96,9 @@ jobs:
         id: slap_chop
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_TESTNET }}
-          RAILWAY_SERVICE_NAME: ${{ secrets.RAILWAY_SLAP_CHOP_GAMES_SERVICE_NAME }}
+          RAILWAY_SERVICE_NAME: ${{ secrets.RAILWAY_SLAP_CHOP_GAMES_DEVNET_SERVICE_NAME }}
         run: |
-          [ -n "$RAILWAY_SERVICE_NAME" ] || { echo "RAILWAY_SLAP_CHOP_GAMES_SERVICE_NAME is required for a Slap-Chop DEVNET release." >&2; exit 1; }
+          [ -n "$RAILWAY_SERVICE_NAME" ] || { echo "RAILWAY_SLAP_CHOP_GAMES_DEVNET_SERVICE_NAME is required for a Slap-Chop DEVNET release." >&2; exit 1; }
 
           resolve_domain() {
             local service="$1" out=""
@@ -110,6 +120,8 @@ jobs:
           for kv in \
             "COMMIT_SHA=bootstrap-${{ github.event.workflow_run.head_sha }}" \
             "DEPLOY_ENVIRONMENT=devnet" \
+            "RAILPACK_BUILD_CMD=make build slap-chop-games" \
+            "RAILPACK_START_CMD=SLAP_CHOP_RUN_MODE=production make start slap-chop-games" \
             "TASKMARKET_API_URL=https://$BACKEND_DOMAIN" \
             "NEXT_PUBLIC_API_URL=https://$BACKEND_DOMAIN"; do
             railway variable set "$kv" \

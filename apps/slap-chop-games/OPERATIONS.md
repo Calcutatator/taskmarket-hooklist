@@ -31,9 +31,10 @@ The backend additionally needs `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, and a non-emp
 match the server app ID. Missing or invalid identity configuration must leave voting unavailable
 and curation fail closed.
 
-The repository secret `RAILWAY_SLAP_CHOP_GAMES_SERVICE_NAME` must contain the exact Railway service
-name. Preview, devnet, and production workflows use it to target the dedicated service and fail
-if it is missing.
+The repository secret `RAILWAY_SLAP_CHOP_GAMES_SERVICE_NAME` must contain the exact production
+Railway service name. `RAILWAY_SLAP_CHOP_GAMES_DEVNET_SERVICE_NAME` names the isolated DEVNET
+service. Pull-request previews create a disposable `slap-chop-games-pr-<number>` service in their
+ephemeral environment and remove it during fail-closed teardown.
 
 ## Release procedure
 
@@ -45,8 +46,8 @@ if it is missing.
    preview and backend origins, rebuilds with its canonical site URL, adds that URL to the
    pull-request comment, and blocks until `/api/health` reports the expected commit and `preview`
    environment. The bootstrap build carries a non-final commit marker, so it cannot satisfy that
-   check. A missing service secret stops the workflow. Exercise browse, search, play, Back, voting,
-   and curation only after that exact-release check.
+   check. Exercise browse, search, play, Back, voting, and curation only after that exact-release
+   check.
 4. Merge only after required checks and preview review are green. Let the production workflow
    deploy the backend first and Slap-Chop second.
 5. The production workflow blocks until both the application and backend health endpoints report

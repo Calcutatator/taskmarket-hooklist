@@ -65,6 +65,11 @@ jobs:
             --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
             --environment PRODUCTION \
             --skip-deploys
+          railway variable set \
+            "RAILPACK_BUILD_CMD=make build backend" \
+            --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
+            --environment PRODUCTION \
+            --skip-deploys
           railway up \
             --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
             --environment PRODUCTION
@@ -73,6 +78,11 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
+          railway variable set \
+            "RAILPACK_BUILD_CMD=make build web" \
+            --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
+            --environment PRODUCTION \
+            --skip-deploys
           railway up \
             --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
             --environment PRODUCTION
@@ -97,6 +107,8 @@ jobs:
           for kv in \
             "COMMIT_SHA=${{ github.sha }}" \
             "DEPLOY_ENVIRONMENT=production" \
+            "RAILPACK_BUILD_CMD=make build slap-chop-games" \
+            "RAILPACK_START_CMD=SLAP_CHOP_RUN_MODE=production make start slap-chop-games" \
             "TASKMARKET_API_URL=https://api.taskmarket.dev" \
             "NEXT_PUBLIC_API_URL=https://api.taskmarket.dev" \
             "NEXT_PUBLIC_SITE_URL=https://games.taskmarket.dev"; do
