@@ -6,7 +6,7 @@ CI_TEST_BUDGET_SECONDS := 300
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start storybook storybook-ci storybook-image storybook-image-smoke storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test e2e slap-chop-health skill-conformance skill-export docs-og-check discord-blueprint-check adr-audit contract ci-config-check ci-config-fix ci-quality-js ci-test ui-ci ui-ci-build ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli discord disable register signed-smoke dither-kit
+.PHONY: help init install build dev start storybook storybook-ci storybook-image storybook-image-smoke storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test e2e slap-chop slap-chop-health skill-conformance skill-export docs-og-check discord-blueprint-check adr-audit contract ci-config-check ci-config-fix ci-quality-js ci-test ui-ci ui-ci-build ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli discord disable register signed-smoke dither-kit
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -34,6 +34,7 @@ help:
 	@echo "  make fix all              - Fix all issues (lint + format)"
 	@echo "  make test [app]           - Run all tests, or just one package's tests"
 	@echo "  make e2e <app>            - Run browser end-to-end tests (slap-chop-games)"
+	@echo "  make slap-chop pin <task-url-or-id> - Verify a live game and generate its DEVNET pin"
 	@echo "  make slap-chop-health     - Verify an exact Slap-Chop Games health response"
 	@echo "  make skill-conformance    - Check shipped skill against platform contracts"
 	@echo "  make skill-export SKILLS_MARKET_OUTPUT=<dir> - Export the canonical skills.sh package"
@@ -919,6 +920,21 @@ ci-test:
 			echo "Usage: make ci-test CI_TEST_TARGET=<backend|web|other> [CI_TEST_SHARD=1/2]"; \
 			exit 1;; \
 	esac
+
+slap-chop:
+	@$(ENV_LOADER) && \
+	if [ "$(word 1,$(ARGS))" = "pin" ] && [ -n "$(word 2,$(ARGS))" ]; then \
+		pnpm --filter @taskmarket/shared build && \
+		pnpm --filter @taskmarket/html-sandbox build && \
+		pnpm --filter @taskmarket/slap-chop-games exec tsx scripts/pin-live-game.ts "$(word 2,$(ARGS))"; \
+	else \
+		echo "Usage: make slap-chop pin <task-url-or-id>"; \
+		exit 1; \
+	fi
+
+# `pin` is the second goal in `make slap-chop pin <task-url-or-id>`.
+pin:
+	@:
 
 ui-ci:
 	$(MAKE) storybook-ci

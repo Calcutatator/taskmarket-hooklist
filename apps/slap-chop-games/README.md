@@ -19,6 +19,7 @@ make format-check slap-chop-games
 make type-check slap-chop-games
 make test slap-chop-games
 make storybook slap-chop-games
+make slap-chop pin https://taskmarket.dev/tasks/<task-id>
 ```
 
 The app uses port `3007` by default and Storybook uses port `6007`. Copy `.env.example` to
@@ -52,6 +53,21 @@ integrity check and opens the game in the normal sandbox. It is not a general ta
 Live-readonly mode is intentionally separate from deterministic fixtures. Use fixtures for CI and
 interaction regression coverage, live-readonly for production-content and sandbox acceptance, and
 the environment backend for persistence, voting and curator authorization work.
+
+To propose another production game for DEVNET, run `make slap-chop pin <task-url-or-id>`. The
+command accepts only a raw task ID or canonical `https://taskmarket.dev/tasks/{id}` URL. It resolves
+the completed public task and its primary award, requires one unambiguous accepted submission,
+selects one eligible final or preview HTML artifact, downloads it from a fresh HTTPS delivery URL,
+and verifies its byte length and SHA-256 before printing a `LIVE_GAME_PINS` candidate. It never
+prints the signed storage URL and never edits the catalog.
+
+Review and play the candidate before copying it into `lib/live-catalog.ts`, add the generated square
+cover path under `public/live-catalog/`, and replace the description and cover-alt placeholders. If
+a submission contains multiple eligible HTML artifacts, select the reviewed one explicitly:
+
+```sh
+SLAP_CHOP_PIN_ARTIFACT_ID=<artifact-id> make slap-chop pin <task-url-or-id>
+```
 
 ## Environment contract
 

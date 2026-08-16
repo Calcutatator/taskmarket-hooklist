@@ -81,6 +81,23 @@ Use the real `/curate` workspace; direct database inserts are not release eviden
 Keep the initial catalog deliberately small. Record each seed game's task, submission, artifact,
 hashes, curator preview result, and public slug in the release issue without copying game bytes.
 
+### DEVNET live-readonly pins
+
+DEVNET pins use the same review standard but are checked into the exact production allowlist. Start
+the review packet from the repository root:
+
+```sh
+make slap-chop pin https://taskmarket.dev/tasks/<task-id>
+```
+
+The command verifies public completion, primary-award provenance, one accepted submission, HTML
+eligibility, a fresh HTTPS delivery URL, exact byte size, and SHA-256. It records the production
+Keccak-256 and storage hostname without exposing the signed delivery URL. The output is not a
+publication action: play the candidate in the Slap-Chop sandbox, review its metadata, add and
+describe its square cover, then copy the manifest entry into `lib/live-catalog.ts` in a reviewed
+pull request. Use `SLAP_CHOP_PIN_ARTIFACT_ID=<artifact-id>` only after manually choosing among
+multiple eligible HTML artifacts.
+
 ## Operational signals
 
 Search structured backend logs by the `slap_chop.*` event family. The expected categories are:
