@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { pathToFileURL } from 'node:url';
@@ -45,6 +46,51 @@ const htmlFixtureUrls = new Map([
     new URL('./fixtures/html/fieldnote-estimator.html', import.meta.url),
   ],
 ]);
+const calculatorHtml = `<!doctype html>
+      <html>
+        <head>
+          <style>
+            body { font-family: sans-serif; padding: 24px; }
+            label, output, button { display: block; margin-top: 12px; }
+          </style>
+        </head>
+        <body>
+          <h1>Submission calculator</h1>
+          <label>First number <input id="first-number" value="2"></label>
+          <label>Second number <input id="second-number" value="3"></label>
+          <button id="calculate" type="button">Add numbers</button>
+          <output id="calculator-result" aria-live="polite"></output>
+          <p id="parent-isolation"></p>
+          <p id="network-isolation"></p>
+          <script>
+            document.querySelector('#calculate').addEventListener('click', () => {
+              const first = Number(document.querySelector('#first-number').value);
+              const second = Number(document.querySelector('#second-number').value);
+              document.querySelector('#calculator-result').textContent = String(first + second);
+            });
+
+            try {
+              window.parent.document.body;
+              document.querySelector('#parent-isolation').textContent = 'Parent access allowed';
+            } catch {
+              document.querySelector('#parent-isolation').textContent = 'Parent access blocked';
+            }
+
+            fetch('https://preview-network-block.test/ping')
+              .then(() => {
+                document.querySelector('#network-isolation').textContent = 'Network access allowed';
+              })
+              .catch(() => {
+                document.querySelector('#network-isolation').textContent = 'Network access blocked';
+              });
+          </script>
+        </body>
+      </html>`;
+
+function mockHtmlBody(artifactId: string) {
+  const fixtureUrl = htmlFixtureUrls.get(artifactId);
+  return fixtureUrl ? readFileSync(fixtureUrl, 'utf8') : calculatorHtml;
+}
 const legalBundle = {
   acceptanceAvailable: false,
   acceptanceStatement: 'I accept the Taskmarket legal terms.',
@@ -161,6 +207,9 @@ function artifact({
   workerAddress?: string;
   workerAgentId?: string | null;
 }): ArtifactResponse {
+  const isHtml =
+    mimeType.toLowerCase().split(';', 1)[0] === 'text/html' || /\.html?$/i.test(fileName);
+
   return {
     displayOrder: 0,
     fileName,
@@ -172,10 +221,12 @@ function artifact({
     mediaKind,
     mimeType,
     role,
-    sha256Hash: id
-      .replace(/[^a-f0-9]/gi, '')
-      .padEnd(64, 'a')
-      .slice(0, 64),
+    sha256Hash: isHtml
+      ? createHash('sha256').update(mockHtmlBody(id)).digest('hex')
+      : id
+          .replace(/[^a-f0-9]/gi, '')
+          .padEnd(64, 'a')
+          .slice(0, 64),
     sizeBytes: 1024 * 900,
     storageUri: `s3://mock/${taskId}/${fileName}`,
     submissionId,
@@ -1505,52 +1556,7 @@ function mockPreviewUrl(artifactItem: ArtifactResponse) {
     artifactItem.mimeType.toLowerCase().split(';', 1)[0] === 'text/html' ||
     /\.html?$/i.test(artifactItem.fileName)
   ) {
-    const fixtureUrl = htmlFixtureUrls.get(artifactItem.id);
-    if (fixtureUrl) {
-      return `data:text/html;charset=utf-8,${encodeURIComponent(readFileSync(fixtureUrl, 'utf8'))}`;
-    }
-
-    const html = `<!doctype html>
-      <html>
-        <head>
-          <style>
-            body { font-family: sans-serif; padding: 24px; }
-            label, output, button { display: block; margin-top: 12px; }
-          </style>
-        </head>
-        <body>
-          <h1>Submission calculator</h1>
-          <label>First number <input id="first-number" value="2"></label>
-          <label>Second number <input id="second-number" value="3"></label>
-          <button id="calculate" type="button">Add numbers</button>
-          <output id="calculator-result" aria-live="polite"></output>
-          <p id="parent-isolation"></p>
-          <p id="network-isolation"></p>
-          <script>
-            document.querySelector('#calculate').addEventListener('click', () => {
-              const first = Number(document.querySelector('#first-number').value);
-              const second = Number(document.querySelector('#second-number').value);
-              document.querySelector('#calculator-result').textContent = String(first + second);
-            });
-
-            try {
-              window.parent.document.body;
-              document.querySelector('#parent-isolation').textContent = 'Parent access allowed';
-            } catch {
-              document.querySelector('#parent-isolation').textContent = 'Parent access blocked';
-            }
-
-            fetch('https://preview-network-block.test/ping')
-              .then(() => {
-                document.querySelector('#network-isolation').textContent = 'Network access allowed';
-              })
-              .catch(() => {
-                document.querySelector('#network-isolation').textContent = 'Network access blocked';
-              });
-          </script>
-        </body>
-      </html>`;
-    return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+    return `data:text/html;charset=utf-8,${encodeURIComponent(mockHtmlBody(artifactItem.id))}`;
   }
 
   return undefined;
