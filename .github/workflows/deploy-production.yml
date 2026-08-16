@@ -108,7 +108,7 @@ jobs:
             "COMMIT_SHA=${{ github.sha }}" \
             "DEPLOY_ENVIRONMENT=production" \
             "RAILPACK_BUILD_CMD=make build slap-chop-games" \
-            "RAILPACK_START_CMD=SLAP_CHOP_RUN_MODE=production make start slap-chop-games" \
+            "RAILPACK_START_CMD=pnpm --filter @taskmarket/slap-chop-games start" \
             "TASKMARKET_API_URL=https://api.taskmarket.dev" \
             "NEXT_PUBLIC_API_URL=https://api.taskmarket.dev" \
             "NEXT_PUBLIC_SITE_URL=https://games.taskmarket.dev"; do

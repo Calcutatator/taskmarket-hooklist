@@ -10,6 +10,6 @@
     "numReplicas": 1,
     "restartPolicyMaxRetries": 5,
     "restartPolicyType": "ON_FAILURE",
-    "startCommand": "SLAP_CHOP_RUN_MODE=production make start slap-chop-games"
+    "startCommand": "pnpm --filter @taskmarket/slap-chop-games start"
   }
 }

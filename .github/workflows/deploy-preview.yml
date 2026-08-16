@@ -531,7 +531,7 @@ jobs:
             "COMMIT_SHA=bootstrap-${{ github.sha }}" \
             "DEPLOY_ENVIRONMENT=preview" \
             "RAILPACK_BUILD_CMD=make build slap-chop-games" \
-            "RAILPACK_START_CMD=SLAP_CHOP_RUN_MODE=production make start slap-chop-games" \
+            "RAILPACK_START_CMD=pnpm --filter @taskmarket/slap-chop-games start" \
             "NEXT_PUBLIC_PRIVY_APP_ID=$PRIVY_APP_ID" \
             "NEXT_PUBLIC_PRIVY_CLIENT_ID=$PRIVY_CLIENT_ID" \
             "TASKMARKET_API_URL=https://$BACKEND_DOMAIN" \
