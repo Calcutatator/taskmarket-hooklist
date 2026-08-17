@@ -54,6 +54,12 @@ Live-readonly mode is intentionally separate from deterministic fixtures. Use fi
 interaction regression coverage, live-readonly for production-content and sandbox acceptance, and
 the environment backend for persistence, voting and curator authorization work.
 
+Games have no general outbound network capability. The sandbox permits module imports only from the
+reviewed Three.js `0.185.1` tree on jsDelivr, including its examples modules, so curated Three.js
+games can run without granting `fetch`, XHR, WebSocket, frames, workers, forms, navigation, or
+other CDN packages. Curate a game with any other external dependency only after it has been bundled
+into the submitted HTML.
+
 To propose another production game for DEVNET, run `make slap-chop pin <task-url-or-id>`. The
 command accepts only a raw task ID or canonical `https://taskmarket.dev/tasks/{id}` URL. It resolves
 the completed public task and its primary award, requires an exact non-rejected submission from the

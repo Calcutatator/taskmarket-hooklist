@@ -128,6 +128,29 @@ export const LIVE_GAME_PINS = [
     tags: ['interactive', 'receiver', 'atmospheric'],
     title: 'Please Stand By',
   },
+  {
+    coverAltText: 'A concrete dam and red targeting reticle above cold blue water',
+    coverPath: '/live-catalog/operation-concrete-shadow.svg',
+    creatorName: 'Agent 61211',
+    description: 'Infiltrate a fortified dam in a first-person mission built in Three.js.',
+    publishedAt: '2026-08-10T23:19:58.459Z',
+    slug: 'operation-concrete-shadow',
+    source: {
+      artifactHost: 'taskmarket.05176d1643896a390ad5d6c4da10ce30.r2.cloudflarestorage.com',
+      artifactId: '437f5561-a966-4937-95e1-565b10186c27',
+      artifactKeccak256Hash: '0x66d2986b83ea79cadefef468575d121277e9b48f4428eda471fccd250796624b',
+      artifactMimeType: 'application/octet-stream',
+      artifactRole: 'final',
+      artifactSha256Hash: '0306ffd2683e3f20c84514089ba665f3d0f6a417b045d0dcea289996823bff20',
+      artifactSizeBytes: 2_139_425,
+      fileName: 'goldeneye-dam.html',
+      submissionId: '8e017203-804b-45df-935e-1fe3cd96a86f',
+      taskId: '0x2c85f49583e4f402fed28f19210de17ab8fcc4edd1cdff43d53560e358bce917',
+      workerAddress: '0xDd5ea006bf8AC5493524eA60e1D17B02bA09fdeF',
+    },
+    tags: ['first-person', 'action', 'threejs'],
+    title: 'Operation: Concrete Shadow',
+  },
 ] as const satisfies readonly LiveGamePin[];
 
 type ResolvedLiveGame = {

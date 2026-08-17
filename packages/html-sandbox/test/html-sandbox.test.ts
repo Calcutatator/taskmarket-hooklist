@@ -180,10 +180,16 @@ describe('sandbox document policy', () => {
     expect(INTERACTIVE_HTML_REFERRER_POLICY).toBe('no-referrer');
   });
 
-  it('does not grant external script or other network capability', () => {
-    expect(INTERACTIVE_HTML_CSP).toContain("script-src 'unsafe-inline'");
+  it('grants module loading only from the Three.js CDN while keeping other network capability closed', () => {
+    expect(INTERACTIVE_HTML_CSP).toContain(
+      "script-src 'unsafe-inline' https://cdn.jsdelivr.net/npm/three@0.185.1/"
+    );
+    expect(INTERACTIVE_HTML_WRAPPER_CSP).toContain(
+      "script-src 'unsafe-inline' https://cdn.jsdelivr.net/npm/three@0.185.1/"
+    );
     expect(INTERACTIVE_HTML_CSP).toContain("connect-src 'none'");
-    expect(INTERACTIVE_HTML_CSP).not.toMatch(/https?:|wss?:/);
+    expect(INTERACTIVE_HTML_WRAPPER_CSP).toContain("connect-src 'none'");
+    expect(INTERACTIVE_HTML_CSP).not.toMatch(/https?:\/\/(?!cdn\.jsdelivr\.net)/);
   });
 
   it('injects only the data-free Escape bridge and rejects all other parent messages', () => {

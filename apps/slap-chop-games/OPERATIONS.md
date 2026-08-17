@@ -71,7 +71,9 @@ Use the real `/curate` workspace; direct database inserts are not release eviden
 1. Resolve a Taskmarket task by canonical URL or ID.
 2. Select only its accepted submission's immutable HTML artifact.
 3. Preview under the production sandbox policy. Reject the game if the preview is ineligible,
-   fails integrity, requests a policy exception, or does not play correctly on phone and desktop.
+   fails integrity, requests an unsupported policy exception, or does not play correctly on phone
+   and desktop. The only external module source is the reviewed Three.js `0.185.1` tree on
+   jsDelivr; all other outbound network capability remains blocked.
 4. Supply concise metadata and a square cover. Confirm the stored source IDs, MIME type, byte size,
    SHA-256, and Keccak-256 match the resolved artifact.
 5. Save a draft, review it again, and publish it with the explicit confirmation control.
