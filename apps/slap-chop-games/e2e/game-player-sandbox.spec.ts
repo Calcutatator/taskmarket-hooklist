@@ -93,3 +93,33 @@ test('blocks direct HTTP self-navigation from the nested game', async ({ page, r
   await expect.poll(() => getSecuritySinkCount(request)).toBe(0);
   await expect(page).toHaveURL(/\/games\/sandbox-jail-http-probe$/);
 });
+
+// Verifies: ADR-0087. The nested blob inherits its trusted wrapper policy, so both layers must
+// permit the reviewed Three.js module source while all other network capability stays closed.
+test('loads an allowlisted Three.js module in the nested game sandbox', async ({ page }) => {
+  let unapprovedModuleRequested = false;
+
+  await page.route('https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js', (route) =>
+    route.fulfill({
+      body: "export const REVISION = '0.185.1';",
+      contentType: 'text/javascript',
+      headers: { 'access-control-allow-origin': '*' },
+    })
+  );
+  await page.route('https://cdn.jsdelivr.net/npm/not-three@1.0.0/index.js', (route) => {
+    unapprovedModuleRequested = true;
+    return route.fulfill({
+      body: "export const PACKAGE = 'not-three';",
+      contentType: 'text/javascript',
+      headers: { 'access-control-allow-origin': '*' },
+    });
+  });
+
+  await page.goto('/games/sandbox-threejs-cdn-probe');
+
+  const nestedGame = await expectTrustedNestedJail(page, 'Sandbox Three.js CDN Probe');
+  await expect(nestedGame.locator('#sandbox-threejs-cdn-probe')).toHaveText(
+    'Three.js 0.185.1 loaded; unapproved CDN module blocked'
+  );
+  expect(unapprovedModuleRequested).toBe(false);
+});

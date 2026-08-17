@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <rect width="1200" height="1200" fill="#071117"/>
+  <rect y="770" width="1200" height="430" fill="#0d4055"/>
+  <path d="M0 550 1200 330v450L0 960Z" fill="#637073"/>
+  <path d="M0 660 1200 440v82L0 740Z" fill="#a7b1ad" opacity="0.66"/>
+  <path d="M480 0h238l38 730H443Z" fill="#1d292c"/>
+  <path d="M496 0h206l29 730H467Z" fill="#536064"/>
+  <path d="M0 1020c190-70 362-70 518 0 194 86 418 87 682 0v180H0Z" fill="#061f2a"/>
+  <g fill="none" stroke="#e44943">
+    <circle cx="600" cy="510" r="172" stroke-width="12"/>
+    <circle cx="600" cy="510" r="26" stroke-width="8"/>
+    <path d="M600 286v-114M600 734v114M376 510H262M824 510h114" stroke-width="14"/>
+  </g>
+  <text x="600" y="1090" fill="#dce9e5" font-family="ui-monospace, monospace" font-size="50" font-weight="700" text-anchor="middle">CONCRETE SHADOW</text>
+</svg>

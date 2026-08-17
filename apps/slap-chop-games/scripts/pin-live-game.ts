@@ -55,6 +55,7 @@ export type PinLiveGameCommandDependencies = {
   fetcher?: PinCommandFetch;
   now?: () => Date;
   sourceApiUrl?: string;
+  submissionId?: string;
   writeError?: (message: string) => void;
   writeOutput?: (message: string) => void;
 };
@@ -279,7 +280,7 @@ async function buildCandidate(
       'fetcher' | 'now' | 'sourceApiUrl' | 'writeError' | 'writeOutput'
     >
   > &
-    Pick<PinLiveGameCommandDependencies, 'artifactId'>
+    Pick<PinLiveGameCommandDependencies, 'artifactId' | 'submissionId'>
 ): Promise<string> {
   let taskId: string;
   try {
@@ -316,11 +317,29 @@ async function buildCandidate(
       submission.rejectedAt == null &&
       normalizedAddress(submission.workerAddress) === normalizedAddress(awardedWorker)
   );
-  if (acceptedSubmissions.length !== 1) {
-    throw new PinCommandError('task does not have one unambiguous accepted submission');
+  let submission: z.infer<typeof submissionSchema>;
+  if (dependencies.submissionId) {
+    const selected = acceptedSubmissions.find(
+      (candidate) => candidate.id === dependencies.submissionId
+    );
+    if (!selected) {
+      throw new PinCommandError(
+        `submission ${dependencies.submissionId} is not a non-rejected submission from the primary awarded worker`
+      );
+    }
+    submission = selected;
+  } else if (acceptedSubmissions.length === 1) {
+    submission = acceptedSubmissions[0]!;
+  } else if (acceptedSubmissions.length === 0) {
+    throw new PinCommandError('the primary awarded worker has no non-rejected submission');
+  } else {
+    throw new PinCommandError(
+      `the primary awarded worker has multiple non-rejected submissions (${acceptedSubmissions
+        .map((candidate) => candidate.id)
+        .join(', ')}); rerun with SLAP_CHOP_PIN_SUBMISSION_ID=<id>`
+    );
   }
 
-  const submission = acceptedSubmissions[0]!;
   const artifact = chooseArtifact(submission, dependencies.artifactId);
   if (!artifact.previewUrl || !artifact.previewExpiresAt) {
     throw new PinCommandError('the selected artifact has no current production delivery URL');
@@ -385,6 +404,7 @@ export async function runPinLiveGameCommand(
       fetcher: options.fetcher ?? globalThis.fetch,
       now: options.now ?? (() => new Date()),
       sourceApiUrl: options.sourceApiUrl ?? DEFAULT_SOURCE_API_URL,
+      submissionId: options.submissionId,
       writeError,
       writeOutput,
     });
@@ -401,5 +421,6 @@ const entryPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;
 if (entryPath === import.meta.url) {
   process.exitCode = await runPinLiveGameCommand(process.argv.slice(2), {
     artifactId: process.env.SLAP_CHOP_PIN_ARTIFACT_ID,
+    submissionId: process.env.SLAP_CHOP_PIN_SUBMISSION_ID,
   });
 }

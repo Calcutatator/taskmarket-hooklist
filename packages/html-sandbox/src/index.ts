@@ -5,10 +5,13 @@ export const INTERACTIVE_HTML_ESCAPE_MESSAGE = 'taskmarket:interactive-html-esca
 export const INTERACTIVE_HTML_IFRAME_SANDBOX = 'allow-scripts';
 export const INTERACTIVE_HTML_IFRAME_ALLOW = '';
 export const INTERACTIVE_HTML_REFERRER_POLICY = 'no-referrer';
+// Curated games may import the reviewed Three.js module tree. The path is intentional: it does
+// not grant access to the rest of the jsDelivr CDN or enable fetch/XHR/WebSocket egress.
+export const INTERACTIVE_HTML_THREE_JS_CDN_SOURCE = 'https://cdn.jsdelivr.net/npm/three@0.185.1/';
 
 export const INTERACTIVE_HTML_CSP_DIRECTIVES = [
   "default-src 'none'",
-  "script-src 'unsafe-inline'",
+  `script-src 'unsafe-inline' ${INTERACTIVE_HTML_THREE_JS_CDN_SOURCE}`,
   "style-src 'unsafe-inline'",
   'img-src data: blob:',
   'font-src data: blob:',
@@ -28,7 +31,8 @@ export const INTERACTIVE_HTML_CSP_DIRECTIVES = [
 // navigation before a request is made. The submitted game remains in an opaque-origin iframe.
 export const INTERACTIVE_HTML_WRAPPER_CSP_DIRECTIVES = [
   "default-src 'none'",
-  "script-src 'unsafe-inline'",
+  // Blob documents inherit this policy, so the reviewed module source must be present here too.
+  `script-src 'unsafe-inline' ${INTERACTIVE_HTML_THREE_JS_CDN_SOURCE}`,
   "style-src 'unsafe-inline'",
   'img-src data: blob:',
   'font-src data: blob:',

@@ -67,6 +67,32 @@ const sandboxJailHttpProbeHtml = `<!doctype html>
     </script>
   </body>
 </html>`;
+const sandboxThreeJsCdnProbeHtml = `<!doctype html>
+<html>
+  <head>
+    <script type="importmap">
+      {
+        "imports": {
+          "not-three": "https://cdn.jsdelivr.net/npm/not-three@1.0.0/index.js",
+          "three": "https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main id="sandbox-threejs-cdn-probe">Loading Three.js module</main>
+    <script type="module">
+      import { REVISION } from 'three';
+      const probe = document.querySelector('#sandbox-threejs-cdn-probe');
+      try {
+        await import('not-three');
+        probe.textContent = 'Unexpected CDN module loaded';
+      } catch {
+        probe.textContent = 'Three.js ' + REVISION + ' loaded; unapproved CDN module blocked';
+      }
+    </script>
+  </body>
+</html>`;
 
 const releaseScenario = {
   artifact: { delayMs: 0, status: 200 },
@@ -82,7 +108,9 @@ const testGames = Array.from({ length: 48 }, (_, index) => {
         ? 'sandbox-jail-data-probe'
         : ordinal === 3
           ? 'sandbox-jail-http-probe'
-          : `solar-orbit-${ordinal}`;
+          : ordinal === 4
+            ? 'sandbox-threejs-cdn-probe'
+            : `solar-orbit-${ordinal}`;
 
   return {
     coverAltText: null,
@@ -93,7 +121,9 @@ const testGames = Array.from({ length: 48 }, (_, index) => {
         ? 'A browser-level data navigation egress probe for the nested game jail.'
         : ordinal === 3
           ? 'A browser-level HTTP navigation egress probe for the nested game jail.'
-          : `A verified arcade orbit ${ordinal}.`,
+          : ordinal === 4
+            ? 'A browser-level Three.js module import probe for the nested game jail.'
+            : `A verified arcade orbit ${ordinal}.`,
     downvoteCount: ordinal % 3,
     id: `game-${ordinal}`,
     netVotes: 60 - ordinal,
@@ -107,7 +137,9 @@ const testGames = Array.from({ length: 48 }, (_, index) => {
           ? 'Sandbox Jail Data Probe'
           : ordinal === 3
             ? 'Sandbox Jail HTTP Probe'
-            : `Solar Orbit ${ordinal}`,
+            : ordinal === 4
+              ? 'Sandbox Three.js CDN Probe'
+              : `Solar Orbit ${ordinal}`,
     upvoteCount: 60,
   };
 });
@@ -336,6 +368,10 @@ function artifactHtml(game) {
 
   if (game.slug === 'sandbox-jail-http-probe') {
     return sandboxJailHttpProbeHtml;
+  }
+
+  if (game.slug === 'sandbox-threejs-cdn-probe') {
+    return sandboxThreeJsCdnProbeHtml;
   }
 
   return defaultGameHtml;

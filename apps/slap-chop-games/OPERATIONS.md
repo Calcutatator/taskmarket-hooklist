@@ -71,7 +71,9 @@ Use the real `/curate` workspace; direct database inserts are not release eviden
 1. Resolve a Taskmarket task by canonical URL or ID.
 2. Select only its accepted submission's immutable HTML artifact.
 3. Preview under the production sandbox policy. Reject the game if the preview is ineligible,
-   fails integrity, requests a policy exception, or does not play correctly on phone and desktop.
+   fails integrity, requests an unsupported policy exception, or does not play correctly on phone
+   and desktop. The only external module source is the reviewed Three.js `0.185.1` tree on
+   jsDelivr; all other outbound network capability remains blocked.
 4. Supply concise metadata and a square cover. Confirm the stored source IDs, MIME type, byte size,
    SHA-256, and Keccak-256 match the resolved artifact.
 5. Save a draft, review it again, and publish it with the explicit confirmation control.
@@ -90,13 +92,19 @@ the review packet from the repository root:
 make slap-chop pin https://taskmarket.dev/tasks/<task-id>
 ```
 
-The command verifies public completion, primary-award provenance, one accepted submission, HTML
-eligibility, a fresh HTTPS delivery URL, exact byte size, and SHA-256. It records the production
+The command verifies public completion, primary-award provenance, an exact non-rejected submission,
+HTML eligibility, a fresh HTTPS delivery URL, exact byte size, and SHA-256. It records the production
 Keccak-256 and storage hostname without exposing the signed delivery URL. The output is not a
 publication action: play the candidate in the Slap-Chop sandbox, review its metadata, add and
 describe its square cover, then copy the manifest entry into `lib/live-catalog.ts` in a reviewed
-pull request. Use `SLAP_CHOP_PIN_ARTIFACT_ID=<artifact-id>` only after manually choosing among
-multiple eligible HTML artifacts.
+pull request.
+
+If the awarded worker has submitted multiple revisions, review them and explicitly select the
+intended one with `SLAP_CHOP_PIN_SUBMISSION_ID=<submission-id>`. The command rejects IDs belonging to
+another worker or to a rejected submission. Use `SLAP_CHOP_PIN_ARTIFACT_ID=<artifact-id>` only after
+manually choosing among multiple eligible HTML artifacts in that submission. The runtime continues
+to resolve the exact pinned submission and artifact even if the awarded worker has other revisions;
+it fails closed if either exact pin disappears, is rejected, changes ownership, or drifts.
 
 ## Operational signals
 

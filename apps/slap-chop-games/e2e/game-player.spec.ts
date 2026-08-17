@@ -19,7 +19,10 @@ test('returns from a verified game route to the exact catalog query and scroll p
   await expect(iframe).toHaveAttribute('sandbox', /^(?!.*allow-same-origin)(?!.*allow-popups).*$/);
   const srcDoc = await iframe.getAttribute('srcdoc');
   expect(srcDoc).toContain("connect-src 'none'");
-  expect(srcDoc).not.toMatch(/(?:https?:|wss?:)/);
+  expect(srcDoc).toContain(
+    "script-src 'unsafe-inline' https://cdn.jsdelivr.net/npm/three@0.185.1/"
+  );
+  expect(srcDoc).not.toMatch(/(?:https?:\/\/(?!cdn\.jsdelivr\.net\/npm\/three@0\.185\.1\/)|wss?:)/);
 
   await page.getByRole('button', { name: 'Back to catalog' }).click();
 
