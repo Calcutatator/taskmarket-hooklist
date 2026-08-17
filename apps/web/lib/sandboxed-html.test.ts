@@ -140,7 +140,7 @@ describe('buildSandboxedHtmlDocument', () => {
     expect(wrapperPolicy).toContain('frame-src blob:');
   });
 
-  it('does not grant external scripts to submitted HTML', () => {
+  it('grants only the reviewed Three.js module tree to submitted HTML', () => {
     const rendered = buildSandboxedHtmlDocument(`
       <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"></script>
       <script src="https://unpkg.com/three@0.160.0/build/three.module.js"></script>
@@ -149,8 +149,15 @@ describe('buildSandboxedHtmlDocument', () => {
     `);
 
     expect(parseNestedGameDocument(rendered).querySelectorAll('script[src]')).toHaveLength(4);
-    expect(INTERACTIVE_HTML_CSP).toContain("script-src 'unsafe-inline'");
-    expect(INTERACTIVE_HTML_CSP).not.toMatch(/https?:|wss?:/);
+    expect(INTERACTIVE_HTML_CSP).toContain(
+      "script-src 'unsafe-inline' https://cdn.jsdelivr.net/npm/three@0.185.1/"
+    );
+    expect(INTERACTIVE_HTML_WRAPPER_CSP).toContain(
+      "script-src 'unsafe-inline' https://cdn.jsdelivr.net/npm/three@0.185.1/"
+    );
+    expect(INTERACTIVE_HTML_CSP).not.toMatch(
+      /(?:https?:\/\/(?!cdn\.jsdelivr\.net\/npm\/three@0\.185\.1\/)|wss?:)/
+    );
   });
 
   it('keeps the Taskmarket policy first when submitted HTML contains its own policy', () => {
