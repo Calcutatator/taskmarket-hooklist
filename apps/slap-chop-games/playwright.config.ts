@@ -30,6 +30,11 @@ export default defineConfig({
   timeout: 30_000,
   use: {
     baseURL,
+    // Lets Chromium launch without the SYS_ADMIN capability grant a sandboxed launch would
+    // need in a container job; safe since these tests only ever load this app's own pages,
+    // never untrusted content. Both projects here are Chromium, so this is safe at the
+    // top level.
+    launchOptions: { args: ['--no-sandbox'] },
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     video: 'retain-on-failure',

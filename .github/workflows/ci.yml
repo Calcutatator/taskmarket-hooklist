@@ -471,11 +471,11 @@ jobs:
     # mcr.microsoft.com/playwright:v1.60.0-noble` when bumping @playwright/test.
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
-      # GitHub Actions container jobs block CLONE_NEWUSER by default, which Chromium's sandbox
-      # needs -- fails with "Sandbox: CanCreateUserNamespace() clone() failure: EPERM" without
-      # this. --ipc=host: the default 64MB /dev/shm is too small for Chromium's shared-memory
-      # renderer IPC.
-      options: --cap-add=SYS_ADMIN --ipc=host
+      # --ipc=host: the default 64MB /dev/shm is too small for Chromium's shared-memory renderer
+      # IPC. Chromium's own sandbox is disabled via launchOptions in playwright.config.ts instead
+      # of granting SYS_ADMIN here -- narrower than a broad capability grant, safe because these
+      # tests only ever load this app's own pages, never untrusted content.
+      options: --ipc=host
 
     steps:
       - uses: actions/checkout@v7
@@ -512,10 +512,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # See storybook above for why this runs in Playwright's own image rather than
-    # `playwright install --with-deps` on ubuntu-latest, and why SYS_ADMIN/--ipc=host are set.
+    # `playwright install --with-deps` on ubuntu-latest, and why --ipc=host is set and the
+    # sandbox is disabled via launchOptions instead of granting SYS_ADMIN.
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
-      options: --cap-add=SYS_ADMIN --ipc=host
+      options: --ipc=host
 
     steps:
       - uses: actions/checkout@v7
@@ -617,10 +618,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # See storybook above for why this runs in Playwright's own image rather than
-    # `playwright install --with-deps` on ubuntu-latest, and why SYS_ADMIN/--ipc=host are set.
+    # `playwright install --with-deps` on ubuntu-latest, and why --ipc=host is set and the
+    # sandbox is disabled via launchOptions instead of granting SYS_ADMIN.
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
-      options: --cap-add=SYS_ADMIN --ipc=host
+      options: --ipc=host
     strategy:
       fail-fast: false
       matrix:

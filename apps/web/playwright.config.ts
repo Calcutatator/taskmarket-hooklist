@@ -20,7 +20,11 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium-desktop',
-      use: { ...devices['Desktop Chrome'] },
+      // --no-sandbox: lets Chromium launch without the SYS_ADMIN capability grant a
+      // sandboxed launch would need in a container job; safe since these tests only ever
+      // load this app's own pages, never untrusted content. WebKit projects below don't
+      // need or accept this flag.
+      use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--no-sandbox'] } },
     },
     {
       name: 'chromium-mobile-320',
@@ -28,6 +32,7 @@ export default defineConfig({
       use: {
         ...devices['Pixel 7'],
         viewport: { height: 844, width: 320 },
+        launchOptions: { args: ['--no-sandbox'] },
       },
     },
     {
@@ -35,6 +40,7 @@ export default defineConfig({
       use: {
         ...devices['Pixel 7'],
         viewport: { height: 844, width: 390 },
+        launchOptions: { args: ['--no-sandbox'] },
       },
     },
     {
@@ -43,6 +49,7 @@ export default defineConfig({
       use: {
         ...devices['Pixel 7'],
         viewport: { height: 844, width: 430 },
+        launchOptions: { args: ['--no-sandbox'] },
       },
     },
     {
