@@ -465,6 +465,17 @@ jobs:
   storybook:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Browsers and OS-level deps ship pre-baked in this image, so there is no apt-get step here
+    # for a slow package mirror to stall. Pin by digest so the image can't drift without a
+    # workflow diff; re-resolve with `docker buildx imagetools inspect
+    # mcr.microsoft.com/playwright:v1.60.0-noble` when bumping @playwright/test.
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
+      # GitHub Actions container jobs block CLONE_NEWUSER by default, which Chromium's sandbox
+      # needs -- fails with "Sandbox: CanCreateUserNamespace() clone() failure: EPERM" without
+      # this. --ipc=host: the default 64MB /dev/shm is too small for Chromium's shared-memory
+      # renderer IPC.
+      options: --cap-add=SYS_ADMIN --ipc=host
 
     steps:
       - uses: actions/checkout@v7
@@ -481,8 +492,6 @@ jobs:
           cache: "pnpm"
 
       - run: make install
-
-      - run: make storybook-install-browsers
 
       - run: make storybook-ci
         env:
@@ -502,6 +511,11 @@ jobs:
   slap-chop-games:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # See storybook above for why this runs in Playwright's own image rather than
+    # `playwright install --with-deps` on ubuntu-latest, and why SYS_ADMIN/--ipc=host are set.
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
+      options: --cap-add=SYS_ADMIN --ipc=host
 
     steps:
       - uses: actions/checkout@v7
@@ -526,8 +540,6 @@ jobs:
           make type-check slap-chop-games
           make test slap-chop-games
           make build slap-chop-games
-
-      - run: make storybook-install-browsers slap-chop-games
 
       - run: make storybook-ci slap-chop-games
         env:
@@ -604,6 +616,11 @@ jobs:
     needs: web-build
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # See storybook above for why this runs in Playwright's own image rather than
+    # `playwright install --with-deps` on ubuntu-latest, and why SYS_ADMIN/--ipc=host are set.
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
+      options: --cap-add=SYS_ADMIN --ipc=host
     strategy:
       fail-fast: false
       matrix:
@@ -654,8 +671,6 @@ jobs:
         with:
           name: web-production-build
           path: apps/web/.next
-
-      - run: make ui-ci-install-browsers UI_CI_BROWSER=${{ matrix.browser }}
 
       - name: Test ${{ matrix.label }}
         timeout-minutes: 6
