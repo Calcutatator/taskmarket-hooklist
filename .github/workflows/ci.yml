@@ -465,10 +465,12 @@ jobs:
   storybook:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # Browsers and OS-level deps ship pre-baked in this image, so there is no apt-get step here
-    # for a slow package mirror to stall. Pin by digest so the image can't drift without a
-    # workflow diff; re-resolve with `docker buildx imagetools inspect
-    # mcr.microsoft.com/playwright:v1.60.0-noble` when bumping @playwright/test.
+    # Browsers and OS-level Playwright deps ship pre-baked in this image, so there is no
+    # apt-get step here for a slow package mirror to stall on multi-hundred-MB browser
+    # downloads -- the make install below still needs one tiny package (see Install make).
+    # Pin by digest so the image can't drift without a workflow diff; re-resolve with
+    # `docker buildx imagetools inspect mcr.microsoft.com/playwright:v1.60.0-noble` when
+    # bumping @playwright/test.
     container:
       image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
       # --ipc=host: the default 64MB /dev/shm is too small for Chromium's shared-memory renderer
@@ -490,6 +492,10 @@ jobs:
         with:
           node-version-file: ".nvmrc"
           cache: "pnpm"
+
+      # The image doesn't ship make, which every other step in this job goes through.
+      - name: Install make
+        run: apt-get update && apt-get install -y --no-install-recommends make
 
       - run: make install
 
@@ -531,6 +537,10 @@ jobs:
         with:
           node-version-file: ".nvmrc"
           cache: "pnpm"
+
+      # See storybook above: the image doesn't ship make.
+      - name: Install make
+        run: apt-get update && apt-get install -y --no-install-recommends make
 
       - run: make install
 
@@ -665,6 +675,10 @@ jobs:
         with:
           node-version-file: ".nvmrc"
           cache: "pnpm"
+
+      # See storybook above: the image doesn't ship make.
+      - name: Install make
+        run: apt-get update && apt-get install -y --no-install-recommends make
 
       - run: make install
 
