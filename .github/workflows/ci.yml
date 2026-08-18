@@ -305,7 +305,7 @@ jobs:
         run: make ui-ci-build
 
       - name: Upload production web app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: web-production-build
           path: |
@@ -448,7 +448,7 @@ jobs:
 
       - name: Upload Slither report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: slither-report
           path: packages/contracts/reports/slither-audit.md
@@ -456,7 +456,7 @@ jobs:
 
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: packages/contracts/reports/coverage/lcov.info
@@ -511,7 +511,7 @@ jobs:
 
       - name: Upload Storybook
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: storybook-static
           path: apps/web/storybook-static
@@ -572,7 +572,7 @@ jobs:
 
       - name: Upload Slap-Chop Games Storybook
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: slap-chop-games-storybook-static
           path: apps/slap-chop-games/storybook-static
@@ -580,7 +580,7 @@ jobs:
 
       - name: Upload Slap-Chop Games Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: slap-chop-games-playwright-report
           path: apps/slap-chop-games/playwright-report
@@ -588,7 +588,7 @@ jobs:
 
       - name: Upload Slap-Chop Games Playwright results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: slap-chop-games-playwright-test-results
           path: apps/slap-chop-games/test-results
@@ -714,7 +714,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-${{ matrix.label }}
           path: apps/web/playwright-report
@@ -722,7 +722,7 @@ jobs:
 
       - name: Upload Playwright test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-test-results-${{ matrix.label }}
           path: apps/web/test-results
