@@ -150,7 +150,7 @@ jobs:
 
       - name: Comment on PR with drift summary
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const postComment = require(`${process.env.GITHUB_WORKSPACE}/packages/adr/pr-comment.cjs`);
@@ -305,7 +305,7 @@ jobs:
         run: make ui-ci-build
 
       - name: Upload production web app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: web-production-build
           path: |
@@ -349,7 +349,7 @@ jobs:
           version: v1.7.1
 
       - name: Install Python (for Slither)
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -374,7 +374,7 @@ jobs:
       # rebuilds that facet instead of all 126 files. Artifacts are small -- 21MB of `out/` and
       # under a megabyte of `cache/`.
       - name: Cache Foundry build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             packages/contracts/out
@@ -448,7 +448,7 @@ jobs:
 
       - name: Upload Slither report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: slither-report
           path: packages/contracts/reports/slither-audit.md
@@ -456,7 +456,7 @@ jobs:
 
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: packages/contracts/reports/coverage/lcov.info
@@ -465,6 +465,19 @@ jobs:
   storybook:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Browsers and OS-level Playwright deps ship pre-baked in this image, so there is no
+    # apt-get step here for a slow package mirror to stall on multi-hundred-MB browser
+    # downloads -- the make install below still needs one tiny package (see Install make).
+    # Pin by digest so the image can't drift without a workflow diff; re-resolve with
+    # `docker buildx imagetools inspect mcr.microsoft.com/playwright:v1.60.0-noble` when
+    # bumping @playwright/test.
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
+      # --ipc=host: the default 64MB /dev/shm is too small for Chromium's shared-memory renderer
+      # IPC. Chromium's own sandbox is disabled via launchOptions in playwright.config.ts instead
+      # of granting SYS_ADMIN here -- narrower than a broad capability grant, safe because these
+      # tests only ever load this app's own pages, never untrusted content.
+      options: --ipc=host
 
     steps:
       - uses: actions/checkout@v7
@@ -480,9 +493,17 @@ jobs:
           node-version-file: ".nvmrc"
           cache: "pnpm"
 
-      - run: make install
+      # The image doesn't ship make, which every other step in this job goes through.
+      - name: Install make
+        run: apt-get update && apt-get install -y --no-install-recommends make
 
-      - run: make storybook-install-browsers
+      # actions/checkout marks the workspace safe for its own git process, but that doesn't
+      # carry over to later steps' git invocations (make install's git submodule update) in
+      # this container -- they still see it as dubious ownership without this.
+      - name: Mark workspace as a safe git directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - run: make install
 
       - run: make storybook-ci
         env:
@@ -490,7 +511,7 @@ jobs:
 
       - name: Upload Storybook
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: storybook-static
           path: apps/web/storybook-static
@@ -502,6 +523,12 @@ jobs:
   slap-chop-games:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # See storybook above for why this runs in Playwright's own image rather than
+    # `playwright install --with-deps` on ubuntu-latest, and why --ipc=host is set and the
+    # sandbox is disabled via launchOptions instead of granting SYS_ADMIN.
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
+      options: --ipc=host
 
     steps:
       - uses: actions/checkout@v7
@@ -517,6 +544,14 @@ jobs:
           node-version-file: ".nvmrc"
           cache: "pnpm"
 
+      # See storybook above: the image doesn't ship make.
+      - name: Install make
+        run: apt-get update && apt-get install -y --no-install-recommends make
+
+      # See storybook above: checkout's safe.directory doesn't carry over to later steps.
+      - name: Mark workspace as a safe git directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - run: make install
 
       - name: Run isolated Slap-Chop Games checks
@@ -526,8 +561,6 @@ jobs:
           make type-check slap-chop-games
           make test slap-chop-games
           make build slap-chop-games
-
-      - run: make storybook-install-browsers slap-chop-games
 
       - run: make storybook-ci slap-chop-games
         env:
@@ -539,7 +572,7 @@ jobs:
 
       - name: Upload Slap-Chop Games Storybook
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: slap-chop-games-storybook-static
           path: apps/slap-chop-games/storybook-static
@@ -547,7 +580,7 @@ jobs:
 
       - name: Upload Slap-Chop Games Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: slap-chop-games-playwright-report
           path: apps/slap-chop-games/playwright-report
@@ -555,7 +588,7 @@ jobs:
 
       - name: Upload Slap-Chop Games Playwright results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: slap-chop-games-playwright-test-results
           path: apps/slap-chop-games/test-results
@@ -604,6 +637,12 @@ jobs:
     needs: web-build
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # See storybook above for why this runs in Playwright's own image rather than
+    # `playwright install --with-deps` on ubuntu-latest, and why --ipc=host is set and the
+    # sandbox is disabled via launchOptions instead of granting SYS_ADMIN.
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble@sha256:9bd26ad900bb5e0f4dee75839e957a89ae89c2b7ab1e76050e559790e946b948
+      options: --ipc=host
     strategy:
       fail-fast: false
       matrix:
@@ -647,15 +686,21 @@ jobs:
           node-version-file: ".nvmrc"
           cache: "pnpm"
 
+      # See storybook above: the image doesn't ship make.
+      - name: Install make
+        run: apt-get update && apt-get install -y --no-install-recommends make
+
+      # See storybook above: checkout's safe.directory doesn't carry over to later steps.
+      - name: Mark workspace as a safe git directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - run: make install
 
       - name: Download production web app
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: web-production-build
           path: apps/web/.next
-
-      - run: make ui-ci-install-browsers UI_CI_BROWSER=${{ matrix.browser }}
 
       - name: Test ${{ matrix.label }}
         timeout-minutes: 6
@@ -669,7 +714,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-${{ matrix.label }}
           path: apps/web/playwright-report
@@ -677,7 +722,7 @@ jobs:
 
       - name: Upload Playwright test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-test-results-${{ matrix.label }}
           path: apps/web/test-results
