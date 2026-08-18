@@ -497,6 +497,12 @@ jobs:
       - name: Install make
         run: apt-get update && apt-get install -y --no-install-recommends make
 
+      # actions/checkout marks the workspace safe for its own git process, but that doesn't
+      # carry over to later steps' git invocations (make install's git submodule update) in
+      # this container -- they still see it as dubious ownership without this.
+      - name: Mark workspace as a safe git directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - run: make install
 
       - run: make storybook-ci
@@ -541,6 +547,10 @@ jobs:
       # See storybook above: the image doesn't ship make.
       - name: Install make
         run: apt-get update && apt-get install -y --no-install-recommends make
+
+      # See storybook above: checkout's safe.directory doesn't carry over to later steps.
+      - name: Mark workspace as a safe git directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - run: make install
 
@@ -679,6 +689,10 @@ jobs:
       # See storybook above: the image doesn't ship make.
       - name: Install make
         run: apt-get update && apt-get install -y --no-install-recommends make
+
+      # See storybook above: checkout's safe.directory doesn't carry over to later steps.
+      - name: Mark workspace as a safe git directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - run: make install
 
