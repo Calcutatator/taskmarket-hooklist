@@ -1,4 +1,4 @@
-// Implements: ADR-0092
+// Implements: ADR-0092, ADR-0095
 import { randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
 import os from 'os';
@@ -254,11 +254,25 @@ export async function initializeX402Policy(
   return EMPTY_X402_POLICY;
 }
 
+async function requireUnattendedConfirmation(
+  rule: X402PolicyRule,
+  confirmUnattended: (rule: X402PolicyRule) => Promise<boolean>
+): Promise<void> {
+  if (!rule.enabled || !rule.unattended) return;
+  if (!(await confirmUnattended(rule))) {
+    throw new Error(
+      `x402 policy rule '${rule.id}' grants unattended spending and was not confirmed`
+    );
+  }
+}
+
 export async function addX402PolicyRule(
   ruleInput: unknown,
-  policyPath: string = getX402PolicyPath()
+  policyPath: string = getX402PolicyPath(),
+  confirmUnattended: (rule: X402PolicyRule) => Promise<boolean> = async () => false
 ): Promise<X402Policy> {
   const rule = X402PolicyRuleSchema.parse(ruleInput);
+  await requireUnattendedConfirmation(rule, confirmUnattended);
   const policy = await loadX402Policy(policyPath, { allowMissing: true });
   if (policy.rules.some((candidate) => candidate.id === rule.id)) {
     throw new Error(`x402 policy rule '${rule.id}' already exists`);
@@ -284,16 +298,18 @@ export async function removeX402PolicyRule(
 export async function setX402PolicyRuleEnabled(
   id: string,
   enabled: boolean,
-  policyPath: string = getX402PolicyPath()
+  policyPath: string = getX402PolicyPath(),
+  confirmUnattended: (rule: X402PolicyRule) => Promise<boolean> = async () => false
 ): Promise<X402Policy> {
   const policy = await loadX402Policy(policyPath);
-  let found = false;
+  let target: X402PolicyRule | undefined;
   const rules = policy.rules.map((candidate) => {
     if (candidate.id !== id) return candidate;
-    found = true;
-    return { ...candidate, enabled };
+    target = { ...candidate, enabled };
+    return target;
   });
-  if (!found) throw new Error(`x402 policy rule '${id}' was not found`);
+  if (!target) throw new Error(`x402 policy rule '${id}' was not found`);
+  await requireUnattendedConfirmation(target, confirmUnattended);
   const next = parseX402Policy({ ...policy, rules });
   await saveX402Policy(next, policyPath);
   return next;

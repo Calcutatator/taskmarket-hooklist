@@ -463,3 +463,8 @@ adrs:
     title: "Drift age is computed at report time, and every check reports its scope"
     status: Accepted
     date: "2026-08-19"
+  - number: "0095"
+    file: "0095-unattended-x402-policy-rules-require-interactive-confirmation.md"
+    title: Unattended x402 policy rules require interactive confirmation
+    status: Accepted
+    date: "2026-08-19"

@@ -312,6 +312,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0092 — External x402 payments use a separate locally policy-gated client](0092-external-x402-payments-use-a-separate-locally-policy-gated-client.md)
 - [0093 — A vacated ADR number keeps a tombstone](0093-a-vacated-adr-number-keeps-a-tombstone.md)
 - [0094 — Drift age is computed at report time, and every check reports its scope](0094-drift-age-is-computed-and-every-check-reports-its-scope.md)
+- [0095 — Unattended x402 policy rules require interactive confirmation](0095-unattended-x402-policy-rules-require-interactive-confirmation.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

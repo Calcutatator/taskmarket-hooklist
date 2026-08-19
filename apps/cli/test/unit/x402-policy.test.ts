@@ -1,4 +1,4 @@
-// Verifies: ADR-0092
+// Verifies: ADR-0092, ADR-0095
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
@@ -239,13 +239,55 @@ describe('x402 policy', () => {
 
   it('adds, disables, enables and removes a rule atomically', async () => {
     await saveX402Policy({ version: 1, networks: policy().networks, rules: [] }, policyPath);
-    await addX402PolicyRule(policy().rules[0], policyPath);
+    await addX402PolicyRule(policy().rules[0], policyPath, async () => true);
     expect((await loadX402Policy(policyPath)).rules[0].enabled).toBe(true);
-    await setX402PolicyRuleEnabled('example', false, policyPath);
+    await setX402PolicyRuleEnabled('example', false, policyPath, async () => true);
     expect((await loadX402Policy(policyPath)).rules[0].enabled).toBe(false);
-    await setX402PolicyRuleEnabled('example', true, policyPath);
+    await setX402PolicyRuleEnabled('example', true, policyPath, async () => true);
     await removeX402PolicyRule('example', policyPath);
     expect((await loadX402Policy(policyPath)).rules).toEqual([]);
+  });
+
+  it('refuses to add an enabled unattended rule without confirmation', async () => {
+    await saveX402Policy({ version: 1, networks: policy().networks, rules: [] }, policyPath);
+    await expect(addX402PolicyRule(policy().rules[0], policyPath)).rejects.toThrow(
+      'was not confirmed'
+    );
+    await expect(
+      addX402PolicyRule(policy().rules[0], policyPath, async () => false)
+    ).rejects.toThrow('was not confirmed');
+    expect((await loadX402Policy(policyPath)).rules).toEqual([]);
+  });
+
+  it('adds an unattended rule that starts disabled without confirmation', async () => {
+    await saveX402Policy({ version: 1, networks: policy().networks, rules: [] }, policyPath);
+    const disabledRule = { ...policy().rules[0], enabled: false };
+    await addX402PolicyRule(disabledRule, policyPath);
+    expect((await loadX402Policy(policyPath)).rules[0].enabled).toBe(false);
+  });
+
+  it('adds a non-unattended rule without confirmation', async () => {
+    await saveX402Policy({ version: 1, networks: policy().networks, rules: [] }, policyPath);
+    const attendedRule = { ...policy().rules[0], unattended: false };
+    await addX402PolicyRule(attendedRule, policyPath);
+    expect((await loadX402Policy(policyPath)).rules[0].enabled).toBe(true);
+  });
+
+  it('refuses to enable an unattended rule without confirmation', async () => {
+    await saveX402Policy({ version: 1, networks: policy().networks, rules: [] }, policyPath);
+    const disabledRule = { ...policy().rules[0], enabled: false };
+    await addX402PolicyRule(disabledRule, policyPath);
+    await expect(setX402PolicyRuleEnabled('example', true, policyPath)).rejects.toThrow(
+      'was not confirmed'
+    );
+    expect((await loadX402Policy(policyPath)).rules[0].enabled).toBe(false);
+  });
+
+  it('disables an unattended rule without confirmation', async () => {
+    await saveX402Policy({ version: 1, networks: policy().networks, rules: [] }, policyPath);
+    await addX402PolicyRule(policy().rules[0], policyPath, async () => true);
+    await setX402PolicyRuleEnabled('example', false, policyPath);
+    expect((await loadX402Policy(policyPath)).rules[0].enabled).toBe(false);
   });
 
   it('keeps the published policy schema identical to the CLI schema', async () => {

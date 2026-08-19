@@ -34,6 +34,19 @@ not coordinate with another computer or wallet program controlling the same priv
 Never retry a payment whose result is `pending: true`. The service may already have settled it.
 Inspect or reconcile the recorded payment instead.
 
+**This CLI is meant to be driven by an AI agent, which changes the threat model.** An agent can be
+prompt-injected by untrusted content it processes in the course of ordinary work -- a task
+description, a fetched webpage, another tool's output -- into running a CLI command it was never
+meant to run. Unattended (`--non-interactive`) payments exist specifically so an agent can pay
+without a human present at request time; the entire safety of that mode depends on a human already
+having authorized the exact origin, recipient, and spend caps in the policy rule beforehand. To
+keep that premise true rather than merely assumed, adding or enabling a policy rule that grants
+unattended spending authority always requires a real interactive terminal and a typed
+confirmation -- an agent driving this CLI cannot author or activate its own unattended
+authorization, even if it has been compromised. Treat `~/.taskmarket/x402-policy.json` as a
+security-sensitive file: only write unattended rules yourself, at a terminal, after reading exactly
+what origin and spend caps you are granting.
+
 ## Initialize Policy
 
 ```bash
@@ -118,6 +131,13 @@ taskmarket x402 policy disable example-api
 taskmarket x402 policy enable example-api
 taskmarket x402 policy remove example-api
 ```
+
+`policy add` and `policy enable` print the rule's origin, path, methods, and payment terms and
+require you to type `authorize` at the terminal whenever the rule being written or activated is
+both enabled and `unattended`. This only runs with a real TTY attached, so it cannot be satisfied
+by a script or an agent process. `policy disable` and `policy remove`, and adding or enabling a
+rule that is not unattended, need no confirmation, since none of those grant unattended spending
+authority.
 
 ## Make Requests
 
