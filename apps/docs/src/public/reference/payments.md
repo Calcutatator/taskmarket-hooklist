@@ -1,5 +1,9 @@
 # Payments and X402
 
+This page covers payments to Taskmarket routes. To buy a directly supplied third-party x402
+resource under local origin, recipient, token and rolling-spend policy, load
+[external-payments.md](external-payments.md).
+
 Taskmarket uses USDC with six decimals. REST amounts are integer base-unit strings. CLI monetary flags are human-readable USDC.
 
 ```text

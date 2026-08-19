@@ -30,6 +30,11 @@ apps/cli/
 │   │   │   ├── set-withdrawal-address.ts  # taskmarket wallet set-withdrawal-address
 │   │   │   ├── withdraw-dreams.ts # taskmarket wallet withdraw-dreams
 │   │   └── publish-key.ts        # taskmarket wallet publish-key
+│   │   └── x402/
+│   │       ├── index.ts          # taskmarket x402
+│   │       ├── request.ts        # direct external GET/JSON POST buyer
+│   │       ├── policy.ts         # local policy management
+│   │       └── payments.ts       # journal inspection/reconciliation
 │   │   └── task/
 │   │       ├── index.ts          # taskmarket task (registers subcommands)
 │   │       ├── create.ts         # taskmarket task create
@@ -53,6 +58,12 @@ apps/cli/
 │       ├── output.ts             # JSON/human output helpers
 │       ├── signer.ts             # Private key decryption + signing
 │       ├── x402.ts               # Two-round X402 payment flow
+│       ├── external-x402-client.ts # Official exact/upto external buyer
+│       ├── x402-policy.ts        # Policy schema and matching
+│       ├── x402-journal.ts       # Concurrent spend reservations
+│       ├── x402-permit2.ts       # Bounded Permit2 approval lifecycle
+│       ├── x402-http.ts          # URL/header/body/response safety
+│       ├── x402-reconcile.ts     # Onchain nonce reconciliation
 │       ├── api.ts                # Fetch wrapper (apiGet, apiPost)
 │       ├── agent.ts              # Shared helpers (pollAgentId, etc.)
 │       └── encryption.ts         # ECIES encrypt/decrypt (secp256k1 + AES-256-GCM)
@@ -102,6 +113,9 @@ apps/cli/
 | `taskmarket task select-winner <taskId>` | Free | No |
 | `taskmarket task download <taskId>` | Free | No |
 | `taskmarket wallet publish-key` | Free | Yes |
+| `taskmarket x402 request <url>` | External quote | Yes |
+| `taskmarket x402 policy ...` | Free | No |
+| `taskmarket x402 payments ...` | Free, except RPC reads | No |
 | `taskmarket encrypt <file>` | Free | Yes |
 | `taskmarket decrypt <file>` | Free | Yes |
 
@@ -206,7 +220,9 @@ Exposed as:
 
 ### x402.ts
 
-Implements the two-round X402 flow for payment-gated endpoints:
+Implements the two-round X402 flow for Taskmarket payment-gated endpoints. It is deliberately not
+used for external services because it adds Taskmarket legal and idempotency headers and understands
+the platform's relayed-intent failures:
 
 **Round 1:** `POST <url>` with no payment header. Server returns HTTP 402 with payment requirements (amount, USDC address, payTo, EIP-712 domain).
 
@@ -217,6 +233,34 @@ Exported as:
 - `x402Get(path)` - same but GET (less common)
 
 Both rounds carry the same idempotency key: discovery and the paid retry are one logical write, and a fresh key on round 2 would present the paid round to the backend as a second operation.
+
+### External x402 buyer
+
+`external-x402-client.ts` uses pinned, matching `@x402/core`, `@x402/evm`, and `@x402/fetch`
+versions. It registers official EVM `exact` and `upto` schemes against the account returned by
+`createWalletAccountFromKeystore()`. The existing Taskmarket client above remains unchanged.
+
+Before the official client sees the signer, `x402-policy.ts` validates the exact origin, path,
+method, scheme, network, token, amount and authorization lifetime. `x402-journal.ts` then reserves
+the exact charge or `upto` maximum under an exclusive local lock. After dispatch, missing settlement
+evidence stays `unknown` and continues consuming the maximum until `x402-reconcile.ts` proves the
+authorization expired unused or establishes that its nonce was consumed.
+
+Permit2 allowance is never made unlimited automatically. `x402-permit2.ts` prefers bounded
+EIP-2612 or raw-approval sponsorship when advertised and policy-approved, otherwise sends a bounded
+direct approval through the policy's RPC after chain, gas and balance checks.
+
+Policy and journal paths default to `~/.taskmarket/x402-policy.json` and
+`~/.taskmarket/x402-payments.jsonl`; both are owner-only. Their test overrides are
+`TASKMARKET_X402_POLICY_PATH` and `TASKMARKET_X402_JOURNAL_PATH`. RPC URLs are referenced by the
+environment-variable names recorded per network in policy, so credentials are not stored in the
+policy file.
+
+Run `make smoke external-x402` for the protocol conformance smoke. It starts a disposable Anvil
+fork of Base, mints fork-only USDC to a fresh payer, serves local HTTPS x402 resources, and proves
+real EIP-3009 `exact`, partial Permit2 `upto`, zero `upto`, and nonce-replay behavior against the
+official facilitator implementations. It spends no real funds. Override the read-only fork source
+with `X402_SMOKE_FORK_URL`.
 
 ### api.ts
 

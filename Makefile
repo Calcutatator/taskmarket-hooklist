@@ -1084,6 +1084,8 @@ smoke:
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:xmtp; \
 	elif [ "$(word 1,$(ARGS))" = "xmtp-live" ]; then \
 		cd apps/cli && API_URL="$$SMOKE_API_URL" pnpm smoke:xmtp-live; \
+	elif [ "$(word 1,$(ARGS))" = "external-x402" ]; then \
+		cd apps/cli && pnpm smoke:x402-external; \
 	elif [ "$(word 1,$(ARGS))" = "auction-types" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:auction-types; \
 	elif [ "$(word 1,$(ARGS))" = "cancel-update" ]; then \
@@ -1155,7 +1157,7 @@ smoke:
 			docker run --rm taskmarket-sandbox-test; \
 		fi; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|cli|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator|visibility|submission-visibility|concurrent-tasks|nonce|payment-orphan-refund|rate-limit|sandbox>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|cli|wallet|withdraw|encryption|xmtp|xmtp-live|external-x402|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator|visibility|submission-visibility|concurrent-tasks|nonce|payment-orphan-refund|rate-limit|sandbox>"; \
 		exit 1; \
 	fi
 

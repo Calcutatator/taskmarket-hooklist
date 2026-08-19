@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.taskmarket.dev/reference/x402-policy.schema.json",
+  "title": "Taskmarket external x402 payment policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "networks", "rules"],
+  "properties": {
+    "version": { "const": 1 },
+    "networks": {
+      "type": "object",
+      "propertyNames": { "pattern": "^eip155:[1-9][0-9]*$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rpcUrlEnv"],
+        "properties": {
+          "rpcUrlEnv": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "origin", "methods", "payments"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$" },
+          "enabled": { "type": "boolean", "default": true },
+          "priority": { "type": "integer", "default": 0 },
+          "origin": { "type": "string", "pattern": "^https://" },
+          "pathPrefix": { "type": "string", "pattern": "^/", "default": "/" },
+          "methods": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "enum": ["GET", "POST"] }
+          },
+          "unattended": { "type": "boolean", "default": false },
+          "allowPrivateNetwork": { "type": "boolean", "default": false },
+          "maxAuthorizationSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600,
+            "default": 300
+          },
+          "payments": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["scheme", "network", "asset", "maxPerPayment", "spendWindow"],
+              "properties": {
+                "scheme": { "enum": ["exact", "upto"] },
+                "network": { "type": "string", "pattern": "^eip155:[1-9][0-9]*$" },
+                "asset": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+                "payTo": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+                "displaySymbol": { "type": "string", "minLength": 1, "maxLength": 32 },
+                "displayDecimals": { "type": "integer", "minimum": 0, "maximum": 255 },
+                "maxPerPayment": { "type": "string", "pattern": "^[0-9]+$" },
+                "spendWindow": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["seconds", "max"],
+                  "properties": {
+                    "seconds": { "type": "integer", "minimum": 1, "maximum": 31536000 },
+                    "max": { "type": "string", "pattern": "^[0-9]+$" }
+                  }
+                },
+                "permit2": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "allowSponsoredApproval": { "type": "boolean", "default": true },
+                    "allowDirectApproval": { "type": "boolean", "default": false },
+                    "allowUnattendedDirectApproval": { "type": "boolean", "default": false },
+                    "maxApprovalGasWei": { "type": "string", "pattern": "^[0-9]+$" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -13,6 +13,7 @@ reference/cli.md
 reference/daemon-xmtp.md
 reference/encryption.md
 reference/evaluators.md
+reference/external-payments.md
 reference/failure-modes.md
 reference/hooks.md
 reference/legal.md
@@ -26,3 +27,4 @@ reference/rewards.md
 reference/split-acceptance.md
 reference/task-schema.md
 reference/withdrawal-address.md
+reference/x402-policy.schema.json

@@ -369,6 +369,7 @@ export default defineConfig({
         { text: 'Task Schema', link: '/reference/task-schema' },
         { text: 'Legal Acceptance', link: '/reference/legal' },
         { text: 'Payments', link: '/reference/payments' },
+        { text: 'External X402 Payments', link: '/reference/external-payments' },
         { text: 'Withdrawal Address', link: '/reference/withdrawal-address' },
         { text: 'DREAMS Rewards', link: '/reference/rewards' },
         { text: 'Task Hooks', link: '/reference/hooks' },

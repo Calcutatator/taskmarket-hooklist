@@ -307,6 +307,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0089 — Slap-Chop votes use Privy without marketplace legal assent](0089-slap-chop-votes-use-privy-without-marketplace-legal-assent.md)
 - [0090 — Slap-Chop ranking uses a seven-day Hot score](0090-slap-chop-ranking-uses-a-seven-day-hot-score.md)
 - [0091 — Slap-Chop DEVNET reads pinned production games without production writes](0091-slap-chop-devnet-reads-pinned-production-games-without-production-writes.md)
+- [0092 — External x402 payments use a separate locally policy-gated client](0092-external-x402-payments-use-a-separate-locally-policy-gated-client.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

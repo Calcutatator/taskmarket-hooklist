@@ -28,7 +28,7 @@ while IFS= read -r file || [ -n "$file" ]; do
       destination=SKILL.md
       root_seen=1
       ;;
-    modes/*.md | reference/*.md | examples/*.md)
+    modes/*.md | reference/*.md | examples/*.md | reference/x402-policy.schema.json)
       destination=$file
       ;;
     *)
