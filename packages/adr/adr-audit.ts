@@ -184,6 +184,19 @@ function loadConfig(): AdrToolConfig {
 }
 
 const CONFIG = loadConfig();
+// Every date comparison resolves against this, so auditing one tree twice returns one verdict
+// rather than changing as grace windows expire.
+const AS_OF_ARG = process.argv.find((a) => a.startsWith('--as-of='));
+const EVALUATION_DATE = (() => {
+  const supplied = AS_OF_ARG?.slice('--as-of='.length);
+  if (!supplied) return new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(supplied)) {
+    console.error(`--as-of expects YYYY-MM-DD, got "${supplied}"`);
+    process.exit(1);
+  }
+  return supplied;
+})();
+
 const REALIZED_BY_GRACE_DAYS = CONFIG.realizedByStaleGraceDays ?? REALIZED_BY_STALE_GRACE_DAYS;
 const REQUIRE_ATTESTATION_FOR_REFRESH = CONFIG.requireAttestationForRefresh ?? true;
 // Whole-repo by default — a decision can be realized (or wrongly commented-on) anywhere,
@@ -365,7 +378,7 @@ function scanCode(entries: Map<string, AdrAuditEntry>): Map<string, string[]> {
 // for the report and for --refresh to detect.
 function scanRealizedBy(entries: Map<string, AdrAuditEntry>, discovered: Map<string, DiscoveredAdr>): Map<string, string[]> {
   const staleByNum = new Map<string, string[]>();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = EVALUATION_DATE;
   for (const [num, adr] of discovered) {
     if (adr.realizedByLocators.length === 0) continue;
     const daysSinceAudited = adr.lastAudited ? daysBetween(adr.lastAudited, today) : Number.POSITIVE_INFINITY;
@@ -407,7 +420,7 @@ interface DriftReport {
 // not pre-rendered prose): meant to be consumed by a reviewer (human or agent) deciding which IDs
 // to apply, not read as a report on its own.
 function detectRealizedByDrift(discovered: Map<string, DiscoveredAdr>): DriftReport {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = EVALUATION_DATE;
   const entries: DriftEntry[] = [];
   for (const [num, adr] of discovered) {
     const daysSinceLastAudited = adr.lastAudited ? daysBetween(adr.lastAudited, today) : Number.POSITIVE_INFINITY;
@@ -443,7 +456,7 @@ function detectRealizedByDrift(discovered: Map<string, DiscoveredAdr>): DriftRep
 function applyRealizedByRefresh(discovered: Map<string, DiscoveredAdr>, filter: (entry: DriftEntry) => boolean, attestedBy: string): number {
   const drift = detectRealizedByDrift(discovered);
   const selected = drift.entries.filter(filter);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = EVALUATION_DATE;
   const byRecord = new Map<string, DriftEntry[]>();
   for (const entry of selected) {
     if (!byRecord.has(entry.record)) byRecord.set(entry.record, []);
@@ -516,7 +529,7 @@ function renderReport(
   staleByNum: Map<string, string[]> = new Map(),
   commentViolations: Map<string, string[]> = new Map()
 ): string {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = EVALUATION_DATE;
   const sorted = [...entries].sort((a, b) => a.number.localeCompare(b.number));
   const lines: string[] = [
     `# ADR Audit Report — ${today}`,
@@ -672,7 +685,7 @@ function main(): void {
 
   const entryList = [...entries.values()];
   const report = renderReport(entryList, staleByNum, commentViolations);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = EVALUATION_DATE;
   const summary = buildAuditSummary(entryList, today);
 
   const outDir = path.join(REPO_ROOT, 'docs', 'adr-audit');
