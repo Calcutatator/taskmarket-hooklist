@@ -71,3 +71,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # changesets/action commits the version bump and changelog itself; that commit
+          # otherwise re-triggers this repo's own pre-commit hook (full-monorepo lint/
+          # type-check/format/skill-conformance/docs-og-check), which is redundant here --
+          # every changed line already passed that same hook and full CI on the PR that
+          # merged it, and the hook's Playwright/Chromium install step alone can eat the
+          # runner's 30-minute job timeout.
+          HUSKY: 0
