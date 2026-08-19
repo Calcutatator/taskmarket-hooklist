@@ -1,7 +1,7 @@
 # Decision-record drift history and check scope
 
-> Version: 0.1 | Date: 2026-08-12 | Status: Draft
-> **Implements ADRs:** (none yet — each section names the ADR it needs first)
+> Version: 0.2 | Date: 2026-08-19 | Status: Draft
+> **Implements ADRs:** ADR-0094 (§1, §2)
 
 ## Purpose
 
@@ -28,55 +28,66 @@ step in the `adr` job. It is genuinely enforced — a failure fails that job —
 
 ## Design / Architecture
 
-### 1. An append-only drift ledger
+### 1. A drift age, computed at report time
 
-Append **one line per run** to a tracked `docs/adr-audit-ledger.md`:
+When the audit reports a record as drifted, it also reports **how long the stated claim has held its
+current value**:
 
-```markdown
-| Date | Drifting | Examined | Change since previous run |
-|---|---|---|---|
-| 2026-08-12 | 0 | 84 | — |
-| 2026-08-13 | 1 | 85 | +0042 |
-| 2026-08-20 | 0 | 85 | -0042 |
+```text
+ADR-0042: stated 'Implemented' but computed 'Verified'
+          stated value unchanged since 2026-07-29 (21 days)
 ```
 
-Date, drift count, records examined, and **which records started or stopped drifting** since the
-previous line. The delta is what makes a line worth reading: a count alone cannot distinguish "the
-same alert, still open" from "a different record started drifting today", and that distinction is
-exactly what is missing today.
+The date comes from this repository's own history of that file, resolved for the records already
+flagged and only those. A clean corpus performs no lookups; a run with three alerts performs three.
+That is what makes this affordable where replaying the corpus is not.
 
-**Why not simply track the generated report.** `docs/adr-audit/report.md` is a regenerated table of
-every record. This repository has hundreds of branches, and a large share of them touch `docs/adr/`
-— committing a whole-file regenerated table would produce a conflict on nearly every one, in a
-*derived* file whose only honest conflict resolution is to re-run the tool. Hand-merging generated
-output is meaningless work.
+**What the number means, exactly.** It dates the *claim*, not the drift. Drift begins at the later
+of the claim being set and the evidence changing, so the interval is an **upper bound** on how long
+the disagreement has existed. The wording says "stated value unchanged since" rather than "drifting
+for" because the tool cannot honestly say the second.
 
-What makes a file committable here is not its size but its **write shape**: two branches that each
-append a different line merge cleanly; two that each rewrite the same table do not. That property,
-not the content, is the reason the ledger is tracked and the report is not.
+The search must be `git log -G` over the field's list item, not `git log -S`. `-S` counts
+occurrences of a string, and editing a field's *value* leaves that count unchanged — it would skip
+exactly the commits being looked for and return the commit that introduced the field, presenting a
+record's creation date as the age of its current claim.
 
-**Appended in CI only, on merge to the default branch.** Not in the pre-commit hook: a local commit
-attempt is not an event worth a history entry, several commits on one branch would each append one,
-and a hook that adds a file to a commit changes what the author is committing without telling them.
-One entry per merge is the cadence that keeps the file readable.
+**Fail soft.** If the history cannot be read — a shallow clone, a record not yet committed — the
+alert is reported without an age. An unavailable age is never a reason to withhold the finding.
 
-The flag is opt-in for the same reason `--fail-on-drift` is: a plain local run must not write to a
-tracked file as a side effect of asking a question.
+**Why not an append-only ledger.** A tracked `docs/adr-audit-ledger.md`, appended one line per run,
+was the first design and does not work here.
 
-**The delta is replayed, not stored.** "What is drifting now" is the sum of every `+NNNN` minus
-every `-NNNN` in order. That is why the file is append-only: reordering or editing a line silently
-changes the answer. It is a convention, not a mechanism, and the spec states it rather than assuming
-it.
+The job that runs these checks declares `contents: read` (`.github/workflows/ci.yml`). A ledger step
+in it cannot write to the repository at all. Widening that job's token to `contents: write` to let a
+reporting step commit a log is a poor trade: it grants every step in the job the ability to write to
+the repository, in exchange for a convenience feature. And a ledger step that silently fails to
+append is worse than no ledger, because a gap in the history reads as an absence of drift rather
+than as an absence of data.
+
+There is a second problem, independent of permissions. `--fail-on-drift` runs in CI and in
+`.husky/pre-commit`, so drift blocks the merge. The default branch is therefore drift-free by
+construction, and a per-run series recorded there is a column of zeros — the ledger's own example
+above shows a `1` on a line that this repository's gate would not have allowed to land. The
+information worth having is not the state on the default branch but the **event**: drift caught,
+drift resolved, and how long the claim stood. The age above is that, computed on demand, with no
+write path to go stale or to fail silently.
 
 ### 2. The audit reports what it examined
 
 The audit's JSON gains the same shape the other checks on this branch already emit:
 
 ```json
-{ "status": "clean", "driftCount": 0, "adrsExamined": 84, "scope": { "source": "tracked-sweep", "base": null } }
+{ "status": "ok | warn | error | not-run", "driftCount": 0, "filesExamined": 84, "blocking": false, "scope": { "source": "tracked-sweep", "base": null } }
 ```
 
-`status` becomes `not-run` — never `clean` — when nothing was examined. A zero finding count is
+The field is `filesExamined`, the name `adr-lint` and `spec-lint` already use, and the vocabulary is
+theirs too. The audit currently reports `drift | clean`, a private vocabulary that forces a consumer
+reading all three results to know which tool produced which. `status` says what was found; whether
+that fails a build is the caller's choice and lives in `blocking`, so drift is a `warn` here even
+when `--fail-on-drift` turns it into a failing exit.
+
+`status` becomes `not-run` — never `ok` — when nothing was examined. A zero finding count is
 otherwise the same statement whether the tool swept the corpus or matched no files, and stdout is
 the channel an agent reads.
 
@@ -88,27 +99,33 @@ able to see which governance checks run.
 
 ## Interfaces / Contracts
 
-**`adr-audit.ts`** gains `--append-ledger`. Ledger path: `docs/adr-audit-ledger.md`, tracked,
-distinct from the gitignored `docs/adr-audit/` directory.
+**`adr-audit.ts`** reports a drift age alongside each drift alert. No new flag, no new file, and
+no write path: the age is derived on every run that has something to report it for.
 
-**Pure helpers in `lib.ts`, not in the CLI**, so they are testable without running the audit:
-replaying a ledger's delta column to a set of drifting numbers, and formatting the change between
-two such sets. The CLI keeps only the file read/write.
+**The history lookup lives behind its own seam**, taking a repository root as an argument rather
+than reading a module-level constant, so it can be exercised against a purpose-built repository.
+A test that can only run against the shipped corpus cannot pin the dates it asserts on.
+
+**Formatting stays a pure helper in `lib.ts`**, testable without a repository at all: given a date
+and an evaluation date, produce the sentence. Both inputs are validated as real calendar dates —
+`Date.parse` rolls `2026-02-30` forward to March 2, which would turn a malformed date into a
+plausible age rather than no answer.
 
 **JSON contract** as in Design §2; existing fields are unchanged and additive.
 
-**CI**: one new step in the `adr` job for the linter; one new step, guarded to pushes on the default
-branch, for the ledger append.
+**CI**: one new step in the `adr` job for the linter. Nothing is committed by CI.
 
 ## Testing & Verification
 
-- Replaying a ledger with `+0042, +0062` then `-0042` yields exactly `{0062}`.
-- An empty or header-only ledger yields nothing drifting; prose that merely mentions `+0042` is not
-  parsed as an entry.
-- An unchanged drifting set renders `—`, which reads as "no change", not as "no drift".
-- A format round trip is stable: replay a ledger, compute a delta against a new set, append it, and
-  replaying the result gives that new set back.
-- The audit reports `adrsExamined` matching the corpus size, and `not-run` when it examines nothing.
+- Against a purpose-built repository, three commits that change only the `Embodiment` value resolve
+  to the date of the last one. Under `-S` this same case resolves to the first, so the test fails
+  against the wrong implementation — which is what makes it worth having.
+- A commit that rewrites surrounding prose without touching the field does not move the date.
+- An impossible date (`2026-02-30`, `2026-13-01`) yields no age rather than a plausible one; a real
+  leap day (`2028-02-29`) still yields one.
+- Outside a repository, or for a number with no matching record, the age is absent and nothing
+  throws.
+- The audit reports `filesExamined` matching the corpus size, and `not-run` when it examines nothing.
 - The `adr` job's log shows the linter running as its own step.
 
 **Applies to every check here:** a result that reports zero findings must also report what it looked
@@ -117,7 +134,9 @@ branch's other checks already follow, applied to the one that does not.
 
 ## Non-goals
 
-- **Tracking the generated report.** See Design §1 — it is derived output whose write shape does not
+- **A stored drift history of any kind.** See Design §1 — the permissions it needs are not available
+  to the job that would write it, and the series it would record is flat by construction.
+- **Tracking the generated report.** It is derived output whose write shape does not
   survive concurrent branches.
 - **A trend view** (drift over time, mean time-to-resolution). Possible once entries exist; not built
   here.
@@ -128,7 +147,8 @@ branch's other checks already follow, applied to the one that does not.
 ## References
 
 - ADR-0082, ADR-0083, ADR-0084 — the record work on this branch that this spec follows.
-- `packages/adr/adr-audit.ts` — `--fail-on-drift` today, `--append-ledger` proposed.
-- `packages/adr/lib.ts` — where the pure ledger helpers belong.
+- `packages/adr/adr-audit.ts` — `--fail-on-drift`, and where the drift age is reported.
+- `packages/adr/lib.ts` — where the age formatting belongs.
+- `packages/adr/spec-lint.ts` — the one check with no machine-readable channel at all.
 - `.github/workflows/ci.yml`, `Makefile` (`ci-quality-js`) — the CI surface §3 changes.
 - `.gitignore` — the `docs/adr-audit/` exclusion this spec deliberately keeps.

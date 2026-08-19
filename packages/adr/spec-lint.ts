@@ -79,9 +79,9 @@ function runCli(specDir: string, adrDir: string): void {
   const { issues, specFiles } = lintSpecs(specs, adrNumbers);
 
   for (const issue of issues) {
-    console.log(formatIssueLine(issue));
+    console.error(formatIssueLine(issue));
     if (process.env.GITHUB_ACTIONS) {
-      console.log(formatGithubAnnotation(issue, normalizeIssueFilePath(issue.file, 'docs/specs')));
+      console.error(formatGithubAnnotation(issue, normalizeIssueFilePath(issue.file, 'docs/specs')));
     }
   }
 
@@ -89,15 +89,33 @@ function runCli(specDir: string, adrDir: string): void {
   const warnCount = issues.filter((i) => i.type === 'WARN').length;
   if (specFiles.length > 0) {
     if (errorCount === 0 && warnCount === 0) {
-      console.log(`  ${specFiles.length} spec(s) OK`);
+      console.error(`  ${specFiles.length} spec(s) OK`);
     } else if (errorCount === 0) {
-      console.log(`  ${specFiles.length} spec(s) OK (${warnCount} warning(s))`);
+      console.error(`  ${specFiles.length} spec(s) OK (${warnCount} warning(s))`);
     } else {
-      console.log(`\n  ${errorCount} error(s), ${warnCount} warning(s)`);
+      console.error(`\n  ${errorCount} error(s), ${warnCount} warning(s)`);
     }
   } else {
-    console.log('Spec lint passed (0 specs checked).');
+    console.error('Spec lint passed (0 specs checked).');
   }
+
+  // Implements: ADR-0094
+  // stdout is the machine-readable channel. Without it, "0 errors" on stderr is the same
+  // statement whether the corpus was swept or no spec files matched at all.
+  console.log(
+    JSON.stringify(
+      {
+        status: specFiles.length === 0 ? 'not-run' : errorCount > 0 ? 'error' : warnCount > 0 ? 'warn' : 'ok',
+        filesExamined: specFiles.length,
+        scope: { source: 'tracked-sweep', base: null },
+        errorCount,
+        warnCount,
+        issues,
+      },
+      null,
+      2
+    )
+  );
 
   process.exit(errorCount > 0 ? 1 : 0);
 }

@@ -89,6 +89,7 @@ import {
   checkRealizedByLocator,
   computeDrift,
   computeEmbodiment,
+  describeClaimAge,
   fieldValue,
   findCommentAdrRefs,
   findAnyAdrRefs,
@@ -109,6 +110,7 @@ import {
   resolveRealizedByRefs,
   stripIgnoredLines,
 } from './lib.js';
+import { statedEmbodimentLastChanged } from './git-history.js';
 
 // Git-native content hash: `git hash-object` computes the exact blob SHA git itself would
 // assign this file's current working-tree content (uncommitted edits included) — directly
@@ -695,8 +697,17 @@ function main(): void {
   console.error(`Wrote ${path.join(outDir, 'report.md')}`);
   console.error(`Wrote ${path.join(outDir, 'summary.json')}`);
 
-  const driftCount = entryList.filter((e) => computeDrift(e)).length;
+  const filesExamined = entryList.length;
+  const drifted = entryList.filter((e) => computeDrift(e));
+  const driftCount = drifted.length;
   console.error(`Drift alerts: ${driftCount}`);
+  // Implements: ADR-0094
+  // Resolved per drifted record, so a clean corpus performs no history lookups at all.
+  for (const e of drifted) {
+    console.error(`  ADR-${e.number}: stated '${e.statedEmbodiment}' but computed '${computeEmbodiment(e)}'`);
+    const age = describeClaimAge(statedEmbodimentLastChanged(REPO_ROOT, ADR_DIR, e.number), EVALUATION_DATE);
+    if (age) console.error(`            ${age}`);
+  }
   if (staleByNum.size > 0) {
     console.error(`Realized-by hash mismatches still in grace: ${staleByNum.size} (run --refresh once confirmed fine)`);
   }
@@ -728,7 +739,10 @@ function main(): void {
   console.log(
     JSON.stringify(
       {
-        status: driftCount > 0 ? 'drift' : 'clean',
+        status: filesExamined === 0 ? 'not-run' : driftCount > 0 ? 'warn' : 'ok',
+        filesExamined,
+        scope: { source: 'tracked-sweep', base: null },
+        blocking: failOnDrift && driftCount > 0,
         driftCount,
         graceCount: staleByNum.size,
         commentViolationCount: commentViolations.size,

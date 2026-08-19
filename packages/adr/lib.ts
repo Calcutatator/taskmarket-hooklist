@@ -2016,3 +2016,30 @@ export function lintSpecs(specs: SpecFile[], adrNumbers: Set<string>): SpecLintR
   }
   return { issues, specFiles: specs.map((s) => s.path) };
 }
+
+// Implements: ADR-0094
+/**
+ * How long a record's stated Embodiment has held its current value.
+ *
+ * This dates the claim, not the drift: drift begins at the later of the claim being set and the
+ * evidence changing, so the interval is an upper bound on how long the disagreement has existed,
+ * and the wording that reports it must not imply otherwise.
+ */
+export function describeClaimAge(lastChanged: string | null, asOf: string): string | null {
+  if (!lastChanged) return null;
+  const from = parseCalendarDate(lastChanged);
+  const to = parseCalendarDate(asOf);
+  if (from === null || to === null) return null;
+  const days = Math.round((to - from) / 86_400_000);
+  if (days < 0) return null;
+  return `stated value unchanged since ${lastChanged} (${days} day${days === 1 ? '' : 's'})`;
+}
+
+// Date.parse rolls impossible dates forward -- "2026-02-30" becomes March 2 -- so a malformed date
+// would otherwise yield a plausible age instead of no answer at all.
+function parseCalendarDate(value: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const ms = Date.parse(`${value}T00:00:00Z`);
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString().slice(0, 10) === value ? ms : null;
+}
