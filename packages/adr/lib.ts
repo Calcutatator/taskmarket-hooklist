@@ -690,6 +690,15 @@ export function checkSupersessionReciprocity({
   return results;
 }
 
+// A Withdrawn record may be a tombstone on a vacated number, where no decision was ever made.
+// Requiring a Y-statement, a rejected alternative or a Decision section of such a record forces it
+// to invent one to pass.
+export const DECISIONLESS_STATUSES = new Set(['Withdrawn']);
+
+export function statesADecision(status: string | null): boolean {
+  return status === null || !DECISIONLESS_STATUSES.has(status);
+}
+
 export function checkRequiredSections(content: string, file: string): Issue[] {
   const issues: Issue[] = [];
   for (const aliases of REQUIRED_SECTIONS) {
@@ -1429,9 +1438,11 @@ export function lintAdrDir(
     issues.push(...checkDateField(content, file));
     issues.push(...checkAcceptedField(content, file, status));
     issues.push(...checkStatusEmbodimentConsistency(content, file, status));
-    issues.push(...checkRequiredSections(content, file));
-    issues.push(...checkYStatement(content, file));
-    issues.push(...checkConsideredOptionsMinimum(content, file));
+    if (statesADecision(status)) {
+      issues.push(...checkRequiredSections(content, file));
+      issues.push(...checkYStatement(content, file));
+      issues.push(...checkConsideredOptionsMinimum(content, file));
+    }
     issues.push(...checkAuthorReviewersDeciders(content, file, status, allowAuthorSelfReview));
   }
 

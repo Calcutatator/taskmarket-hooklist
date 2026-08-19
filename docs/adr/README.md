@@ -231,6 +231,8 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0009 — Legal acceptance is enforced by an opaque bearer receipt checked by default-deny middleware](0009-legal-acceptance-opaque-receipt-default-deny-middleware.md)
 - [0010 — Legal bundle changes are versioned by content digest and invalidate all prior acceptance](0010-legal-bundle-content-digest-invalidates-prior-acceptance.md)
 - [0011 — Diamond facet selectors get one shared source of truth, and upgrades become explicit versioned steps](0011-diamond-selectors-single-source-and-versioned-upgrades.md)
+- [0012 — Vacated: renumbered to ADR-0015](0012-vacated-renumbered-to-0015.md)
+- [0013 — Vacated: renumbered to ADR-0016](0013-vacated-renumbered-to-0016.md)
 - [0014 — Task visibility stays public by default; unlisted and private are strictly opt-in](0014-task-visibility-public-by-default-opt-in.md)
 - [0015 — Phase 1's `agents.inbox` gets a scoped self-auth check, not a general read-auth framework](0015-phase1-inbox-scoped-self-auth-not-general-framework.md)
 - [0016 — Submission visibility is an independent axis from task visibility, defaulting to public and locked in at creation](0016-submission-visibility-independent-axis-default-public.md)
@@ -308,6 +310,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0090 — Slap-Chop ranking uses a seven-day Hot score](0090-slap-chop-ranking-uses-a-seven-day-hot-score.md)
 - [0091 — Slap-Chop DEVNET reads pinned production games without production writes](0091-slap-chop-devnet-reads-pinned-production-games-without-production-writes.md)
 - [0092 — External x402 payments use a separate locally policy-gated client](0092-external-x402-payments-use-a-separate-locally-policy-gated-client.md)
+- [0093 — A vacated ADR number keeps a tombstone](0093-a-vacated-adr-number-keeps-a-tombstone.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

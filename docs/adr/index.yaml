@@ -58,6 +58,16 @@ adrs:
     title: "Diamond facet selectors get one shared source of truth, and upgrades become explicit versioned steps"
     status: Accepted
     date: "2026-07-20"
+  - number: "0012"
+    file: "0012-vacated-renumbered-to-0015.md"
+    title: "Vacated: renumbered to ADR-0015"
+    status: Withdrawn
+    date: "2026-07-20"
+  - number: "0013"
+    file: "0013-vacated-renumbered-to-0016.md"
+    title: "Vacated: renumbered to ADR-0016"
+    status: Withdrawn
+    date: "2026-07-20"
   - number: "0014"
     file: "0014-task-visibility-public-by-default-opt-in.md"
     title: "Task visibility stays public by default; unlisted and private are strictly opt-in"
@@ -443,3 +453,8 @@ adrs:
     title: "External x402 payments use a separate locally policy-gated client"
     status: Accepted
     date: "2026-08-19"
+  - number: "0093"
+    file: "0093-a-vacated-adr-number-keeps-a-tombstone.md"
+    title: A vacated ADR number keeps a tombstone
+    status: Proposed
+    date: "2026-08-18"

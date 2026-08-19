@@ -65,6 +65,7 @@ import {
   KNOWN_HEADER_KEYS,
   ACCEPTANCE_BEARING_STATUSES,
   checkRequiredSections,
+  statesADecision,
   checkYStatement,
   checkConsideredOptionsMinimum,
   checkAuthorReviewersDeciders,
@@ -1435,6 +1436,63 @@ describe('checkStatusEmbodimentConsistency', () => {
       return checkStatusEmbodimentConsistency(content, f, status);
     });
     expect(issues).toEqual([]);
+  });
+});
+
+describe('statesADecision', () => {
+  test('a Withdrawn record is exempt from the checks that presuppose a decision', () => {
+    expect(statesADecision('Withdrawn')).toBe(false);
+  });
+
+  test('every other status still states a decision', () => {
+    for (const status of [...VALID_STATUSES].filter((s) => s !== 'Withdrawn')) {
+      expect(statesADecision(status)).toBe(true);
+    }
+  });
+
+  test('an unreadable status is treated as stating a decision, so the checks still run', () => {
+    expect(statesADecision(null)).toBe(true);
+  });
+});
+
+describe('tombstone records', () => {
+  const tombstone = [
+    '# 0012 — Vacated: renumbered',
+    '',
+    '- **Status:** Withdrawn',
+    '- **Date:** 2026-07-20',
+    '- **Embodiment:** Inactive',
+    '',
+    'No decision was made under this number.',
+    '',
+  ].join('\n');
+
+  const structuralErrors = (dir: string): string[] =>
+    lintAdrDir(dir)
+      .issues.filter((i) => i.type === 'ERROR')
+      .map((i) => i.message)
+      .filter((m) => /Y-statement|required section|rejected alternative/.test(m));
+
+  test('a tombstone raises none of the checks that presuppose a decision', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'adr-tombstone-'));
+    try {
+      writeFileSync(join(dir, '0012-vacated.md'), tombstone);
+      expect(structuralErrors(dir)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('the same body under a decision-bearing status still fails those checks', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'adr-tombstone-'));
+    try {
+      writeFileSync(join(dir, '0012-vacated.md'), tombstone.replace('**Status:** Withdrawn', '**Status:** Accepted'));
+      const messages = structuralErrors(dir);
+      expect(messages.some((m) => /Y-statement/.test(m))).toBe(true);
+      expect(messages.some((m) => /## Decision/.test(m))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
