@@ -15,7 +15,7 @@ help:
 	@echo "  make install              - Same as init"
 	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet|preview)"
 	@echo "  make release              - Tag and push a production release (deploys backend + frontend)"
-	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|slap-chop-games|slap-chop-games-storybook|docs|discord-app|shared|html-sandbox|contracts|storybook|all); 'contracts' also regenerates packages/contracts/abi/ (JSON + typed bindings)"
+	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|slap-chop-games|slap-chop-games-storybook|docs|discord-app|shared|html-sandbox|contracts|cli|storybook|all); 'contracts' also regenerates packages/contracts/abi/ (JSON + typed bindings)"
 	@echo "  make dev [storybook]      - Start all dev servers, optionally with Storybook"
 	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|slap-chop-games|slap-chop-games-local|slap-chop-games-live|discord-app|discord-stack|mock-api|mock-web|docs|anvil|storybook)"
 	@echo "  make discord <register|disable|smoke|signed-smoke> - Manage commands and verify Discord app seams"
@@ -318,11 +318,13 @@ release:
 build:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make build <backend|frontend|web|slap-chop-games|slap-chop-games-storybook|docs|discord-app|shared|html-sandbox|contracts|storybook|all>"; \
+		echo "Usage: make build <backend|frontend|web|slap-chop-games|slap-chop-games-storybook|docs|discord-app|shared|html-sandbox|contracts|cli|storybook|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo build && \
 		$(MAKE) build contracts; \
+	elif [ "$(word 1,$(ARGS))" = "cli" ]; then \
+		pnpm --filter @lucid-agents/taskmarket... build; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
 		pnpm --filter @taskmarket/shared build && \
 		pnpm --filter @taskmarket/html-sandbox build && \
@@ -358,7 +360,7 @@ build:
 		cd packages/contracts && pnpm generate-abi; \
 	else \
 		echo "Unknown app or package: $(word 1,$(ARGS))"; \
-		echo "Usage: make build <backend|frontend|web|slap-chop-games|slap-chop-games-storybook|docs|discord-app|shared|html-sandbox|contracts|storybook|all>"; \
+		echo "Usage: make build <backend|frontend|web|slap-chop-games|slap-chop-games-storybook|docs|discord-app|shared|html-sandbox|contracts|cli|storybook|all>"; \
 		exit 1; \
 	fi
 
@@ -1173,17 +1175,17 @@ dither-kit:
 	cd apps/web && \
 	DO_NOT_TRACK=1 pnpm dlx @dither-kit/cli@0.1.1 --yes --no-input --no-color $(ARGS)
 
-# "cli" is also a smoke mode (make smoke cli) and a type-check/test app name
-# (make type-check cli, make test cli). Whenever one of those is the actual
-# invoked goal, make treats "cli" as a second real goal alongside it and would
-# otherwise execute this recipe standalone too -- as "node apps/cli/dist/index.js
-# cli", which fails since "cli" isn't a CLI subcommand. No-op instead whenever
-# any of those is the actual invoked goal, leaving "make cli [args]" itself
-# unaffected.
+# "cli" is also a smoke mode (make smoke cli), a build app name (make build
+# cli), and a type-check/test app name (make type-check cli, make test cli).
+# Whenever one of those is the actual invoked goal, make treats "cli" as a
+# second real goal alongside it and would otherwise execute this recipe
+# standalone too -- as "node apps/cli/dist/index.js cli", which fails since
+# "cli" isn't a CLI subcommand. No-op instead whenever any of those is the
+# actual invoked goal, leaving "make cli [args]" itself unaffected.
 cli:
 	@$(ENV_LOADER) && \
 	case "$(word 1,$(MAKECMDGOALS))" in \
-		smoke|type-check|test|lint-check|lint-fix|format-check|format-fix) exit 0 ;; \
+		smoke|build|type-check|test|lint-check|lint-fix|format-check|format-fix) exit 0 ;; \
 	esac; \
 	pnpm --filter @lucid-agents/taskmarket... build && \
 	if [ -n "$(ARGS)" ]; then \
