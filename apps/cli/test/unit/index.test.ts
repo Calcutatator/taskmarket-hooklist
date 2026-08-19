@@ -48,6 +48,7 @@ vi.mock('../../src/commands/daemon.js', () => ({ daemonCommand: dummyCommand }))
 vi.mock('../../src/commands/email/index.js', () => ({ emailCommand: dummyCommand }));
 vi.mock('../../src/commands/requester/index.js', () => ({ requesterCmd: dummyCommand }));
 vi.mock('../../src/commands/legal/index.js', () => ({ legalCommand: dummyCommand }));
+vi.mock('../../src/commands/x402/index.js', () => ({ x402Command: dummyCommand }));
 
 async function flushMicrotasks() {
   await new Promise((resolve) => setTimeout(resolve, 0));

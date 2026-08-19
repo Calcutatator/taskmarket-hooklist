@@ -2,6 +2,7 @@ import { isInFlightApiError } from '@taskmarket/shared';
 
 import { ApiError } from './api.js';
 import { idempotencyKeyForError } from './idempotency.js';
+import { ExternalX402Error } from './x402-errors.js';
 
 /**
  * The CLI's success envelope. `idempotencyKey` sits beside `data`, not inside it: `data` is the
@@ -72,6 +73,7 @@ export function renderFailure(
 ): void {
   const message = error instanceof Error ? error.message : (options?.fallback ?? String(error));
   const apiError = error instanceof ApiError ? error : undefined;
+  const externalX402Error = error instanceof ExternalX402Error ? error : undefined;
   const idempotencyKey =
     options?.idempotencyKey ?? apiError?.idempotencyKey ?? idempotencyKeyForError(error);
   const envelope = apiError?.envelope;
@@ -80,9 +82,15 @@ export function renderFailure(
     JSON.stringify({
       ok: false,
       error: message,
-      ...(apiError !== undefined ? { status: apiError.status } : {}),
+      ...(apiError !== undefined
+        ? { status: apiError.status }
+        : externalX402Error?.status !== undefined
+          ? { status: externalX402Error.status }
+          : {}),
       ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       ...(envelope !== undefined ? { ...envelope, pending: isInFlightApiError(envelope) } : {}),
+      ...(externalX402Error?.pending !== undefined ? { pending: externalX402Error.pending } : {}),
+      ...(externalX402Error?.payment !== undefined ? { payment: externalX402Error.payment } : {}),
       ...(options?.details ?? {}),
     }) + '\n'
   );

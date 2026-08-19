@@ -19,6 +19,7 @@ import { daemonCommand } from './commands/daemon.js';
 import { emailCommand } from './commands/email/index.js';
 import { requesterCmd } from './commands/requester/index.js';
 import { legalCommand } from './commands/legal/index.js';
+import { x402Command } from './commands/x402/index.js';
 import { renderFailure } from './lib/output.js';
 
 const require = createRequire(import.meta.url);
@@ -46,6 +47,7 @@ program.addCommand(daemonCommand);
 program.addCommand(emailCommand);
 program.addCommand(requesterCmd);
 program.addCommand(legalCommand);
+program.addCommand(x402Command);
 
 void (async () => {
   try {

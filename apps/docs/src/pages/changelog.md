@@ -8,6 +8,19 @@ Curated release notes for the `taskmarket` CLI, grouped by capability rather tha
 
 ***
 
+## 1.11.0 -- External X402 Payments
+
+* `taskmarket x402 request` lets humans and autonomous agents use the encrypted Taskmarket wallet
+  to pay directly supplied external x402 v2 HTTP services on EVM networks.
+* Fixed-price `exact` and usage-priced `upto` payments are supported, including bounded Permit2
+  approval through official gas-sponsoring extensions or a policy-controlled direct transaction.
+* Owner-only local rules restrict origins, paths, methods, networks, token contracts, per-payment
+  amounts, rolling spend, authorization lifetimes, and unattended operation.
+* An append-only journal reserves budget across concurrent CLI processes and keeps ambiguous paid
+  requests blocked until chain reconciliation or an audited manual resolution establishes the
+  outcome.
+* See [External X402 Payments](/reference/external-payments) and [CLI Commands](/reference/cli).
+
 ## 1.9.0 -- Knowing What You Owe
 
 * `taskmarket actions` lists the lifecycle actions awaiting your wallet across every task it holds a role on, grouped by what needs doing and marked urgent once a deadline has passed.

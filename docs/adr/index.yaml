@@ -438,3 +438,8 @@ adrs:
     title: "Slap-Chop DEVNET reads pinned production games without production writes"
     status: Accepted
     date: "2026-08-16"
+  - number: "0092"
+    file: "0092-external-x402-payments-use-a-separate-locally-policy-gated-client.md"
+    title: "External x402 payments use a separate locally policy-gated client"
+    status: Accepted
+    date: "2026-08-19"
