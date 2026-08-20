@@ -495,7 +495,25 @@ jobs:
 
       # The image doesn't ship make, which every other step in this job goes through.
       - name: Install make
-        run: apt-get update && apt-get install -y --no-install-recommends make
+        # `apt-get update` fetches mirror indexes, and a mirror that accepts the connection and
+        # then stops responding produces no output and no error -- the step simply stops, and
+        # the job's 45-minute timeout is what eventually ends it. Observed twice on consecutive
+        # runs before this job moved into the Playwright image: 43 and 44 minutes spent in the
+        # browser-install step, each ended by the job timeout, with the test step after it
+        # never running. The browser download is gone now, but the index fetch that actually
+        # stalled is still here, so the exposure is unchanged.
+        #
+        # Two bounds, because they catch different things. The Acquire options make apt itself
+        # give up on a stalled connection and retry another mirror, which is the failure that
+        # was actually seen. timeout-minutes is the backstop for anything they don't cover:
+        # generous against a slow-but-working mirror (the observed healthy fetch was still
+        # going 41s in), and far below the 45 minutes this currently costs.
+        timeout-minutes: 5
+        run: |
+          apt-get -o Acquire::Retries=3 \
+                  -o Acquire::http::Timeout=20 \
+                  -o Acquire::https::Timeout=20 update
+          apt-get install -y --no-install-recommends make
 
       # actions/checkout marks the workspace safe for its own git process, but that doesn't
       # carry over to later steps' git invocations (make install's git submodule update) in
@@ -546,7 +564,25 @@ jobs:
 
       # See storybook above: the image doesn't ship make.
       - name: Install make
-        run: apt-get update && apt-get install -y --no-install-recommends make
+        # `apt-get update` fetches mirror indexes, and a mirror that accepts the connection and
+        # then stops responding produces no output and no error -- the step simply stops, and
+        # the job's 45-minute timeout is what eventually ends it. Observed twice on consecutive
+        # runs before this job moved into the Playwright image: 43 and 44 minutes spent in the
+        # browser-install step, each ended by the job timeout, with the test step after it
+        # never running. The browser download is gone now, but the index fetch that actually
+        # stalled is still here, so the exposure is unchanged.
+        #
+        # Two bounds, because they catch different things. The Acquire options make apt itself
+        # give up on a stalled connection and retry another mirror, which is the failure that
+        # was actually seen. timeout-minutes is the backstop for anything they don't cover:
+        # generous against a slow-but-working mirror (the observed healthy fetch was still
+        # going 41s in), and far below the 45 minutes this currently costs.
+        timeout-minutes: 5
+        run: |
+          apt-get -o Acquire::Retries=3 \
+                  -o Acquire::http::Timeout=20 \
+                  -o Acquire::https::Timeout=20 update
+          apt-get install -y --no-install-recommends make
 
       # See storybook above: checkout's safe.directory doesn't carry over to later steps.
       - name: Mark workspace as a safe git directory
@@ -675,7 +711,25 @@ jobs:
 
       # See storybook above: the image doesn't ship make.
       - name: Install make
-        run: apt-get update && apt-get install -y --no-install-recommends make
+        # `apt-get update` fetches mirror indexes, and a mirror that accepts the connection and
+        # then stops responding produces no output and no error -- the step simply stops, and
+        # the job's 45-minute timeout is what eventually ends it. Observed twice on consecutive
+        # runs before this job moved into the Playwright image: 43 and 44 minutes spent in the
+        # browser-install step, each ended by the job timeout, with the test step after it
+        # never running. The browser download is gone now, but the index fetch that actually
+        # stalled is still here, so the exposure is unchanged.
+        #
+        # Two bounds, because they catch different things. The Acquire options make apt itself
+        # give up on a stalled connection and retry another mirror, which is the failure that
+        # was actually seen. timeout-minutes is the backstop for anything they don't cover:
+        # generous against a slow-but-working mirror (the observed healthy fetch was still
+        # going 41s in), and far below the 45 minutes this currently costs.
+        timeout-minutes: 5
+        run: |
+          apt-get -o Acquire::Retries=3 \
+                  -o Acquire::http::Timeout=20 \
+                  -o Acquire::https::Timeout=20 update
+          apt-get install -y --no-install-recommends make
 
       # See storybook above: checkout's safe.directory doesn't carry over to later steps.
       - name: Mark workspace as a safe git directory
