@@ -32,7 +32,7 @@ import type { ActivityFeedResponse } from '@taskmarket/shared';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { MotionConfig } from 'motion/react';
 import { useEffect, useState } from 'react';
-import { expect, userEvent, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 
 import { BurstStages } from '@/components/market/burst-stages';
 import { CreateTaskWizard } from '@/components/market/create-task-wizard';
@@ -418,7 +418,12 @@ export const TaskWizardOverlongTitle: Story = {
     await expect(
       canvas.getByText(/shorten this value so the task title is 80 characters/i)
     ).toBeVisible();
-    await expect(canvas.getByLabelText(/brand or product name/i)).toHaveFocus();
+    // The error state and the focus move land in different ticks: `handleContinueFromBrief`
+    // sets the error synchronously, then focuses inside `requestAnimationFrame`. So the
+    // assertion above passes the moment React commits, while focus is still on the button
+    // that was clicked. `toHaveFocus` has no retry of its own, unlike the `findBy*` queries,
+    // so asserting it directly here is a race the test loses whenever the frame is late.
+    await waitFor(() => expect(canvas.getByLabelText(/brand or product name/i)).toHaveFocus());
   },
 };
 
