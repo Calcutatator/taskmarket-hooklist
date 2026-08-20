@@ -613,25 +613,12 @@ jobs:
     timeout-minutes: 45
 
     steps:
+      - uses: actions/checkout@v7
+
       - name: Verify quality shards
-        run: |
-          test "${{ needs.quality-js.result }}" = "success"
-          test "${{ needs.backend-tests.result }}" = "success"
-          test "${{ needs.js-tests.result }}" = "success"
-          test "${{ needs.web-build.result }}" = "success"
-          test "${{ needs.changes.result }}" = "success"
-          # A skipped contract job is valid only when the successful detector explicitly found
-          # no contract-affecting inputs. An upstream detector failure must never become a pass.
-          case "${{ needs.changes.outputs.contracts }}:${{ needs.quality-contracts.result }}" in
-            true:success|false:skipped) ;;
-            *)
-              echo "contracts=${{ needs.changes.outputs.contracts }}, quality-contracts=${{ needs.quality-contracts.result }}"
-              exit 1;;
-          esac
-          test "${{ needs.skill-conformance.result }}" = "success"
-          test "${{ needs.adr.result }}" = "success"
-          test "${{ needs.storybook.result }}" = "success"
-          test "${{ needs.slap-chop-games.result }}" = "success"
+        run: node scripts/verify-ci-gate.mjs --gate quality
+        env:
+          NEEDS: ${{ toJSON(needs) }}
 
   ui-e2e:
     needs: web-build
@@ -744,12 +731,9 @@ jobs:
     timeout-minutes: 45
 
     steps:
+      - uses: actions/checkout@v7
+
       - name: Verify UI shards
-        run: |
-          test "${{ needs.quality-js.result }}" = "success"
-          test "${{ needs.backend-tests.result }}" = "success"
-          test "${{ needs.js-tests.result }}" = "success"
-          test "${{ needs.web-build.result }}" = "success"
-          test "${{ needs.storybook.result }}" = "success"
-          test "${{ needs.slap-chop-games.result }}" = "success"
-          test "${{ needs.ui-e2e.result }}" = "success"
+        run: node scripts/verify-ci-gate.mjs --gate ui
+        env:
+          NEEDS: ${{ toJSON(needs) }}

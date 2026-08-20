@@ -878,12 +878,12 @@ contract:
 
 ci-config-check:
 	$(ENV_LOADER) && \
-	pnpm exec prettier --check .github/workflows/ci.yml .github/workflows/deploy-preview.yml .github/workflows/deploy-production.yml .github/workflows/deploy-testnet.yml .github/workflows/rollback-slap-chop-games.yml scripts/run-ci-test.mjs scripts/run-ci-test.test.mjs scripts/verify-preview-teardown.test.mjs scripts/verify-slap-chop-health.mjs scripts/verify-slap-chop-health.test.mjs && \
-	node --test scripts/run-ci-test.test.mjs scripts/verify-preview-teardown.test.mjs scripts/verify-slap-chop-health.test.mjs
+	pnpm exec prettier --check .github/workflows/ci.yml .github/workflows/deploy-preview.yml .github/workflows/deploy-production.yml .github/workflows/deploy-testnet.yml .github/workflows/rollback-slap-chop-games.yml scripts/run-ci-test.mjs scripts/run-ci-test.test.mjs scripts/verify-ci-gate.mjs scripts/verify-ci-gate.test.mjs scripts/verify-preview-teardown.test.mjs scripts/verify-slap-chop-health.mjs scripts/verify-slap-chop-health.test.mjs && \
+	node --test scripts/run-ci-test.test.mjs scripts/verify-ci-gate.test.mjs scripts/verify-preview-teardown.test.mjs scripts/verify-slap-chop-health.test.mjs
 
 ci-config-fix:
 	$(ENV_LOADER) && \
-	pnpm exec prettier --write .github/workflows/ci.yml .github/workflows/deploy-preview.yml .github/workflows/deploy-production.yml .github/workflows/deploy-testnet.yml .github/workflows/rollback-slap-chop-games.yml scripts/run-ci-test.mjs scripts/run-ci-test.test.mjs scripts/verify-preview-teardown.test.mjs scripts/verify-slap-chop-health.mjs scripts/verify-slap-chop-health.test.mjs
+	pnpm exec prettier --write .github/workflows/ci.yml .github/workflows/deploy-preview.yml .github/workflows/deploy-production.yml .github/workflows/deploy-testnet.yml .github/workflows/rollback-slap-chop-games.yml scripts/run-ci-test.mjs scripts/run-ci-test.test.mjs scripts/verify-ci-gate.mjs scripts/verify-ci-gate.test.mjs scripts/verify-preview-teardown.test.mjs scripts/verify-slap-chop-health.mjs scripts/verify-slap-chop-health.test.mjs
 
 slap-chop-health:
 	$(ENV_LOADER) && node scripts/verify-slap-chop-health.mjs
