@@ -164,7 +164,15 @@ jobs:
               exit 1
             fi
           done
-          [ -n "$CREATED" ] || { echo "environment new still conflicting after 15 attempts" >&2; exit 1; }
+          # Print what Railway last said, not just that the loop ran out. Exhausting the retries
+          # used to report only the attempt count, so a failure here left nothing in the log
+          # saying which of the two retryable conditions it kept hitting -- which is exactly the
+          # state one observed failure of this step was left in, undiagnosable after the fact.
+          [ -n "$CREATED" ] || {
+            echo "environment new still conflicting after 15 attempts; last output:" >&2
+            echo "$OUTPUT" >&2
+            exit 1
+          }
 
       - name: Deploy anvil service
         env:
