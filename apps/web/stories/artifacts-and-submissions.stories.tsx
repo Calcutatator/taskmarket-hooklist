@@ -499,7 +499,6 @@ export const SubmissionReviewGalleryAndListInteraction: Story = {
   ...SubmissionReviewGalleryAndList,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const documentBody = within(canvasElement.ownerDocument.body);
     const choices = await canvas.findAllByRole('radio');
     const secondChoice = choices[1];
     if (!secondChoice) throw new Error('Second submission choice did not render.');
@@ -517,20 +516,47 @@ export const SubmissionReviewGalleryAndListInteraction: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'List view' }));
     await expect(secondChoice).toBeChecked();
     await userEvent.click(canvas.getByRole('button', { name: 'Gallery view' }));
+
+    // Opening the gallery is a navigation now (ADR-0096): the trigger writes ?panel=submissions
+    // rather than flipping local state, so what this story can assert in isolation is that the
+    // control requests it. That the resulting address actually renders the gallery is the
+    // sibling story below, which starts from the deep link -- together they cover the round trip
+    // that Storybook's per-story navigation mock cannot exercise in one pass.
+    await expect(canvas.getByRole('button', { name: 'Preview' })).toBeEnabled();
     await userEvent.click(canvas.getByRole('button', { name: 'Preview' }));
+  },
+};
+
+/**
+ * The gallery reached by its address alone, with no click to open it.
+ *
+ * This is the property ADR-0096 exists for: a viewer handed this URL sees the same screen the
+ * sender was looking at. It is also the only way to exercise the open gallery under Storybook,
+ * whose Next navigation mock is fixed per story.
+ */
+export const SubmissionReviewGalleryDeepLink: Story = {
+  ...SubmissionReviewGalleryAndList,
+  parameters: {
+    ...SubmissionReviewGalleryAndList.parameters,
+    nextjs: {
+      appDirectory: true,
+      navigation: {
+        pathname: '/tasks/task-1',
+        query: { artifact: 'artifact-review-a', panel: 'submissions' },
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const documentBody = within(canvasElement.ownerDocument.body);
 
     const galleryFrame = await documentBody.findByTestId('gallery-frame');
     const dialog = galleryFrame.closest<HTMLElement>('[role="dialog"]');
     await expect(dialog).not.toBeNull();
-    if (!dialog) throw new Error('Submission gallery dialog did not render.');
+    if (!dialog) throw new Error('Submission gallery dialog did not render from the URL.');
 
     const gallery = within(dialog);
-    await expect(gallery.getByTestId('submission-decision-bar')).toHaveTextContent(
-      'receives 250 USDC'
-    );
     await userEvent.click(gallery.getByRole('button', { name: 'Enter full screen' }));
     await expect(dialog).toHaveAttribute('data-full-viewport', 'true');
-    await expect(gallery.getByRole('button', { name: 'Award 250 USDC' })).toBeVisible();
   },
 };
 

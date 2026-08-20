@@ -13,6 +13,7 @@
     "db:seed": "tsx drizzle/seed.ts",
     "db:studio": "drizzle-kit studio",
     "db:backfill-task-awards": "tsx src/scripts/backfill-task-awards.ts",
+    "db:backfill-reference-codes": "tsx src/scripts/backfill-reference-codes.ts",
     "db:backfill-agent-registry-chain": "tsx src/scripts/backfill-agent-registry-chain.ts",
     "db:retry-orphaned-refunds": "tsx src/scripts/retry-orphaned-refunds.ts",
     "migrate-reward-hook-state": "tsx src/scripts/migrate-reward-hook-state.ts",

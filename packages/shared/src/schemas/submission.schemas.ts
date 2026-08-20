@@ -48,6 +48,9 @@ export const SubmissionCreateSchema = z.object({
 
 export const SubmissionResponseSchema = z.object({
   id: z.string(),
+  // The submission's public name (ADR-0098), e.g. 'SUB-7K2QA9XF'. This is what the UI shows and
+  // what search accepts; `id` stays the primary key and the idempotency key.
+  referenceCode: z.string().nullable().optional(),
   taskId: z.string(),
   workerAddress: z.string(),
   fileUrl: z.string(),

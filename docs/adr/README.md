@@ -313,6 +313,13 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0093 — A vacated ADR number keeps a tombstone](0093-a-vacated-adr-number-keeps-a-tombstone.md)
 - [0094 — Drift age is computed at report time, and every check reports its scope](0094-drift-age-is-computed-and-every-check-reports-its-scope.md)
 - [0095 — Unattended x402 policy rules require interactive confirmation](0095-unattended-x402-policy-rules-require-interactive-confirmation.md)
+- [0096 — The URL is the single source of truth for shareable UI state](0096-the-url-is-the-source-of-truth-for-shareable-ui-state.md)
+- [0097 — Shareable state is a flat, registered query-param namespace](0097-shareable-state-is-a-flat-registered-query-param-namespace.md)
+- [0098 — Submissions and tasks carry short public reference codes, distinct from their ids](0098-submissions-and-tasks-carry-short-public-reference-codes.md)
+- [0099 — Search is a parameter on the existing list endpoints, not a separate index](0099-search-is-a-parameter-on-existing-list-endpoints.md)
+- [0100 — Bookmarks are wallet-scoped server records, private by default](0100-bookmarks-are-wallet-scoped-server-records.md)
+- [0101 — An insert carrying a minted unique column names its conflict target](0101-an-insert-with-a-minted-unique-column-names-its-conflict-target.md)
+- [0102 — URL-backed components are tested against a working URL, not a no-op router](0102-url-backed-components-are-tested-against-a-working-url.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

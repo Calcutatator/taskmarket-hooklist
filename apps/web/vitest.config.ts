@@ -39,6 +39,11 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'unit',
+          // Implements: ADR-0102
+          // The working-URL navigation mock is unit-only: the Storybook project below loads the
+          // base setup too, and @storybook/nextjs-vite supplies its own Next navigation mocks
+          // that a full replacement would clobber.
+          setupFiles: ['./test/setup.ts', './test/setup-url.ts'],
         },
       },
       {

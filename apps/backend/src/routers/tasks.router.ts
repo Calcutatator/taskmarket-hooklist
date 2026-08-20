@@ -57,6 +57,7 @@ import { computeClockPrice, computePriceTimestamp } from '../lib/auction';
 import { lowerAddressEq } from '../lib/agents';
 import { taskDiscoverable, canView, fetchPrivateViewabilityContext } from '../lib/task-visibility';
 import { discoverableOpenTaskCondition, REV007_LISTING_CUTOFF } from '../lib/task-discovery';
+import { buildTaskSearchPlan, taskRelevanceOrder } from '../lib/task-search';
 import {
   computeNetReward,
   computePendingActions,
@@ -511,6 +512,14 @@ export const tasksRouter = router({
       if (input.tags && input.tags.length > 0) {
         conditions.push(arrayOverlaps(tasks.tags, input.tags));
       }
+      // ADR-0099. Search joins the same condition list as every filter above, so it inherits the
+      // discoverability, expiry, unlisted and private-task rules already applied rather than
+      // restating them. A task the caller may not see cannot be surfaced by any query, including
+      // one quoting a distinctive phrase from its own description.
+      const searchPlan = input.q ? buildTaskSearchPlan(input.q) : null;
+      if (searchPlan) {
+        conditions.push(searchPlan.condition);
+      }
       if (input.minReward) {
         conditions.push(sql`${tasks.reward} >= ${input.minReward}`);
       }
@@ -542,6 +551,15 @@ export const tasksRouter = router({
           break;
         case 'deadline_asc':
           orderBy = asc(tasks.expiryTime);
+          break;
+        case 'relevance':
+          // Only meaningful alongside a full-text query. Asking for relevance without `q`, or
+          // with a query that resolved to one exact identifier, falls back to the list's normal
+          // default rather than ordering by a rank that is uniformly zero.
+          orderBy =
+            searchPlan && !searchPlan.exact
+              ? taskRelevanceOrder(input.q as string)
+              : desc(tasks.createdAt);
           break;
         case 'newest':
         default:
@@ -673,6 +691,8 @@ export const tasksRouter = router({
 
         return {
           id: task.id,
+          // The public name (ADR-0098). Null on rows created before the backfill.
+          referenceCode: task.referenceCode,
           requester: task.requester,
           requesterPubkey: normalizeRequesterPublicKey(
             requesterPublicKeyByAddress.get(task.requester),
@@ -1004,6 +1024,8 @@ export const tasksRouter = router({
 
       return {
         id: task.id,
+        // The public name (ADR-0098). Null on rows created before the backfill.
+        referenceCode: task.referenceCode,
         requester: task.requester,
         requesterPubkey: normalizeRequesterPublicKey(
           requesterAgentRow[0]?.publicKey,

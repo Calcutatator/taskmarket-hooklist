@@ -1,3 +1,14 @@
+/**
+ * Live activity panel, including the submission gallery.
+ *
+ * Verifies: ADR-0096
+ *
+ * The gallery's open state and selected artifact are URL state now, not component state, so these
+ * exercise it through a working in-memory address (see the navigation mock below). What that buys
+ * a user is the round trip: the address always describes what is on screen, so a copied link
+ * sends someone to the artifact the sender was actually looking at rather than the one they
+ * opened at.
+ */
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -95,11 +106,39 @@ vi.mock('wagmi', () => ({
   useSwitchChain: () => ({ switchChainAsync: vi.fn() }),
 }));
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({
-    refresh: vi.fn(),
-  }),
+// The gallery's open state is URL state since ADR-0096, so this needs a working address rather
+// than a bare refresh stub: a no-op push leaves the panel unable to observe its own navigation.
+const { urlState } = vi.hoisted(() => ({
+  urlState: { listeners: new Set<() => void>(), params: new URLSearchParams() },
 }));
+
+vi.mock('next/navigation', async () => {
+  const { useSyncExternalStore } = await import('react');
+
+  const navigate = (href: string) => {
+    urlState.params = new URLSearchParams(href.split('?')[1] ?? '');
+    for (const listener of urlState.listeners) listener();
+  };
+
+  return {
+    usePathname: () => '/tasks/task-1',
+    useRouter: () => ({
+      back: () => navigate('/tasks/task-1'),
+      push: navigate,
+      refresh: vi.fn(),
+      replace: navigate,
+    }),
+    useSearchParams: () =>
+      useSyncExternalStore(
+        (listener: () => void) => {
+          urlState.listeners.add(listener);
+          return () => urlState.listeners.delete(listener);
+        },
+        () => urlState.params,
+        () => urlState.params
+      ),
+  };
+});
 
 vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: { children: unknown }) => (

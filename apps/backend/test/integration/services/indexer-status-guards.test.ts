@@ -170,6 +170,86 @@ describeWithDatabase('indexer status guard handlers', () => {
     expect(rows[0]?.platformFeeBps).toBe(750);
   });
 
+  it('processTaskCreatedEvent is a no-op when the same event is replayed', async () => {
+    // Verifies: ADR-0098
+    // Verifies: ADR-0101
+    //
+    // The insert's ON CONFLICT is targeted at the primary key rather than left untargeted, so
+    // that a reference-code collision surfaces as an error instead of being swallowed as
+    // "already recorded" -- which would silently drop the task row and lose the chain event.
+    // Narrowing the target must not cost the replay-safety a reseed depends on, so that is
+    // asserted here rather than assumed.
+    const taskId = `test-guard-${randomUUID()}`;
+    taskIds.push(taskId);
+    const log = {
+      args: {
+        taskId,
+        requester: '0x0000000000000000000000000000000000000002',
+        reward: 1000n,
+        mode: '0xa81913a5',
+        expiryTime: 1_900_000_000n,
+      },
+      eventName: 'TaskCreated',
+      transactionHash: `0x${'c'.repeat(64)}` as `0x${string}`,
+    };
+
+    await processTaskCreatedEvent(log, database);
+    const [first] = await database
+      .select({ referenceCode: tasks.referenceCode })
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1);
+    expect(first?.referenceCode).toMatch(/^TSK-[0-9A-HJKMNP-TV-Z]{8}$/);
+
+    // Replaying must not throw, must not duplicate, and must not re-mint the public name --
+    // someone may already have quoted the first one.
+    await expect(processTaskCreatedEvent(log, database)).resolves.not.toThrow();
+
+    const rows = await database
+      .select({ referenceCode: tasks.referenceCode })
+      .from(tasks)
+      .where(eq(tasks.id, taskId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.referenceCode).toBe(first?.referenceCode);
+  });
+
+  it('processTaskCreatedEvent surfaces a genuinely conflicting escrow_tx_hash rather than swallowing it', async () => {
+    // Verifies: ADR-0098
+    // Verifies: ADR-0101
+    //
+    // The behaviour change from targeting the conflict at the primary key. Two *different* task
+    // ids sharing one escrow transaction hash cannot happen -- one transaction creates one task,
+    // so the id and the hash move together -- and if it ever did it would be data corruption
+    // worth hearing about. Previously the untargeted ON CONFLICT discarded the row in silence.
+    const sharedTxHash = `0x${'d'.repeat(64)}` as `0x${string}`;
+    const firstTaskId = `test-guard-${randomUUID()}`;
+    const secondTaskId = `test-guard-${randomUUID()}`;
+    taskIds.push(firstTaskId, secondTaskId);
+
+    const baseArgs = {
+      requester: '0x0000000000000000000000000000000000000002',
+      reward: 1000n,
+      mode: '0xa81913a5',
+      expiryTime: 1_900_000_000n,
+    };
+
+    await processTaskCreatedEvent(
+      { args: { ...baseArgs, taskId: firstTaskId }, eventName: 'TaskCreated', transactionHash: sharedTxHash },
+      database
+    );
+
+    await expect(
+      processTaskCreatedEvent(
+        {
+          args: { ...baseArgs, taskId: secondTaskId },
+          eventName: 'TaskCreated',
+          transactionHash: sharedTxHash,
+        },
+        database
+      )
+    ).rejects.toThrow();
+  });
+
   it('processTaskCreatedEvent defaults stakeRequired/stakeBps to 0 for a pre-rev014 TaskCreated log (no stake args)', async () => {
     // Simulates a log decoded against TASK_CREATED_EVENT_PRE_REV014 -- args has no
     // stakeRequired/stakeBps keys at all, not just falsy values. A full reseed replaying

@@ -4,6 +4,7 @@ import { keccak256, toBytes } from 'viem';
 import type { db as DbType } from '../../db/client';
 import { proofs, submissions } from '../../db/schema';
 import { contractSubmitProof, contractSubmitWork } from '../contract';
+import { mintUniqueReferenceCode } from '../reference-code-minting';
 import { dispatchRelayedIntent } from '../relayed-intent-registry';
 import { derivedIdempotencyKey, recordRelayedIntent } from '../relayed-intents';
 
@@ -123,18 +124,25 @@ export async function completeProofsAnchorDeliverable(context: {
   txHash: `0x${string}`;
 }): Promise<void> {
   const { payload } = context;
+  // Implements: ADR-0101
+  // See submissions-intents.ts: the conflict is targeted at the primary key so a reference-code
+  // collision surfaces as an error rather than silently dropping the row (ADR-0098).
   await context.db
     .insert(submissions)
     .values({
       deliverableHash: payload.proofHash,
       fileUrl: `taskmarket-proof:${payload.proofId}`,
       id: payload.submissionId,
+      referenceCode: await mintUniqueReferenceCode({
+        db: context.db,
+        entity: 'submission',
+      }),
       signature: payload.signature,
       submitTxHash: context.txHash,
       taskId: payload.taskId,
       workerAddress: payload.workerAddress,
     })
-    .onConflictDoNothing();
+    .onConflictDoNothing({ target: submissions.id });
 }
 
 export function broadcastProofsAnchorDeliverable(context: {

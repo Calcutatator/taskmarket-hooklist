@@ -1,5 +1,7 @@
 'use client';
 
+// Implements: ADR-0096
+
 import type { TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
 import {
   ArrowLeftIcon,
@@ -12,6 +14,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { RelativeTime } from '@/components/market/motion/relative-time';
+import { usePanelOverlay, useUrlState } from '@/lib/url-state/use-url-state';
 import {
   SubmissionGalleryDialog,
   submissionMediaEntries,
@@ -61,11 +64,23 @@ export function WorkerSubmissionHistory({
   visibilityScopeKey,
 }: WorkerSubmissionHistoryProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const [view, setView] = useState<HistoryView>(initialView);
-  const [sort, setSort] = useState<HistorySort>('newest');
-  const [page, setPage] = useState(1);
-  const [galleryOpen, setGalleryOpen] = useState(false);
-  const [galleryArtifactId, setGalleryArtifactId] = useState<string | null>(null);
+  // ADR-0096: view, sort, page and the open gallery are all shareable -- a second person opening
+  // the link needs them to see this screen -- so they live in the URL and nowhere else. The names
+  // are qualified because the task page around this panel owns its own view/sort.
+  const [viewParam, setViewParam] = useUrlState('historyView', { history: 'refine' });
+  const [sortParam, setSortParam] = useUrlState('historySort', { history: 'refine' });
+  const [pageParam, setPageParam] = useUrlState('historyPage', { history: 'navigate' });
+  const gallery = usePanelOverlay(`history:${group.workerKey}`);
+
+  const view: HistoryView =
+    viewParam === 'list' || viewParam === 'gallery' ? viewParam : initialView;
+  const sort: HistorySort = sortParam === 'oldest' ? 'oldest' : 'newest';
+  const page = Math.max(1, Number.parseInt(pageParam, 10) || 1);
+  const setView = (next: HistoryView) => setViewParam(next === initialView ? '' : next);
+  const setSort = (next: HistorySort) => setSortParam(next === 'newest' ? '' : next);
+  const setPage = (next: number) => setPageParam(next <= 1 ? '' : String(next));
+  const galleryOpen = gallery.isOpen;
+  const galleryArtifactId = gallery.itemId || null;
   const [announcement, setAnnouncement] = useState('');
   const observedCountRef = useRef({
     count: group.submissions.length,
@@ -104,9 +119,8 @@ export function WorkerSubmissionHistory({
     if (observed.scopeKey !== scopeKey) {
       observedCountRef.current = { count: group.submissions.length, scopeKey };
       setAnnouncement('');
-      setGalleryOpen(false);
-      setGalleryArtifactId(null);
-      setPage(1);
+      // The gallery and page are URL state now, so a scope change does not silently rewrite the
+      // address the viewer arrived on.
       return;
     }
 
@@ -263,8 +277,7 @@ export function WorkerSubmissionHistory({
               <SubmissionCard
                 layout={view}
                 onOpenMedia={(artifactId) => {
-                  setGalleryArtifactId(artifactId);
-                  setGalleryOpen(true);
+                  gallery.open(artifactId);
                 }}
                 profileBasePath={profileBasePath}
                 submission={submission}
@@ -314,7 +327,10 @@ export function WorkerSubmissionHistory({
         entries={galleryEntries}
         entryPolicy="snapshot-membership"
         initialArtifactId={galleryArtifactId}
-        onOpenChange={setGalleryOpen}
+        onEntryChange={(entry) => gallery.select(entry.artifact.id)}
+        onOpenChange={(next) => {
+          if (!next) gallery.close();
+        }}
         open={galleryOpen}
         profileBasePath={profileBasePath}
         sessionKey={`${scopeKey}:${group.rejected ? 'rejected' : 'active'}`}

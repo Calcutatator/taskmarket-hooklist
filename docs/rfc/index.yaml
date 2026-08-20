@@ -48,3 +48,8 @@ rfcs:
     title: "Slap-Chop Games catalog"
     status: Discussion
     date: "2026-08-16"
+  - number: "0010"
+    file: "0010-shareable-ui-state-and-deep-linking.md"
+    title: "Shareable UI state: deep linking every surface"
+    status: Accepted
+    date: "2026-08-14"

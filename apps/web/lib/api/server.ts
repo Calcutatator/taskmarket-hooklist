@@ -153,10 +153,16 @@ export async function fetchTasks(searchParams?: {
   taskDropId?: string;
   worker?: string;
   sort?: string;
+  q?: string;
 }) {
   const params = new URLSearchParams();
   if (searchParams?.status) {
     params.set('status', searchParams.status);
+  }
+  // ADR-0099. Just another listing parameter -- the backend applies it as one more condition on
+  // the same query, so it composes with every filter below and inherits their visibility rules.
+  if (searchParams?.q) {
+    params.set('q', searchParams.q);
   }
   if (searchParams?.mode) {
     params.set('mode', searchParams.mode);

@@ -4,6 +4,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import type { db as DbType } from '../../db/client';
 import { artifacts, submissions, tasks } from '../../db/schema';
 import { contractSubmitWork } from '../contract';
+import { mintUniqueReferenceCode } from '../reference-code-minting';
 import { assertUnderHardSubmissionCeilingForInsert } from '../submission-allowance';
 
 type Db = typeof DbType;
@@ -107,18 +108,25 @@ export async function completeSubmissionsSubmit(context: {
       await assertUnderHardSubmissionCeilingForInsert(tx, payload.taskId, payload.workerAddress);
     }
 
+    // Minted inside the same transaction the insert runs in, so a replay of this intent finds the
+    // row already present and keeps its original code rather than issuing a second one (ADR-0098).
+    // Implements: ADR-0101
+    // The conflict is targeted at the primary key deliberately: untargeted, a reference-code
+    // collision would be swallowed as "already recorded" and the submission row would silently
+    // never be written.
     await tx
       .insert(submissions)
       .values({
         deliverableHash: payload.deliverableHash,
         fileUrl: primaryArtifact.storageUri,
         id: payload.submissionId,
+        referenceCode: await mintUniqueReferenceCode({ db: tx, entity: 'submission' }),
         signature: payload.signature,
         submitTxHash: context.txHash,
         taskId: payload.taskId,
         workerAddress: payload.workerAddress,
       })
-      .onConflictDoNothing();
+      .onConflictDoNothing({ target: submissions.id });
 
     await tx
       .insert(artifacts)

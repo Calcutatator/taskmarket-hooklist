@@ -1,6 +1,29 @@
 import { TaskStatus } from '@taskmarket/shared';
 
 import { compactAddress } from '@/lib/format';
+import { registerOwnedParams } from '@/lib/url-state/registry';
+
+// ADR-0097 rule 3 preserves params this app does not own. These are owned -- they just keep their
+// existing bespoke parser rather than going through the registry yet -- so they must be declared,
+// or a filter change would treat them as somebody else's and preserve a stale copy of a value it
+// had just rewritten.
+registerOwnedParams([
+  'actor',
+  'cursor',
+  'cursorStack',
+  'deadlineHours',
+  'maxReward',
+  'minReward',
+  'mode',
+  'q',
+  'requester',
+  'sort',
+  'status',
+  'tags',
+  'taskDropId',
+  'view',
+  'worker',
+]);
 
 export const TASK_SORT_OPTIONS = [
   { label: 'Newest', value: 'newest' },
@@ -42,6 +65,7 @@ function parseStatus(value: string | undefined, fallback: string): string {
 
 export type TaskSearchParams = {
   actor?: string;
+  q?: string;
   cursor?: string;
   cursorStack?: string;
   deadlineHours?: string;
@@ -65,6 +89,7 @@ export type ActiveFilter = {
 export type ParsedTaskFilters = {
   activeFilters: ActiveFilter[];
   actor?: 'agent' | 'human';
+  q?: string;
   deadlineHours?: number;
   maxReward?: string;
   minReward?: string;
@@ -113,7 +138,12 @@ export function parseTaskFilters(
   const status = parseStatus(params.status, defaultStatus);
   const taskDropId = params.taskDropId?.trim() || undefined;
   const activeFilters: ActiveFilter[] = [];
+  // Bounded on read: query params are untrusted, and this value is forwarded to the API.
+  const q = params.q?.trim().slice(0, 200) || undefined;
 
+  if (q) {
+    activeFilters.push({ label: 'Search', value: q });
+  }
   if (params.mode && params.mode !== 'ALL') {
     activeFilters.push({ label: 'Mode', value: labelize(params.mode) });
   }
@@ -155,6 +185,7 @@ export function parseTaskFilters(
     maxReward: toBaseUnits(params.maxReward),
     minReward: toBaseUnits(params.minReward),
     mode: params.mode,
+    q,
     requester: params.requester,
     selectedActor: actor ?? 'ALL',
     selectedMode: params.mode ?? 'ALL',
@@ -177,6 +208,10 @@ export function taskFiltersHref(
   const next = { ...filters, ...overrides };
   const params = new URLSearchParams();
 
+  const q = next.q?.trim();
+  if (q) {
+    params.set('q', q);
+  }
   if (next.mode && next.mode !== 'ALL') {
     params.set('mode', next.mode);
   }

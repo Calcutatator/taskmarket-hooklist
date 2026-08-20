@@ -15,6 +15,7 @@ import { getServerConfig } from '../../config/env';
 import { lowerAddressEq } from '../../lib/agents';
 import { logger } from '../../lib/logger';
 import { normalizeRequesterPublicKey } from '../../lib/task';
+import { mintUniqueReferenceCode } from '../reference-code-minting';
 import { notifyTaskDropSubscribers } from '../task-drops-email';
 import { notifyNewTask } from '../task-notifications';
 import { AUCTION_SUBTYPE_MAP, contractCreateTask, MODE_MAP, taskIdForTx } from '../contract';
@@ -289,6 +290,10 @@ export async function completeTasksCreate(context: {
         pitchDeadline: pitchDeadlineValue,
         platformFeeBps: config.DEFAULT_PLATFORM_FEE_BPS,
         privateAccessPasswordHash,
+        // ADR-0098. Whichever writer reaches the row first mints its one code: this completion, or
+        // the indexer's reconciliation pass over the same TaskCreated event. The other finds the
+        // id already present and does nothing.
+        referenceCode: await mintUniqueReferenceCode({ db: tx, entity: 'task' }),
         requester: payload.payer,
         requesterAgentId: requesterAgentIdValue,
         requesterPubkey: requesterPubkeyValue,
@@ -309,6 +314,10 @@ export async function completeTasksCreate(context: {
       // status/claimedBy/claimedAt (owned by claim/settlement events), hookContract (reconciled
       // by its own event handler), and the fields the indexer already derives
       // correctly from the same event. This is also what makes re-running the completion safe.
+      //
+      // referenceCode is deliberately absent from `set`: whichever writer created the row minted
+      // the one code, and patching it here would hand the same task a second public name after
+      // someone may already have quoted the first (ADR-0098).
       .onConflictDoUpdate({
         target: tasks.id,
         set: {

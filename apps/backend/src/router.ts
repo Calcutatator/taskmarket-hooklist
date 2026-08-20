@@ -1,5 +1,6 @@
 import { router } from './trpc';
 import { healthRouter } from './routers/health.router';
+import { bookmarksRouter } from './routers/bookmarks.router';
 import { tasksRouter } from './routers/tasks.router';
 import { taskAccessRouter } from './routers/task-access.router';
 import { agentsRouter } from './routers/agents.router';
@@ -28,6 +29,7 @@ import { gameCurationRouter } from './routers/game-curation.router';
 
 export const appRouter = router({
   health: healthRouter,
+  bookmarks: bookmarksRouter,
   tasks: tasksRouter,
   taskAccess: taskAccessRouter,
   agents: agentsRouter,

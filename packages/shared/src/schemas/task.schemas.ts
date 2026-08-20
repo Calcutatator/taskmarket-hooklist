@@ -269,6 +269,9 @@ export const TaskCreateSchema = z
 
 export const TaskResponseSchema = z.object({
   id: z.string(),
+  // The task's public name (ADR-0098), e.g. 'TSK-4M0BXQ2E'. Nullable until the backfill in
+  // migration 0051 completes; `id` remains the canonical URL segment.
+  referenceCode: z.string().nullable().optional(),
   requester: z.string(),
   requesterPubkey: z.string().nullable(),
   description: z.string(),
@@ -376,8 +379,12 @@ export const TaskListInputSchema = z.object({
   requester: z.string().optional(),
   worker: z.string().optional(),
   taskDropId: z.string().trim().min(1).optional(),
+  // Free-text search (ADR-0099). Bounded at 200 characters so a single query cannot ask for
+  // unbounded work; longer input is refused by Zod with a machine-readable reason (ADR-0058)
+  // rather than silently truncated into a different query than the one the user typed.
+  q: z.string().trim().min(1).max(200).optional(),
   sort: z
-    .enum(['newest', 'reward_desc', 'reward_asc', 'deadline_asc'])
+    .enum(['newest', 'reward_desc', 'reward_asc', 'deadline_asc', 'relevance'])
     .optional()
     .default('newest'),
 });

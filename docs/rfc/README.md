@@ -73,4 +73,5 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real RFC 
 - [0007 — RPC efficiency and provider-load operating model](0007-rpc-efficiency-operating-model.md)
 - [0008 — Action Inbox and guided task completion](0008-action-inbox-and-guided-task-completion.md)
 - [0009 — Slap-Chop Games catalog](0009-slap-chop-games-catalog.md)
+- [0010 — Shareable UI state: deep linking every surface](0010-shareable-ui-state-and-deep-linking.md)
 <!-- RFC-INDEX:END -->

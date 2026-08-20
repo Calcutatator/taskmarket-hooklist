@@ -10,6 +10,7 @@ import {
   IconListCheck,
   IconListDetails,
   IconMoodSmile,
+  IconBookmark,
   IconInbox,
   IconPackages,
   IconSettings,
@@ -54,6 +55,11 @@ const data = {
       title: 'Inbox',
       url: '/dashboard/inbox',
       icon: IconInbox,
+    },
+    {
+      title: 'Saved',
+      url: '/dashboard/bookmarks',
+      icon: IconBookmark,
     },
     {
       title: 'Task Drops',

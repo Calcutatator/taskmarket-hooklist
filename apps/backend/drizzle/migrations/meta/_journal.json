@@ -358,6 +358,20 @@
       "when": 1786852014000,
       "tag": "0050_add_game_vote_rate_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1787009673000,
+      "tag": "0051_reference_codes_and_task_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1787009674000,
+      "tag": "0052_bookmarks",
+      "breakpoints": true
     }
   ]
 }

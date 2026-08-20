@@ -468,3 +468,38 @@ adrs:
     title: Unattended x402 policy rules require interactive confirmation
     status: Accepted
     date: "2026-08-19"
+  - number: "0096"
+    file: "0096-the-url-is-the-source-of-truth-for-shareable-ui-state.md"
+    title: The URL is the single source of truth for shareable UI state
+    status: Accepted
+    date: "2026-08-14"
+  - number: "0097"
+    file: "0097-shareable-state-is-a-flat-registered-query-param-namespace.md"
+    title: "Shareable state is a flat, registered query-param namespace"
+    status: Accepted
+    date: "2026-08-14"
+  - number: "0098"
+    file: "0098-submissions-and-tasks-carry-short-public-reference-codes.md"
+    title: "Submissions and tasks carry short public reference codes, distinct from their ids"
+    status: Accepted
+    date: "2026-08-14"
+  - number: "0099"
+    file: "0099-search-is-a-parameter-on-existing-list-endpoints.md"
+    title: "Search is a parameter on the existing list endpoints, not a separate index"
+    status: Accepted
+    date: "2026-08-14"
+  - number: "0100"
+    file: "0100-bookmarks-are-wallet-scoped-server-records.md"
+    title: "Bookmarks are wallet-scoped server records, private by default"
+    status: Accepted
+    date: "2026-08-14"
+  - number: "0101"
+    file: "0101-an-insert-with-a-minted-unique-column-names-its-conflict-target.md"
+    title: An insert carrying a minted unique column names its conflict target
+    status: Accepted
+    date: "2026-08-18"
+  - number: "0102"
+    file: "0102-url-backed-components-are-tested-against-a-working-url.md"
+    title: "URL-backed components are tested against a working URL, not a no-op router"
+    status: Accepted
+    date: "2026-08-18"

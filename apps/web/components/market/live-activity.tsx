@@ -1,6 +1,8 @@
 'use client';
 
 import type { PendingAction, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
+
+import { usePanelOverlay } from '@/lib/url-state/use-url-state';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   CheckCircle2Icon,
@@ -621,8 +623,12 @@ function BenchmarkSubmissionsSection({
   const [rejectedOpen, setRejectedOpen] = useState(false);
   const [selectedWorkerKey, setSelectedWorkerKey] = useState<string | null>(null);
   const [optimisticRejectedKeys, setOptimisticRejectedKeys] = useState<Set<string>>(new Set());
-  const [galleryOpen, setGalleryOpen] = useState(false);
-  const [galleryArtifactId, setGalleryArtifactId] = useState<string | null>(null);
+  // ADR-0096: the URL is the single store for whether the gallery is open and which artifact it
+  // shows. No useState mirror, so arrowing through the carousel re-addresses the page and a
+  // copied link describes what is actually on screen -- the bug this contract exists to remove.
+  const gallery = usePanelOverlay('additional-submissions');
+  const galleryOpen = gallery.isOpen;
+  const galleryArtifactId = gallery.itemId || null;
   const historyOriginRef = useRef<{
     page: number;
     rejectedPage: number;
@@ -638,8 +644,8 @@ function BenchmarkSubmissionsSection({
     setRejectedPage(1);
     setRejectedOpen(false);
     setSelectedWorkerKey(null);
-    setGalleryOpen(false);
-    setGalleryArtifactId(null);
+    // The gallery is not reset here: it lives in the URL now, and a scope change must not
+    // silently rewrite the address the viewer arrived on.
   }, [visibilityScopeKey]);
 
   const groupedReview = useMemo(() => {
@@ -740,8 +746,7 @@ function BenchmarkSubmissionsSection({
   };
 
   const openGalleryAt = (artifactId: string) => {
-    setGalleryArtifactId(artifactId);
-    setGalleryOpen(true);
+    gallery.open(artifactId);
   };
   const disclosureLabel = `Additional submissions (${groupedReview.totalSubmissionCount})`;
 
@@ -1036,7 +1041,10 @@ function BenchmarkSubmissionsSection({
         entries={galleryEntries}
         entryPolicy="snapshot-membership"
         initialArtifactId={galleryArtifactId}
-        onOpenChange={setGalleryOpen}
+        onEntryChange={(entry) => gallery.select(entry.artifact.id)}
+        onOpenChange={(next) => {
+          if (!next) gallery.close();
+        }}
         open={galleryOpen}
         profileBasePath={profileBasePath}
         sessionKey={`${visibilityScopeKey}:additional-submitters`}
@@ -1254,11 +1262,12 @@ export function LiveActivityPanel({
       ? activeGroups.map((group) => group.representativeSubmission)
       : submissions
   );
-  const [galleryOpen, setGalleryOpen] = useState(false);
-  const [galleryArtifactId, setGalleryArtifactId] = useState<string | null>(null);
+  // ADR-0096: see the panel above -- the URL owns the open gallery and its artifact.
+  const gallery = usePanelOverlay('submissions');
+  const galleryOpen = gallery.isOpen;
+  const galleryArtifactId = gallery.itemId || null;
   const openGalleryAt = (artifactId: string) => {
-    setGalleryArtifactId(artifactId);
-    setGalleryOpen(true);
+    gallery.open(artifactId);
   };
   const openGalleryForGroup = (group: WorkerSubmissionGroup, artifactId: string) => {
     setSelectedAwardWorkerKey(group.workerKey);
@@ -1309,8 +1318,8 @@ export function LiveActivityPanel({
     seedIdsRef.current = new Set(itemsRef.current.map((item) => item.id));
     seenIdsRef.current = new Set(seedIdsRef.current);
     setAnnounce('');
-    setGalleryOpen(false);
-    setGalleryArtifactId(null);
+    // Not reset: the gallery is URL state, and a scope change must not rewrite the viewer's
+    // address out from under them.
     setOptimisticRejectedKeys(new Set());
     setPage(1);
     setRejectedPage(1);
@@ -1561,8 +1570,7 @@ export function LiveActivityPanel({
             {galleryEntries.length > 0 && !submissionReviewEligible ? (
               <Button
                 onClick={() => {
-                  setGalleryArtifactId(null);
-                  setGalleryOpen(true);
+                  gallery.open();
                 }}
                 size="sm"
                 type="button"
@@ -1964,12 +1972,16 @@ export function LiveActivityPanel({
         entries={galleryEntries}
         entryPolicy={submissionReviewEligible ? 'snapshot-membership' : 'live'}
         initialArtifactId={galleryArtifactId}
-        onEntryChange={
-          submissionReviewEligible
-            ? (entry) => setSelectedAwardWorkerKey(entry.submission.workerAddress.toLowerCase())
-            : undefined
-        }
-        onOpenChange={setGalleryOpen}
+        onEntryChange={(entry) => {
+          // The write-back half of the round trip: every carousel move re-addresses the page.
+          gallery.select(entry.artifact.id);
+          if (submissionReviewEligible) {
+            setSelectedAwardWorkerKey(entry.submission.workerAddress.toLowerCase());
+          }
+        }}
+        onOpenChange={(next) => {
+          if (!next) gallery.close();
+        }}
         open={galleryOpen}
         profileBasePath={profileBasePath}
         renderActionArea={

@@ -23,23 +23,49 @@ function compactAddressLabel(value: string) {
   return compactAddress(value);
 }
 
-const { refreshSpy, routeState, stubQuery } = vi.hoisted(() => ({
+const { refreshSpy, routeState, stubQuery, urlListeners } = vi.hoisted(() => ({
   refreshSpy: vi.fn(),
   routeState: { searchParams: new URLSearchParams() },
   stubQuery: (_input: unknown, options?: { initialData?: unknown }) => ({
     data: options?.initialData,
   }),
+  urlListeners: new Set<() => void>(),
 }));
 
-vi.mock('next/navigation', () => ({
-  usePathname: () => '/dashboard/tasks',
-  useRouter: () => ({
-    push: vi.fn(),
-    replace: vi.fn(),
-    refresh: refreshSpy,
-  }),
-  useSearchParams: () => routeState.searchParams,
-}));
+// Since ADR-0096 the URL is the single store for shareable UI state, so a no-op push/replace
+// leaves a component unable to observe its own navigation: the submission gallery writes
+// ?panel=submissions and then reads back the address it started with, so it never opens. This
+// stub is therefore a working in-memory URL rather than a pair of spies -- push and replace
+// update routeState and notify subscribers, which is what a browser does.
+vi.mock('next/navigation', async () => {
+  const { useSyncExternalStore } = await import('react');
+
+  const subscribe = (listener: () => void) => {
+    urlListeners.add(listener);
+    return () => urlListeners.delete(listener);
+  };
+
+  const navigate = (href: string) => {
+    routeState.searchParams = new URLSearchParams(href.split('?')[1] ?? '');
+    for (const listener of urlListeners) listener();
+  };
+
+  return {
+    usePathname: () => '/dashboard/tasks',
+    useRouter: () => ({
+      back: () => navigate('/dashboard/tasks'),
+      push: navigate,
+      refresh: refreshSpy,
+      replace: navigate,
+    }),
+    useSearchParams: () =>
+      useSyncExternalStore(
+        subscribe,
+        () => routeState.searchParams,
+        () => routeState.searchParams
+      ),
+  };
+});
 
 // The live activity feed seeds its per-mode queries from the SSR mode data and
 // only polls for the requester; in these static-render tests we mirror that by
@@ -48,10 +74,19 @@ vi.mock('@/lib/api/client', () => ({
   READ_AUTH_CONTEXT_KEY: 'taskmarketReadAuth',
   trpc: {
     bids: { listByTask: { useQuery: stubQuery } },
+    // The task header's bookmark control. Disconnected in these tests, so the query never runs --
+    // but the hook is still called, and a missing stub is a render-time crash rather than a
+    // no-op.
+    bookmarks: {
+      add: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
+      list: { useQuery: () => ({ data: undefined }) },
+      remove: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
+    },
     pitches: { listByTask: { useQuery: stubQuery } },
     proofs: { listByTask: { useQuery: stubQuery } },
     submissions: { listByTask: { useQuery: stubQuery } },
     useUtils: () => ({
+      bookmarks: { list: { invalidate: vi.fn() } },
       submissions: {
         listByTask: {
           invalidate: vi.fn(),

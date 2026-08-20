@@ -23,6 +23,7 @@ import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
 import { createServerWallet } from '../lib/wallet';
 import { getPublicClient, runWithRpcOperation } from '../lib/rpc-gateway';
+import { mintUniqueReferenceCode } from './reference-code-minting';
 import { shouldStartEvaluatorReview } from './task-evaluator';
 import {
   projectSettlementLogs,
@@ -187,8 +188,18 @@ export async function processTaskCreatedEvent(
       // unset contract_address makes a task's settlement unrecoverable (ADR-0008).
       chainId: config.CHAIN_ID,
       contractAddress: config.CONTRACT_ADDRESS,
+      // ADR-0098. This reconciliation pass and the create-intent completion both write this row,
+      // and either can win. Whichever inserts it mints the one code; the loser conflicts on the id
+      // and leaves it alone. A code is random rather than derived, so unlike the off-chain-only
+      // creation inputs this path cannot recover (ADR-0029), it needs no recovery -- only a single
+      // owner.
+      referenceCode: await mintUniqueReferenceCode({ db: database, entity: 'task' }),
     })
-    .onConflictDoNothing();
+    // Implements: ADR-0101
+    // Targeted at the id on purpose. Untargeted, a reference-code collision would be swallowed as
+    // "already recorded" and the task would silently never be indexed -- turning a one-in-a-
+    // trillion draw into lost chain state with no error anywhere.
+    .onConflictDoNothing({ target: tasks.id });
 
   // Ensure the requester has an agent row so they appear in the directory
   await database

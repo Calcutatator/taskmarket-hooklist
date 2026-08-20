@@ -54,7 +54,7 @@ help:
 	@echo "  make ui-ci-e2e            - Run a CI E2E shard (UI_CI_PROJECT/UI_CI_SHARD optional)"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
 	@echo "  make clean                - Clean build artifacts"
-	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-agent-registry-chain|retry-orphaned-refunds|migrate-reward-hook-state)"
+	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-reference-codes|backfill-agent-registry-chain|retry-orphaned-refunds|migrate-reward-hook-state)"
 	@echo "  make smoke <mode> [testnet] - Run smoke test against localhost (or testnet with 'testnet' flag)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
@@ -1013,6 +1013,8 @@ db:
 		cd apps/backend && pnpm db:studio; \
 	elif [ "$(word 1,$(ARGS))" = "backfill-task-awards" ]; then \
 		cd apps/backend && pnpm db:backfill-task-awards; \
+	elif [ "$(word 1,$(ARGS))" = "backfill-reference-codes" ]; then \
+		cd apps/backend && pnpm db:backfill-reference-codes; \
 	elif [ "$(word 1,$(ARGS))" = "backfill-agent-registry-chain" ]; then \
 		if [ -z "$$REGISTRY" ] || [ -z "$$CHAIN_ID" ]; then \
 			echo "Usage: REGISTRY=0x... CHAIN_ID=<n> make db backfill-agent-registry-chain [dry-run]"; \
@@ -1037,7 +1039,7 @@ db:
 			cd apps/backend && pnpm db:retry-orphaned-refunds; \
 		fi; \
 	else \
-		echo "Usage: make db <start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-agent-registry-chain|retry-orphaned-refunds [dry-run]>"; \
+		echo "Usage: make db <start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-reference-codes|backfill-agent-registry-chain|retry-orphaned-refunds [dry-run]>"; \
 		exit 1; \
 	fi
 

@@ -39,6 +39,9 @@ import {
   ArtifactPreviewButton,
 } from '@/components/market/artifact-preview-button';
 import { CopyButton } from '@/components/market/copy-button';
+import { BookmarkButton } from '@/components/market/bookmark-button';
+import { ReferenceCode } from '@/components/market/reference-code';
+import { TaskSearchInput } from '@/components/market/task-search-input';
 import { DreamsRewardDisclosure } from '@/components/market/dreams-reward-disclosure';
 import { InfoTooltip } from '@/components/market/info-tooltip';
 import { LiveActivityPanel } from '@/components/market/live-activity';
@@ -1644,6 +1647,7 @@ export function TaskListPageContent({
     selectedSort: TaskSortValue;
     selectedStatus: string;
     selectedView?: TaskListView;
+    q?: string;
     tags?: string;
     taskDropId?: string;
     requester?: string;
@@ -1661,6 +1665,7 @@ export function TaskListPageContent({
     maxReward: filterParams.maxReward,
     minReward: filterParams.minReward,
     mode: filterParams.selectedMode,
+    q: filterParams.q,
     requester: filterParams.requester,
     status: filterParams.selectedStatus,
     tags: filterParams.tags,
@@ -1677,7 +1682,9 @@ export function TaskListPageContent({
     cursor: pagination?.currentCursor,
     cursorStack: pagination?.cursorStack,
   };
-  const clearFiltersHref = taskFiltersHref(listHref, { view: selectedView });
+  // Keeps the query: "clear filters" narrows back to the full result set for what the user
+  // searched, rather than throwing away the search itself. The Search chip clears the query.
+  const clearFiltersHref = taskFiltersHref(listHref, { q: filterParams.q, view: selectedView });
   const advancedFilterCount = [
     filterParams.taskDropId,
     filterParams.tags,
@@ -1711,6 +1718,7 @@ export function TaskListPageContent({
             </Link>
           </Button>
         </div>
+        <TaskSearchInput className="w-full" />
         <div
           className="min-w-0 overflow-hidden rounded-lg border border-border/68 bg-card/38 shadow-[var(--shadow-soft)]"
           data-testid="task-results-frame"
@@ -2815,6 +2823,7 @@ export function TaskDetailPanel({
   focusIntent,
   htmlSubmissions = [],
   initialArtifactId,
+  initialPanel,
   marketStats,
   modeData,
   profileBasePath = '/dashboard/agents',
@@ -2827,6 +2836,12 @@ export function TaskDetailPanel({
   focusIntent?: TaskActionIntentValue;
   htmlSubmissions?: SubmissionResponse[];
   initialArtifactId?: string;
+  /**
+   * The open overlay, if any (ADR-0096). `?artifact=` is read by two features -- a shared link to
+   * a published HTML result, and the submission gallery's current selection -- and this is what
+   * tells them apart: an artifact id arriving alongside an open panel belongs to that panel.
+   */
+  initialPanel?: string;
   marketStats?: MarketStats | null;
   modeData?: TaskModeData;
   profileBasePath?: string;
@@ -2895,9 +2910,13 @@ export function TaskDetailPanel({
     task.taskVisibility === 'private'
       ? []
       : selectPublishedHtmlArtifacts(htmlSubmissions, task.primaryAward?.workerAddress);
-  const requestedHtmlArtifact = initialArtifactId
-    ? publishedHtmlArtifacts.find((entry) => entry.artifact.id === initialArtifactId)
-    : undefined;
+  // Only when no overlay claims the artifact. Without this guard the gallery -- which writes
+  // ?artifact= on every carousel move -- also auto-opens the published-result dialog, so two
+  // dialogs render the same iframe at once.
+  const requestedHtmlArtifact =
+    initialArtifactId && !initialPanel
+      ? publishedHtmlArtifacts.find((entry) => entry.artifact.id === initialArtifactId)
+      : undefined;
   const publishedHtmlArtifact = requestedHtmlArtifact ?? publishedHtmlArtifacts[0];
   const publishedHtmlHref = publishedHtmlArtifact
     ? `/tasks/${encodeURIComponent(task.id)}?artifact=${encodeURIComponent(publishedHtmlArtifact.artifact.id)}`
@@ -2924,7 +2943,7 @@ export function TaskDetailPanel({
               <BreadcrumbSeparator />
               <BreadcrumbItem className="min-w-0">
                 <BreadcrumbPage className="truncate" title={fullTitle}>
-                  {compactAddress(task.id)}
+                  {task.referenceCode ?? compactAddress(task.id)}
                 </BreadcrumbPage>
               </BreadcrumbItem>
             </BreadcrumbList>
@@ -2937,6 +2956,10 @@ export function TaskDetailPanel({
           >
             {title}
           </h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <ReferenceCode code={task.referenceCode} label="Task code" />
+            <BookmarkButton entityId={task.id} entityType="task" label="Save" />
+          </div>
           <div className="flex flex-wrap items-center gap-3">
             <Link href={modeHref}>
               <Badge className="hover:opacity-80" variant={taskModeBadgeVariant(task.mode)}>

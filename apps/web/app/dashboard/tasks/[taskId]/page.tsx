@@ -25,6 +25,7 @@ type TaskDetailPageProps = {
   }>;
   searchParams?: Promise<{
     artifact?: string | string[];
+    panel?: string | string[];
     focus?: string | string[];
   }>;
 };
@@ -99,6 +100,11 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
   ]);
   const htmlSubmissions = separateSubmissions ?? modeData.submissions ?? [];
   const initialArtifactId = Array.isArray(query?.artifact) ? query.artifact[0] : query?.artifact;
+  // `?artifact=` is read by two different features: a shared link to a published HTML
+  // result, and the submission gallery's current selection. They are told apart by
+  // `?panel=` -- an overlay names itself there (ADR-0096), so an artifact id arriving
+  // alongside an open panel belongs to that panel, not to the published-result auto-open.
+  const initialPanel = Array.isArray(query?.panel) ? query.panel[0] : query?.panel;
 
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
@@ -107,6 +113,7 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
         focusIntent={focusIntent}
         htmlSubmissions={htmlSubmissions}
         initialArtifactId={initialArtifactId}
+        initialPanel={initialPanel}
         marketStats={marketStats}
         modeData={modeData}
         task={task}

@@ -1011,6 +1011,8 @@ export const submissionsRouter = router({
 
         return {
           id: sub.id,
+          // The public name (ADR-0098). Null on rows created before the backfill.
+          referenceCode: sub.referenceCode,
           taskId: sub.taskId,
           workerAddress: sub.workerAddress,
           fileUrl: sub.fileUrl,

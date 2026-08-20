@@ -105,6 +105,14 @@ export const tasks = pgTable(
     verdictEvidenceHash: text('verdict_evidence_hash'),
     evaluatorDeadline: timestamp('evaluator_deadline', { withTimezone: true }),
     taskDropId: text('task_drop_id').references(() => taskDrops.id),
+    // The public name (ADR-0098), e.g. 'TSK-4M0BXQ2E'. `id` stays the primary key and the
+    // canonical URL segment; this is what a person quotes and searches for. Nullable only until
+    // the backfill completes -- see migration 0051.
+    referenceCode: text('reference_code'),
+    // Generated, never written by application code (ADR-0099). Declared so Drizzle knows the
+    // column exists; search predicates are raw SQL against it, since drizzle-orm has no tsvector
+    // operator. The generating expression lives in migration 0051.
+    searchVector: text('search_vector'),
   },
   (table) => ({
     statusIdx: index('idx_tasks_status').on(table.status),
@@ -118,6 +126,7 @@ export const tasks = pgTable(
     claimedByIdx: index('idx_tasks_claimed_by').on(table.claimedBy),
     createdAtIdx: index('idx_tasks_created_at').on(table.createdAt),
     taskDropIdx: index('idx_tasks_task_drop').on(table.taskDropId),
+    referenceCodeIdx: uniqueIndex('tasks_reference_code_unique').on(table.referenceCode),
   })
 );
 
@@ -169,11 +178,16 @@ export const submissions = pgTable(
     submitTxHash: text('submit_tx_hash'),
     submittedAt: timestamp('submitted_at').defaultNow().notNull(),
     rejectedAt: timestamp('rejected_at'),
+    // The public name (ADR-0098), e.g. 'SUB-7K2QA9XF'. `id` stays the primary key and the
+    // idempotency key; this is what a person quotes, searches for, and sees in a URL. Nullable
+    // only until the backfill completes -- see migration 0051.
+    referenceCode: text('reference_code'),
   },
   (table) => ({
     taskIdIdx: index('idx_submissions_task').on(table.taskId),
     workerIdx: index('idx_submissions_worker').on(table.workerAddress),
     submittedAtIdx: index('idx_submissions_submitted_at').on(table.submittedAt),
+    referenceCodeIdx: uniqueIndex('submissions_reference_code_unique').on(table.referenceCode),
   })
 );
 
@@ -1257,3 +1271,52 @@ export type GameVote = typeof gameVotes.$inferSelect;
 export type NewGameVote = typeof gameVotes.$inferInsert;
 export type GameCurationEvent = typeof gameCurationEvents.$inferSelect;
 export type NewGameCurationEvent = typeof gameCurationEvents.$inferInsert;
+
+// Implements: ADR-0100
+// A private, wallet-scoped saved list. The complaint that motivated this was "hard to find
+// something you've seen before", and a browser-local list is empty at exactly the moment it is
+// needed -- a new machine. So it is a server record, read and written through the ADR-0023
+// read-auth header rather than a fourth self-auth mechanism.
+export const bookmarkCollections = pgTable(
+  'bookmark_collections',
+  {
+    id: text('id').primaryKey(),
+    ownerAddress: text('owner_address').notNull(),
+    name: text('name').notNull(),
+    // Opaque and random, never derived from the name -- a derived slug would leak the name of an
+    // unpublished collection to anyone who guessed at the derivation. Null means unpublished;
+    // unpublishing clears it permanently rather than parking it, so a previously shared link
+    // cannot be resurrected by a later collection.
+    publishedSlug: text('published_slug'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index('idx_bookmark_collections_owner').on(table.ownerAddress),
+    slugIdx: uniqueIndex('bookmark_collections_slug_unique').on(table.publishedSlug),
+  })
+);
+
+// Implements: ADR-0100
+export const bookmarks = pgTable(
+  'bookmarks',
+  {
+    id: text('id').primaryKey(),
+    ownerAddress: text('owner_address').notNull(),
+    // 'submission' | 'task' | 'agent'
+    entityType: text('entity_type').notNull(),
+    entityId: text('entity_id').notNull(),
+    collectionId: text('collection_id').references(() => bookmarkCollections.id),
+    note: text('note'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index('idx_bookmarks_owner').on(table.ownerAddress),
+    collectionIdx: index('idx_bookmarks_collection').on(table.collectionId),
+    // Makes a double-tap on the bookmark control a no-op rather than a duplicate row.
+    ownerEntityIdx: uniqueIndex('bookmarks_owner_entity_unique').on(
+      table.ownerAddress,
+      table.entityType,
+      table.entityId
+    ),
+  })
+);
