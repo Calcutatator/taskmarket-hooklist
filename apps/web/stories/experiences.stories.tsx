@@ -472,6 +472,7 @@ export const MotionAndTimeStates: Story = {
 
 export const PublishedTaskCelebration: Story = {
   parameters: {
+    a11y: { test: 'error' },
     nextjs: {
       navigation: {
         pathname: '/dashboard/tasks/task-1',
@@ -480,11 +481,19 @@ export const PublishedTaskCelebration: Story = {
     },
   },
   render: () => (
-    <div className="min-h-[600px] bg-background">
+    <div className="grid min-h-[600px] gap-6 bg-background p-6">
       <MotionConfig reducedMotion="never">
         <PublishedCelebration task={taskFixture()} />
       </MotionConfig>
       <div id="task-activity" />
     </div>
   ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const guidance = canvas.getByText('No action is needed right now');
+    const celebration = guidance.closest('.rounded-xl');
+
+    await expect(celebration).not.toBeNull();
+    await expect(celebration).not.toHaveClass('lg:col-span-2');
+  },
 };

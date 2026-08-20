@@ -74,7 +74,7 @@ export function PublishedCelebration({ task }: { task: TaskResponse }) {
   return (
     <motion.div
       animate="show"
-      className="rounded-xl border border-border/68 bg-surface/42 p-6 shadow-[var(--shadow-soft)] lg:col-span-2"
+      className="rounded-xl border border-border/68 bg-surface/42 p-6 shadow-[var(--shadow-soft)]"
       initial={motionDisabled ? false : 'hidden'}
       style={{ boxShadow: '0 0 0 1px color-mix(in oklab, var(--success) 28%, transparent)' }}
       variants={groupVariants}

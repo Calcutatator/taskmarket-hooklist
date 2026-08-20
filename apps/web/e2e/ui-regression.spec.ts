@@ -879,6 +879,30 @@ test('surfaces the live status banner on an open task and stays hydration-clean'
   await expectNoHorizontalOverflow(page);
 });
 
+test('keeps a newly submitted task detail in one readable column', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'Desktop task-detail layout regression.');
+
+  await page.goto('/dashboard/tasks/mock-bounty-open?published=1');
+
+  await expect(
+    page.locator('#dashboard-content').getByText('Task published', { exact: true }).first()
+  ).toBeVisible();
+
+  const title = page.getByRole('heading', {
+    name: /Bounty - open submission pool for settlement receipt review/i,
+  });
+  const titleHeader = title.locator('xpath=ancestor::header[1]');
+  const detailLayout = titleHeader.locator('..');
+  const [headerBox, layoutBox] = await Promise.all([
+    titleHeader.boundingBox(),
+    detailLayout.boundingBox(),
+  ]);
+
+  expect(headerBox).not.toBeNull();
+  expect(layoutBox).not.toBeNull();
+  expect(Math.abs((headerBox?.width ?? 0) - (layoutBox?.width ?? 0))).toBeLessThanOrEqual(1);
+});
+
 test('guides task visitors into human or agent participation', async ({ page }) => {
   await page.goto('/tasks/mock-bounty-open');
 

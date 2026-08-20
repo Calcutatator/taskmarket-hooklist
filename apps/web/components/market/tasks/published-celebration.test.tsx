@@ -65,7 +65,11 @@ describe('PublishedCelebration', () => {
     routeState.searchParams = new URLSearchParams('published=1');
     render(<PublishedCelebration task={task} />);
 
-    expect(screen.getByText('No action is needed right now')).toBeInTheDocument();
+    const guidance = screen.getByText('No action is needed right now');
+    const celebration = guidance.closest('.rounded-xl');
+
+    expect(guidance).toBeInTheDocument();
+    expect(celebration).not.toHaveClass('lg:col-span-2');
     expect(screen.getByText(/workers can submit work until the deadline/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /open inbox/i })).toHaveAttribute(
       'href',
