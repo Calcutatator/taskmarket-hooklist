@@ -26,13 +26,13 @@ const JOBS = {
   "skill-conformance": ALWAYS,
   adr: ALWAYS,
   "quality-js": ALWAYS,
-  "backend-tests": ALWAYS,
+  "backend-tests": "needs.changes.outputs.backend == 'true'",
   "js-tests": ALWAYS,
-  "web-build": ALWAYS,
+  "web-build": "needs.changes.outputs.web == 'true'",
   "quality-contracts": "needs.changes.outputs.contracts == 'true'",
-  storybook: ALWAYS,
-  "slap-chop-games": ALWAYS,
-  "ui-e2e": ALWAYS,
+  storybook: "needs.changes.outputs.web == 'true'",
+  "slap-chop-games": "needs.changes.outputs.slap_chop == 'true'",
+  "ui-e2e": "needs.changes.outputs.web == 'true'",
 };
 
 const GATES = {
@@ -53,6 +53,7 @@ const GATES = {
     "backend-tests",
     "js-tests",
     "web-build",
+    "changes",
     "storybook",
     "slap-chop-games",
     "ui-e2e",

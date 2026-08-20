@@ -27,22 +27,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Which parts of the tree this run actually touches. Computed with git rather than a
-  # third-party action so there is nothing extra to pin or trust.
+  # Which parts of the tree this run actually touches, so unaffected jobs can skip instead
+  # of redoing full-repo work that Turborepo has no remote cache to shortcut in CI (no
+  # TURBO_TOKEN/TURBO_TEAM configured, so every runner starts cold).
   #
-  # `quality-contracts` is the most expensive job in this workflow by a distance -- around 19
-  # minutes, nearly all of it compiling Solidity twice -- and it ran on every pull request,
-  # including ones that touch no Solidity at all. That is the bulk of the cost of gating a
-  # frontend change.
+  # `quality-contracts` is the most expensive job by a distance -- around 19 minutes, nearly
+  # all of it compiling Solidity twice. Package-level jobs (storybook, slap-chop-games,
+  # web-build/ui-e2e, backend-tests) are the next tier: single-app, Playwright- or
+  # Postgres-backed, genuinely isolated by package boundary. quality-js and js-tests(other)
+  # stay job-level-unconditional -- they span 14+ of the ~19 workspace packages by design --
+  # but get Turborepo's own `--filter=...[ref]` affected-package selection threaded through so
+  # Turborepo itself does less internal work when nothing in their scope changed.
+  #
+  # Turborepo is the source of truth for "did a package or anything it depends on change" --
+  # it already reads the real pnpm workspace graph, so a packages/shared edit correctly marks
+  # every package that depends on it as affected too, without hand-maintained path lists that
+  # drift out of sync as the workspace grows. `packages/contracts` is Foundry/Solidity, outside
+  # that graph entirely, so it still needs its own direct path check.
   changes:
     runs-on: blacksmith-32vcpu-ubuntu-2204
     timeout-minutes: 45
     outputs:
+      base_sha: ${{ steps.filter.outputs.base_sha }}
       contracts: ${{ steps.filter.outputs.contracts }}
+      web: ${{ steps.filter.outputs.web }}
+      backend: ${{ steps.filter.outputs.backend }}
+      slap_chop: ${{ steps.filter.outputs.slap_chop }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      # Needed only so `pnpm turbo ... --dry=json` below can resolve the workspace graph.
+      # This adds a fixed ~30-60s to every run's critical path in exchange for skipping (or
+      # narrowing) everything downstream that turns out to be unaffected -- a clear net win
+      # once quality-contracts alone is 19 minutes.
+      - run: make install
 
       - id: filter
         run: |
@@ -50,19 +79,89 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE="origin/${{ github.base_ref }}"
             git fetch -q origin "${{ github.base_ref }}"
-            RANGE="$(git merge-base "$BASE" HEAD)...HEAD"
+            MERGE_BASE="$(git merge-base "$BASE" HEAD)"
           else
-            RANGE="HEAD^...HEAD"
+            MERGE_BASE="HEAD^"
           fi
+          BASE_SHA="$(git rev-parse "$MERGE_BASE")"
+          RANGE="$MERGE_BASE...HEAD"
           echo "range: $RANGE"
-          if git diff --name-only "$RANGE" | grep -Eq \
-            '^(packages/contracts/|Makefile$|scripts/run-ci-test\.mjs$|\.github/workflows/ci\.yml$)'; then
-            echo "contracts=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "contracts=false" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+
+          # `build` is defined for every package and turbo.json sets no task-specific `inputs`,
+          # so this uses turbo's default (every file in the package) as the affected signal --
+          # not because build itself matters here, just as a graph-walk probe.
+          pnpm turbo build --filter="...[$BASE_SHA]" --dry=json 2>/dev/null \
+            | tail -n +2 > /tmp/turbo-affected.json || echo '{"packages":[]}' > /tmp/turbo-affected.json
+          AFFECTED="$(node -e "console.log(JSON.stringify(require('/tmp/turbo-affected.json').packages || []))")"
+          echo "affected packages: $AFFECTED"
+
+          affected() { echo "$AFFECTED" | grep -q "\"$1\""; }
+
+          CONTRACTS=false
+          if git diff --name-only "$RANGE" | grep -Eq '^(packages/contracts/|scripts/run-ci-test\.mjs$)'; then
+            CONTRACTS=true
+            git diff --name-only "$RANGE" | grep -E '^(packages/contracts/|scripts/run-ci-test\.mjs$)' | head -5
           fi
-          git diff --name-only "$RANGE" | grep -E \
-            '^(packages/contracts/|Makefile$|scripts/run-ci-test\.mjs$|\.github/workflows/ci\.yml$)' | head -5 || true
+
+          WEB=false
+          affected "@taskmarket/web" && WEB=true
+          BACKEND=false
+          affected "@taskmarket/backend" && BACKEND=true
+          SLAP_CHOP=false
+          affected "@taskmarket/slap-chop-games" && SLAP_CHOP=true
+
+          # Makefile and ci.yml are large, multi-target/multi-job files shared across this
+          # whole workflow -- diffing the whole file would re-trigger every job on any
+          # unrelated edit elsewhere in either. Extract just each job/target's own block from
+          # each side and compare those instead. Covers the case turbo's package graph can't:
+          # someone editing the job/target definition itself, not the package it drives.
+          extract_block() {
+            # $1=ref $2=path $3=block-start pattern $4=sibling-boundary pattern
+            git show "$1:$2" 2>/dev/null | awk -v start="$3" -v sib="$4" '
+              $0 ~ start { p=1 }
+              p && $0 ~ sib && $0 !~ start { exit }
+              p { print }
+            '
+          }
+          block_changed() {
+            ! diff -q \
+              <(extract_block "$MERGE_BASE" "$1" "$2" "$3") \
+              <(extract_block "HEAD" "$1" "$2" "$3") \
+              >/dev/null
+          }
+          MAKEFILE_HEADER_CHANGED=false
+          block_changed "Makefile" '^SHELL :=' '^[a-zA-Z0-9_.-]+:' && MAKEFILE_HEADER_CHANGED=true
+
+          if [ "$CONTRACTS" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || block_changed "Makefile" '^contract:' '^[a-zA-Z0-9_.-]+:' \
+              || block_changed ".github/workflows/ci.yml" '^  quality-contracts:' '^  [a-zA-Z_-]+:$'; }; then
+            CONTRACTS=true
+            echo "contracts-relevant block changed in Makefile or ci.yml"
+          fi
+          if [ "$WEB" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || block_changed ".github/workflows/ci.yml" '^  storybook:' '^  [a-zA-Z_-]+:$' \
+              || block_changed ".github/workflows/ci.yml" '^  web-build:' '^  [a-zA-Z_-]+:$' \
+              || block_changed ".github/workflows/ci.yml" '^  ui-e2e:' '^  [a-zA-Z_-]+:$'; }; then
+            WEB=true
+            echo "web-relevant block changed in Makefile or ci.yml"
+          fi
+          if [ "$BACKEND" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || block_changed ".github/workflows/ci.yml" '^  backend-tests:' '^  [a-zA-Z_-]+:$'; }; then
+            BACKEND=true
+            echo "backend-relevant block changed in Makefile or ci.yml"
+          fi
+          if [ "$SLAP_CHOP" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || block_changed "Makefile" '^slap-chop:' '^[a-zA-Z0-9_.-]+:' \
+              || block_changed ".github/workflows/ci.yml" '^  slap-chop-games:' '^  [a-zA-Z_-]+:$'; }; then
+            SLAP_CHOP=true
+            echo "slap-chop-relevant block changed in Makefile or ci.yml"
+          fi
+
+          echo "contracts=$CONTRACTS" >> "$GITHUB_OUTPUT"
+          echo "web=$WEB" >> "$GITHUB_OUTPUT"
+          echo "backend=$BACKEND" >> "$GITHUB_OUTPUT"
+          echo "slap_chop=$SLAP_CHOP" >> "$GITHUB_OUTPUT"
 
   skill-conformance:
     runs-on: blacksmith-32vcpu-ubuntu-2204
@@ -157,6 +256,7 @@ jobs:
             await postComment({ github, context, workspace: process.env.GITHUB_WORKSPACE });
 
   quality-js:
+    needs: changes
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
 
@@ -164,6 +264,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+          # Needs the merge-base commit reachable so CI_BASE_REF below can resolve -- this job
+          # spans too much of the workspace to skip outright, but turbo's own affected-package
+          # filter still narrows what it actually does.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
         with:
@@ -180,9 +284,11 @@ jobs:
       # budget; lint, format, type checking, and builds are independent quality gates.
       - name: Run non-test JavaScript checks
         timeout-minutes: 5
-        run: make ci-quality-js
+        run: make ci-quality-js CI_BASE_REF='${{ needs.changes.outputs.base_sha }}'
 
   backend-tests:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
     strategy:
@@ -239,6 +345,7 @@ jobs:
           DATABASE_URL: postgresql://taskmarket:taskmarket@localhost:5432/taskmarket_test
 
   js-tests:
+    needs: changes
     runs-on: blacksmith-32vcpu-ubuntu-2204
     timeout-minutes: 45
     strategy:
@@ -259,6 +366,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+          # See quality-js above: needed so CI_BASE_REF resolves for the `other` target's
+          # turbo affected-package filter. A no-op for the `web` shards, which don't use it.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
         with:
@@ -277,8 +387,11 @@ jobs:
           make ci-test
           CI_TEST_TARGET='${{ matrix.target }}'
           CI_TEST_SHARD='${{ matrix.shard }}'
+          CI_BASE_REF='${{ needs.changes.outputs.base_sha }}'
 
   web-build:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2204
     timeout-minutes: 45
 
@@ -463,6 +576,8 @@ jobs:
           retention-days: 30
 
   storybook:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
     # Browsers and OS-level Playwright deps ship pre-baked in this image, so there is no
@@ -539,6 +654,8 @@ jobs:
   # Keep its checks isolated from the existing marketplace UI so a foundation regression is
   # directly attributable and the app remains independently deployable.
   slap-chop-games:
+    needs: changes
+    if: needs.changes.outputs.slap_chop == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2204
     timeout-minutes: 45
     # See storybook above for why this runs in Playwright's own image rather than
@@ -657,7 +774,8 @@ jobs:
           NEEDS: ${{ toJSON(needs) }}
 
   ui-e2e:
-    needs: web-build
+    needs: [web-build, changes]
+    if: needs.changes.outputs.web == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
     # See storybook above for why this runs in Playwright's own image rather than
@@ -781,6 +899,7 @@ jobs:
         backend-tests,
         js-tests,
         web-build,
+        changes,
         storybook,
         slap-chop-games,
         ui-e2e,
