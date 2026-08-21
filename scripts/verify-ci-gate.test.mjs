@@ -24,7 +24,7 @@ function run(args, needs) {
   });
 }
 
-const ALWAYS_JOBS = ["skill-conformance", "adr", "quality-js", "js-tests"];
+const ALWAYS_JOBS = ["skill-conformance", "adr"];
 
 // Conditional job -> the detector output that authorises it.
 const CONDITIONAL_JOBS = {
@@ -34,6 +34,9 @@ const CONDITIONAL_JOBS = {
   storybook: "web",
   "slap-chop-games": "slap_chop",
   "ui-e2e": "web",
+  "quality-js": "quality_js",
+  "js-tests-web": "web",
+  "js-tests-other": "other",
 };
 
 const BASE_OUTPUTS = {
@@ -41,6 +44,8 @@ const BASE_OUTPUTS = {
   web: "true",
   backend: "true",
   slap_chop: "true",
+  quality_js: "true",
+  other: "true",
 };
 
 // A run where every detector output is relevant and every job passed.
@@ -49,7 +54,8 @@ function allGreen(overrides = {}) {
     changes: { result: "success", outputs: { ...BASE_OUTPUTS } },
   };
   for (const job of ALWAYS_JOBS) needs[job] = { result: "success" };
-  for (const job of Object.keys(CONDITIONAL_JOBS)) needs[job] = { result: "success" };
+  for (const job of Object.keys(CONDITIONAL_JOBS))
+    needs[job] = { result: "success" };
   return { ...needs, ...overrides };
 }
 
@@ -84,12 +90,9 @@ test("names every failing job instead of stopping at the first", () => {
 
 for (const result of ["failure", "cancelled", "timed_out", "skipped"]) {
   test(`rejects an unconditional job reporting ${result}`, () => {
-    const run1 = run(
-      ["--gate", "quality"],
-      allGreen({ "quality-js": { result } }),
-    );
+    const run1 = run(["--gate", "quality"], allGreen({ adr: { result } }));
     assert.equal(run1.status, 1);
-    assert.match(run1.stdout, /must always run|FAILED\s+quality-js/);
+    assert.match(run1.stdout, /must always run|FAILED\s+adr/);
   });
 }
 
@@ -108,7 +111,10 @@ for (const [job, key] of Object.entries(CONDITIONAL_JOBS)) {
         .map(([j]) => [j, { result: "skipped" }]),
     );
     const needs = allGreen({
-      changes: { result: "success", outputs: { ...BASE_OUTPUTS, [key]: "false" } },
+      changes: {
+        result: "success",
+        outputs: { ...BASE_OUTPUTS, [key]: "false" },
+      },
       ...siblingOverrides,
     });
     assert.equal(run(["--gate", gate], needs).status, 0);
@@ -126,7 +132,10 @@ for (const [job, key] of Object.entries(CONDITIONAL_JOBS)) {
 
   test(`rejects a ${job} run the detector said was irrelevant`, () => {
     const needs = allGreen({
-      changes: { result: "success", outputs: { ...BASE_OUTPUTS, [key]: "false" } },
+      changes: {
+        result: "success",
+        outputs: { ...BASE_OUTPUTS, [key]: "false" },
+      },
     });
     const result = run(["--gate", gate], needs);
     assert.equal(result.status, 1);

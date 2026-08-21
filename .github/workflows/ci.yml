@@ -33,11 +33,12 @@ jobs:
   #
   # `quality-contracts` is the most expensive job by a distance -- around 19 minutes, nearly
   # all of it compiling Solidity twice. Package-level jobs (storybook, slap-chop-games,
-  # web-build/ui-e2e, backend-tests) are the next tier: single-app, Playwright- or
-  # Postgres-backed, genuinely isolated by package boundary. quality-js and js-tests(other)
-  # stay job-level-unconditional -- they span 14+ of the ~19 workspace packages by design --
-  # but get Turborepo's own `--filter=...[ref]` affected-package selection threaded through so
-  # Turborepo itself does less internal work when nothing in their scope changed.
+  # web-build/ui-e2e, backend-tests, js-tests-web) are the next tier: single-app, Playwright- or
+  # Postgres-backed, genuinely isolated by package boundary. quality-js and js-tests-other are
+  # broader -- each runs turbo across every workspace package except a few named exclusions
+  # (see the Makefile), not one single package -- so they skip only when *nothing outside their
+  # own exclusion set* is affected, and still thread Turborepo's `--filter=...[ref]` selection
+  # through on top of that so a run that IS relevant still does less internal work.
   #
   # Turborepo is the source of truth for "did a package or anything it depends on change" --
   # it already reads the real pnpm workspace graph, so a packages/shared edit correctly marks
@@ -53,6 +54,8 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       backend: ${{ steps.filter.outputs.backend }}
       slap_chop: ${{ steps.filter.outputs.slap_chop }}
+      quality_js: ${{ steps.filter.outputs.quality_js }}
+      other: ${{ steps.filter.outputs.other }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -116,6 +119,24 @@ jobs:
           SLAP_CHOP=false
           affected "@taskmarket/slap-chop-games" && SLAP_CHOP=true
 
+          # quality-js and js-tests(other) each run turbo across a *set* of packages (every
+          # workspace package except a few named exclusions -- see the Makefile), not one single
+          # package, so there's no single package name to check with `affected` above. Instead,
+          # ask whether anything in the affected list falls outside that job's own exclusion set
+          # -- mirroring the exact --filter='!@taskmarket/X' exclusions each job's own turbo
+          # invocation already uses, so this can't drift out of sync with what actually runs.
+          any_affected_outside() {
+            node -e '
+              const affected = JSON.parse(process.argv[1]);
+              const excluded = new Set(process.argv.slice(2));
+              process.exit(affected.some((p) => !excluded.has(p)) ? 0 : 1);
+            ' "$AFFECTED" "$@"
+          }
+          QUALITY_JS=false
+          any_affected_outside "@taskmarket/contracts" "@taskmarket/docs" "@taskmarket/web" && QUALITY_JS=true
+          OTHER=false
+          any_affected_outside "@taskmarket/contracts" "@taskmarket/docs" "@taskmarket/backend" "@taskmarket/web" && OTHER=true
+
           # Makefile and ci.yml are large, multi-target/multi-job files shared across this
           # whole workflow -- diffing the whole file would re-trigger every job on any
           # unrelated edit elsewhere in either. Extract just each job/target's own block from
@@ -162,11 +183,45 @@ jobs:
             SLAP_CHOP=true
             echo "slap-chop-relevant block changed in Makefile or ci.yml"
           fi
+          if [ "$QUALITY_JS" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || block_changed "Makefile" '^ci-quality-js:' '^[a-zA-Z0-9_.-]+:' \
+              || block_changed ".github/workflows/ci.yml" '^  quality-js:' '^  [a-zA-Z_-]+:$'; }; then
+            QUALITY_JS=true
+            echo "quality-js-relevant block changed in Makefile or ci.yml"
+          fi
+          # ci-test: is one Makefile target shared by backend-tests, js-tests-web, and
+          # js-tests-other (a case statement keyed on CI_TEST_TARGET) -- a change anywhere in it
+          # could affect any of the three, and there's no cheap way to tell which case branch
+          # changed without parsing the case statement itself, so treat it as relevant to all
+          # three alike. Conservative, not precise, but still narrower than the old "any Makefile
+          # edit reruns everything" behaviour.
+          CI_TEST_CHANGED=false
+          block_changed "Makefile" '^ci-test:' '^[a-zA-Z0-9_.-]+:' && CI_TEST_CHANGED=true
+          if [ "$BACKEND" = "false" ] && [ "$CI_TEST_CHANGED" = "true" ]; then
+            BACKEND=true
+            echo "ci-test: target changed in Makefile"
+          fi
+          if [ "$WEB" = "false" ] && [ "$CI_TEST_CHANGED" = "true" ]; then
+            WEB=true
+            echo "ci-test: target changed in Makefile"
+          fi
+          if [ "$OTHER" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || [ "$CI_TEST_CHANGED" = "true" ] \
+              || block_changed ".github/workflows/ci.yml" '^  js-tests-other:' '^  [a-zA-Z_-]+:$'; }; then
+            OTHER=true
+            echo "js-tests-other-relevant block changed in Makefile or ci.yml"
+          fi
+          if [ "$WEB" = "false" ] && block_changed ".github/workflows/ci.yml" '^  js-tests-web:' '^  [a-zA-Z_-]+:$'; then
+            WEB=true
+            echo "js-tests-web block changed in ci.yml"
+          fi
 
           echo "contracts=$CONTRACTS" >> "$GITHUB_OUTPUT"
           echo "web=$WEB" >> "$GITHUB_OUTPUT"
           echo "backend=$BACKEND" >> "$GITHUB_OUTPUT"
           echo "slap_chop=$SLAP_CHOP" >> "$GITHUB_OUTPUT"
+          echo "quality_js=$QUALITY_JS" >> "$GITHUB_OUTPUT"
+          echo "other=$OTHER" >> "$GITHUB_OUTPUT"
 
   skill-conformance:
     runs-on: blacksmith-32vcpu-ubuntu-2204
@@ -262,6 +317,7 @@ jobs:
 
   quality-js:
     needs: changes
+    if: needs.changes.outputs.quality_js == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
 
@@ -349,31 +405,27 @@ jobs:
         env:
           DATABASE_URL: postgresql://taskmarket:taskmarket@localhost:5432/taskmarket_test
 
-  js-tests:
+  # Split from a single js-tests job (which used to bundle these target: web/other matrix legs
+  # together) because a job-level `if:` can't gate one matrix leg differently from another --
+  # web and other are gated on different changes outputs, so they need to be different jobs.
+  js-tests-web:
     needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2204
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: web
-            shard: 1/2
+          - shard: 1/2
             label: web-1-of-2
-          - target: web
-            shard: 2/2
+          - shard: 2/2
             label: web-2-of-2
-          - target: other
-            shard: ""
-            label: other-js
 
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
-          # See quality-js above: needed so CI_BASE_REF resolves for the `other` target's
-          # turbo affected-package filter. A no-op for the `web` shards, which don't use it.
-          fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
         with:
@@ -390,8 +442,40 @@ jobs:
         timeout-minutes: 6
         run: >-
           make ci-test
-          CI_TEST_TARGET='${{ matrix.target }}'
+          CI_TEST_TARGET='web'
           CI_TEST_SHARD='${{ matrix.shard }}'
+
+  # See js-tests-web above for why this is a separate job. Turbo's own --filter='...[ref]' still
+  # narrows what it does inside a relevant run; `other` here only decides whether to run at all.
+  js-tests-other:
+    needs: changes
+    if: needs.changes.outputs.other == 'true'
+    runs-on: blacksmith-32vcpu-ubuntu-2204
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          # Needed so CI_BASE_REF below can resolve for turbo's affected-package filter.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      - run: make install
+
+      - name: Test other-js
+        timeout-minutes: 6
+        run: >-
+          make ci-test
+          CI_TEST_TARGET='other'
           CI_BASE_REF='${{ needs.changes.outputs.base_sha }}'
 
   web-build:
@@ -758,7 +842,8 @@ jobs:
       [
         quality-js,
         backend-tests,
-        js-tests,
+        js-tests-web,
+        js-tests-other,
         web-build,
         changes,
         quality-contracts,
@@ -902,7 +987,8 @@ jobs:
       [
         quality-js,
         backend-tests,
-        js-tests,
+        js-tests-web,
+        js-tests-other,
         web-build,
         changes,
         storybook,
