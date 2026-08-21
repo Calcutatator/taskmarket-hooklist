@@ -35,7 +35,7 @@ jobs:
   # including ones that touch no Solidity at all. That is the bulk of the cost of gating a
   # frontend change.
   changes:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2204
     timeout-minutes: 45
     outputs:
       contracts: ${{ steps.filter.outputs.contracts }}
@@ -65,7 +65,7 @@ jobs:
             '^(packages/contracts/|Makefile$|scripts/run-ci-test\.mjs$|\.github/workflows/ci\.yml$)' | head -5 || true
 
   skill-conformance:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2204
     # The docs build installs Playwright OS and browser dependencies. A slow Ubuntu
     # mirror can consume most of the previous 10-minute budget before Vocs starts.
     timeout-minutes: 45
@@ -91,7 +91,7 @@ jobs:
       - run: make docs-og-check
 
   adr:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
     permissions:
       contents: read
@@ -157,7 +157,7 @@ jobs:
             await postComment({ github, context, workspace: process.env.GITHUB_WORKSPACE });
 
   quality-js:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
 
     steps:
@@ -183,7 +183,7 @@ jobs:
         run: make ci-quality-js
 
   backend-tests:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -239,7 +239,7 @@ jobs:
           DATABASE_URL: postgresql://taskmarket:taskmarket@localhost:5432/taskmarket_test
 
   js-tests:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2204
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -279,7 +279,7 @@ jobs:
           CI_TEST_SHARD='${{ matrix.shard }}'
 
   web-build:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2204
     timeout-minutes: 45
 
     steps:
@@ -319,7 +319,7 @@ jobs:
     # Skipped when no Solidity changed. The job verifies the contracts and nothing else, so on a
     # run that touches none of them it re-proves what the previous run already proved.
     if: needs.changes.outputs.contracts == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2204
     # Raised from 30, which this job outgrew. Nearly all of it is compilation: the ABI freshness
     # check is a full `forge build` at ~12-13 minutes, and coverage recompiles separately under
     # `--ir-minimum` for another ~4. Everything else -- lint, format, the contract suite, the gas
@@ -463,7 +463,7 @@ jobs:
           retention-days: 30
 
   storybook:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
     # Browsers and OS-level Playwright deps ship pre-baked in this image, so there is no
     # apt-get step here for a slow package mirror to stall on multi-hundred-MB browser
@@ -539,7 +539,7 @@ jobs:
   # Keep its checks isolated from the existing marketplace UI so a foundation regression is
   # directly attributable and the app remains independently deployable.
   slap-chop-games:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2204
     timeout-minutes: 45
     # See storybook above for why this runs in Playwright's own image rather than
     # `playwright install --with-deps` on ubuntu-latest, and why --ipc=host is set and the
@@ -645,7 +645,7 @@ jobs:
         storybook,
         slap-chop-games,
       ]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2204
     timeout-minutes: 45
 
     steps:
@@ -658,7 +658,7 @@ jobs:
 
   ui-e2e:
     needs: web-build
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
     # See storybook above for why this runs in Playwright's own image rather than
     # `playwright install --with-deps` on ubuntu-latest, and why --ipc=host is set and the
@@ -785,7 +785,7 @@ jobs:
         slap-chop-games,
         ui-e2e,
       ]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
 
     steps:

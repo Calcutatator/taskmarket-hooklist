@@ -46,7 +46,7 @@ env:
 jobs:
   teardown:
     if: github.event.action == 'closed'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Each of the five deletes below retries against transient Railway API errors
     # ("Problem processing request") for up to ~10 minutes on its own -- observed in
     # practice to intermittently fail on one delete call while an identical call for a
@@ -115,7 +115,7 @@ jobs:
 
   deploy:
     if: github.event.action != 'closed'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 35
 
     steps:
