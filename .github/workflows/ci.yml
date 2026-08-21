@@ -91,8 +91,13 @@ jobs:
           # `build` is defined for every package and turbo.json sets no task-specific `inputs`,
           # so this uses turbo's default (every file in the package) as the affected signal --
           # not because build itself matters here, just as a graph-walk probe.
+          #
+          # pnpm/turbo can print a variable number of preamble lines before the JSON (an engine
+          # warning, an update-available banner, or nothing at all, depending on environment) --
+          # `sed -n '/^{/,$p'` finds the actual start of the object regardless of how many there
+          # are, rather than assuming a fixed line count and risking stripping the JSON itself.
           pnpm turbo build --filter="...[$BASE_SHA]" --dry=json 2>/dev/null \
-            | tail -n +2 > /tmp/turbo-affected.json || echo '{"packages":[]}' > /tmp/turbo-affected.json
+            | sed -n '/^{/,$p' > /tmp/turbo-affected.json || echo '{"packages":[]}' > /tmp/turbo-affected.json
           AFFECTED="$(node -e "console.log(JSON.stringify(require('/tmp/turbo-affected.json').packages || []))")"
           echo "affected packages: $AFFECTED"
 
