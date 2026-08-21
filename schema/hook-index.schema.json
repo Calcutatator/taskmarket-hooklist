@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Taskmarket curated hook index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["chainId", "hooks"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "chainId": {
+      "const": 8453
+    },
+    "hooks": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "pattern": "^0x[0-9a-f]{40}$"
+          },
+          {
+            "$ref": "hook-metadata.schema.json"
+          }
+        ]
+      }
+    }
+  }
+}

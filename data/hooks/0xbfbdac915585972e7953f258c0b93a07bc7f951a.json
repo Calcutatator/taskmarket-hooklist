@@ -1,0 +1,17 @@
+{
+  "$schema": "../../schema/hook-metadata.schema.json",
+  "address": "0xbfbdac915585972e7953f258c0b93a07bc7f951a",
+  "chainId": 8453,
+  "name": "Historical Taskmarket default hook",
+  "description": "Historical Taskmarket protocol-default hook; its behavior source is unverified on BaseScan.",
+  "categories": [
+    "protocol-default"
+  ],
+  "verified": false,
+  "sourceUrl": "https://basescan.org/address/0xbfBDac915585972E7953F258C0B93a07BC7F951A#code",
+  "currentDefault": false,
+  "defaultStatus": "historical_confirmed",
+  "proxyKind": "none_or_unknown",
+  "implementationAddress": null,
+  "proxySourceVerified": false
+}

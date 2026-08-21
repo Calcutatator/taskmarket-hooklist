@@ -1,0 +1,66 @@
+name: Submit hook metadata
+description: Add or improve public metadata for a hook observed on Taskmarket.
+title: "[Hook]: "
+labels:
+  - hook-metadata
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Hook use is discovered automatically from public Taskmarket tasks. Use this form to supply verifiable metadata for an observed Base contract.
+  - type: input
+    id: address
+    attributes:
+      label: Hook contract address
+      description: Base mainnet address, preferably lowercase.
+      placeholder: "0x0000000000000000000000000000000000000000"
+    validations:
+      required: true
+  - type: input
+    id: name
+    attributes:
+      label: Hook name
+      placeholder: Example reward hook
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Factual description
+      description: Describe observed behavior and avoid security or endorsement claims.
+    validations:
+      required: true
+  - type: input
+    id: repository
+    attributes:
+      label: Source repository
+      placeholder: https://github.com/owner/repository
+  - type: input
+    id: verified_source
+    attributes:
+      label: Effective implementation source
+      description: Link to verified source for the behavior implementation, not only a proxy shell.
+      placeholder: https://basescan.org/address/0x...#code
+  - type: input
+    id: audit
+    attributes:
+      label: Audit report
+      description: Optional public report covering this deployment or implementation.
+      placeholder: https://...
+  - type: input
+    id: license
+    attributes:
+      label: Declared license
+      placeholder: MIT
+  - type: textarea
+    id: proxy
+    attributes:
+      label: Proxy details
+      description: If applicable, include proxy type, current implementation address, and evidence.
+  - type: checkboxes
+    id: acknowledgement
+    attributes:
+      label: Registry acknowledgement
+      options:
+        - label: I understand that registry inclusion is discovery metadata, not an endorsement or security review.
+          required: true

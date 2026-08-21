@@ -1,0 +1,16 @@
+node_modules/
+coverage/
+dist/
+.vercel/
+.agents/
+.context/
+.qa/
+.reference/
+design-qa.md
+public/review.*
+scripts/prepare-insect-drop-notes.js
+scripts/taskmarket-submit-and-verify.js
+.env
+.env.*
+!.env.example
+.DS_Store

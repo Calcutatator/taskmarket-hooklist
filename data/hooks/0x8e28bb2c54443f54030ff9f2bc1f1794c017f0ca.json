@@ -1,0 +1,17 @@
+{
+  "$schema": "../../schema/hook-metadata.schema.json",
+  "address": "0x8e28bb2c54443f54030ff9f2bc1f1794c017f0ca",
+  "chainId": 8453,
+  "name": "Current Taskmarket default hook",
+  "description": "Current Taskmarket protocol-default hook behind an ERC-1967 proxy; the proxy source is verified, but the current behavior implementation is unverified.",
+  "categories": [
+    "protocol-default"
+  ],
+  "verified": false,
+  "sourceUrl": "https://basescan.org/address/0x298E3865a1A25DE7212799bbeb1A67DF7952B8fe#code",
+  "currentDefault": true,
+  "defaultStatus": "current_confirmed",
+  "proxyKind": "erc1967",
+  "implementationAddress": "0x298e3865a1a25de7212799bbeb1a67df7952b8fe",
+  "proxySourceVerified": true
+}

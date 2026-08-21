@@ -1,0 +1,9 @@
+{
+  "$schema": "../../schema/hook-index.schema.json",
+  "chainId": 8453,
+  "hooks": [
+    "0x1bc1874271a7ec2b1bcda431ac7aa5d1df17e95b",
+    "0x8e28bb2c54443f54030ff9f2bc1f1794c017f0ca",
+    "0xbfbdac915585972e7953f258c0b93a07bc7f951a"
+  ]
+}

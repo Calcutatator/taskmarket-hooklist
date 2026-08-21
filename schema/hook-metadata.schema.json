@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Taskmarket curated hook metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["address", "chainId"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "address": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]{40}$"
+    },
+    "chainId": {
+      "const": 8453
+    },
+    "name": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "description": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "author": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "repository": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "pattern": "^https?://"
+    },
+    "homepage": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "pattern": "^https?://"
+    },
+    "license": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "categories": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-z0-9][a-z0-9._-]*$"
+      }
+    },
+    "verified": {
+      "type": "boolean",
+      "description": "Whether the hook's effective behavior source has been verified."
+    },
+    "auditUrl": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "pattern": "^https?://"
+    },
+    "sourceUrl": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "pattern": "^https?://"
+    },
+    "currentDefault": {
+      "type": "boolean",
+      "description": "Whether this is Taskmarket's currently confirmed protocol-default hook."
+    },
+    "defaultStatus": {
+      "enum": [
+        "current_confirmed",
+        "historical_confirmed",
+        "historical_inferred",
+        "custom",
+        "unknown"
+      ]
+    },
+    "proxyKind": {
+      "enum": ["none", "none_or_unknown", "erc1967", "unknown"]
+    },
+    "implementationAddress": {
+      "type": ["string", "null"],
+      "pattern": "^0x[0-9a-f]{40}$"
+    },
+    "proxySourceVerified": {
+      "type": "boolean",
+      "description": "Whether the proxy contract source is verified; this does not imply implementation behavior is verified."
+    }
+  }
+}

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Browse hook contracts observed on public Taskmarket tasks. Search by address, filter by mode and activity, and inspect live usage on Base."
+    />
+    <meta name="theme-color" content="#fff7fa" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; connect-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'self'"
+    />
+    <title>Taskmarket Hooks — Public Hook Registry</title>
+    <link rel="icon" href="./assets/taskmarket-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#hook-results">Skip to hook results</a>
+
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
+    <div class="ambient ambient-three" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="./" aria-label="Taskmarket Hooks home">
+          <img src="./assets/taskmarket-icon.svg" alt="" width="30" height="30" />
+          <span>taskmarket</span>
+          <span class="brand-section">hooks</span>
+        </a>
+        <nav class="header-links" aria-label="Related links">
+          <a href="https://taskmarket.dev" target="_blank" rel="noreferrer">Taskmarket</a>
+          <a href="https://github.com/Calcutatator/taskmarket-hooklist" target="_blank" rel="noreferrer">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <div class="app-shell">
+      <aside class="filter-panel" aria-label="Hook filters">
+        <div class="intro-block">
+          <h1>Taskmarket Hook Registry</h1>
+          <p id="registry-summary" class="intro-copy">
+            Browse hooks observed across public Taskmarket tasks on Base. Filter by mode, activity, and metadata.
+          </p>
+          <div class="intro-links">
+            <a
+              href="https://github.com/Calcutatator/taskmarket-hooklist/issues/new?template=submit-hook.yml"
+              target="_blank"
+              rel="noreferrer"
+            >→ Contribute metadata</a>
+            <a href="https://taskmarket.dev/reference/hooks.md" target="_blank" rel="noreferrer">→ Hook documentation</a>
+          </div>
+        </div>
+
+        <form id="filters" novalidate>
+          <div class="search-wrap">
+            <label class="sr-only" for="hook-search">Search hooks by name, address, description, or task tag</label>
+            <input
+              id="hook-search"
+              name="search"
+              type="search"
+              inputmode="search"
+              autocomplete="off"
+              placeholder="Search hooks..."
+            />
+          </div>
+
+          <fieldset class="filter-group">
+            <legend>Task modes</legend>
+            <div class="chip-list" id="mode-filters"></div>
+          </fieldset>
+
+          <fieldset class="filter-group">
+            <legend>Activity</legend>
+            <div class="chip-list" id="activity-filters"></div>
+          </fieldset>
+
+          <fieldset class="filter-group">
+            <legend>Metadata</legend>
+            <div class="chip-list" id="property-filters"></div>
+          </fieldset>
+
+          <button class="clear-filters" id="clear-filters" type="button" hidden>Clear all filters</button>
+        </form>
+
+        <p class="registry-note">
+          “Observed” means a contract address appeared on a public Taskmarket task. It is not an approval, audit, or safety guarantee.
+        </p>
+      </aside>
+
+      <main class="results-panel" id="hook-results" tabindex="-1">
+        <div class="results-toolbar" aria-live="polite">
+          <p id="results-count">Loading public hooks…</p>
+          <p id="last-updated" class="last-updated"></p>
+        </div>
+
+        <div class="error-banner" id="error-banner" role="alert" hidden>
+          <div>
+            <strong id="error-title">Live registry unavailable.</strong>
+            <p id="error-message">The last generated snapshot is shown when available.</p>
+          </div>
+          <button id="retry-button" type="button">Retry</button>
+        </div>
+
+        <section class="hook-grid" id="hook-grid" aria-label="Public hooks">
+          <article class="hook-card skeleton-card" aria-hidden="true"></article>
+          <article class="hook-card skeleton-card" aria-hidden="true"></article>
+          <article class="hook-card skeleton-card" aria-hidden="true"></article>
+          <article class="hook-card skeleton-card" aria-hidden="true"></article>
+        </section>
+
+        <section class="empty-state" id="empty-state" hidden>
+          <img src="./assets/taskmarket-icon.svg" alt="" width="64" height="64" />
+          <h2 id="empty-title">No hooks match your filters</h2>
+          <p id="empty-copy">Try a different address, task mode, or activity filter.</p>
+          <button id="empty-clear" type="button">Clear filters</button>
+        </section>
+      </main>
+    </div>
+
+    <div class="drawer-layer" id="drawer-layer" hidden>
+      <button class="drawer-backdrop" id="drawer-backdrop" type="button" aria-label="Close hook details"></button>
+      <aside
+        class="hook-drawer"
+        id="hook-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="drawer-title"
+        tabindex="-1"
+      >
+        <div id="drawer-content"></div>
+      </aside>
+    </div>
+
+    <template id="hook-card-template">
+      <button class="hook-card" type="button">
+        <span class="card-topline">
+          <span class="network-badge"><img src="./assets/base-network.svg" alt="" />Base</span>
+          <span class="observed-badge"><span class="status-dot" aria-hidden="true"></span><span class="observed-label">Observed</span></span>
+        </span>
+        <span class="card-title"></span>
+        <span class="card-description"></span>
+        <span class="card-footer">
+          <span class="usage-stat"></span>
+          <span class="card-properties"></span>
+        </span>
+      </button>
+    </template>
+
+    <script src="./config.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

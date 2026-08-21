@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Taskmarket public hook registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "generatedAt",
+    "source",
+    "chainId",
+    "totalTasksScanned",
+    "totalHooks",
+    "hooks"
+  ],
+  "properties": {
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "string",
+      "format": "uri"
+    },
+    "chainId": {
+      "const": 8453
+    },
+    "totalTasksScanned": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "totalHooks": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "hooks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/hook"
+      }
+    }
+  },
+  "$defs": {
+    "nullableText": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "nullableUrl": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "stringSet": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "exampleTask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "status", "mode"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "hook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "address",
+        "chainId",
+        "name",
+        "description",
+        "author",
+        "repository",
+        "homepage",
+        "license",
+        "categories",
+        "verified",
+        "auditUrl",
+        "sourceUrl",
+        "currentDefault",
+        "defaultStatus",
+        "proxyKind",
+        "implementationAddress",
+        "proxySourceVerified",
+        "taskCount",
+        "usageCount",
+        "activeTaskCount",
+        "modes",
+        "statuses",
+        "tags",
+        "requesterCount",
+        "firstSeen",
+        "lastSeen",
+        "exampleTasks"
+      ],
+      "properties": {
+        "address": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "chainId": {
+          "const": 8453
+        },
+        "name": {
+          "$ref": "#/$defs/nullableText"
+        },
+        "description": {
+          "$ref": "#/$defs/nullableText"
+        },
+        "author": {
+          "$ref": "#/$defs/nullableText"
+        },
+        "repository": {
+          "$ref": "#/$defs/nullableUrl"
+        },
+        "homepage": {
+          "$ref": "#/$defs/nullableUrl"
+        },
+        "license": {
+          "$ref": "#/$defs/nullableText"
+        },
+        "categories": {
+          "$ref": "#/$defs/stringSet"
+        },
+        "verified": {
+          "type": "boolean",
+          "description": "Whether the hook's effective behavior source has been verified."
+        },
+        "auditUrl": {
+          "$ref": "#/$defs/nullableUrl"
+        },
+        "sourceUrl": {
+          "$ref": "#/$defs/nullableUrl"
+        },
+        "currentDefault": {
+          "type": "boolean",
+          "description": "Whether this is Taskmarket's currently confirmed protocol-default hook."
+        },
+        "defaultStatus": {
+          "enum": [
+            "current_confirmed",
+            "historical_confirmed",
+            "historical_inferred",
+            "custom",
+            "unknown"
+          ]
+        },
+        "proxyKind": {
+          "enum": ["none", "none_or_unknown", "erc1967", "unknown"]
+        },
+        "implementationAddress": {
+          "type": ["string", "null"],
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "proxySourceVerified": {
+          "type": "boolean",
+          "description": "Whether the proxy contract source is verified; this does not imply implementation behavior is verified."
+        },
+        "taskCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "usageCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "activeTaskCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "modes": {
+          "$ref": "#/$defs/stringSet"
+        },
+        "statuses": {
+          "$ref": "#/$defs/stringSet"
+        },
+        "tags": {
+          "$ref": "#/$defs/stringSet"
+        },
+        "requesterCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "firstSeen": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "lastSeen": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "exampleTasks": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/exampleTask"
+          }
+        }
+      }
+    }
+  }
+}

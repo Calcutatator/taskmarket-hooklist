@@ -1,0 +1,18 @@
+{
+  "$schema": "../../schema/hook-metadata.schema.json",
+  "address": "0x1bc1874271a7ec2b1bcda431ac7aa5d1df17e95b",
+  "chainId": 8453,
+  "name": "TaskTokenRewardHook (historical deployment)",
+  "description": "Verified direct TaskTokenRewardHook deployment previously observed as Taskmarket’s protocol default.",
+  "categories": [
+    "protocol-default",
+    "rewards"
+  ],
+  "verified": true,
+  "sourceUrl": "https://basescan.org/address/0x1bC1874271a7Ec2B1bCDa431AC7aA5D1df17e95B#code",
+  "currentDefault": false,
+  "defaultStatus": "historical_inferred",
+  "proxyKind": "none",
+  "implementationAddress": null,
+  "proxySourceVerified": false
+}

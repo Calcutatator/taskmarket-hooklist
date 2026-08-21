@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Taskmarket">
+  <g>
+    <rect x="364" y="112" width="128" height="128" rx="28" fill="#FFC1D6"/>
+    <rect x="196" y="280" width="128" height="128" rx="28" fill="#461526"/>
+    <rect x="364" y="280" width="128" height="128" rx="28" fill="#FF94BE"/>
+    <rect x="532" y="280" width="128" height="128" rx="28" fill="#FF2D6F"/>
+    <rect x="196" y="448" width="128" height="128" rx="28" fill="#661631"/>
+    <rect x="364" y="448" width="128" height="128" rx="28" fill="#FF5A95"/>
+    <rect x="532" y="448" width="128" height="128" rx="28" fill="#FF2D6F"/>
+    <rect x="700" y="448" width="128" height="128" rx="28" fill="#FF3B7D"/>
+    <rect x="196" y="616" width="128" height="128" rx="28" fill="#FF2D6F"/>
+    <rect x="364" y="616" width="128" height="128" rx="28" fill="#FF2D6F"/>
+    <rect x="532" y="616" width="128" height="128" rx="28" fill="#FF2D6F"/>
+    <rect x="700" y="616" width="128" height="128" rx="28" fill="#FF5A95"/>
+    <rect x="364" y="784" width="128" height="128" rx="28" fill="#75183C"/>
+    <rect x="532" y="784" width="128" height="128" rx="28" fill="#B81D58"/>
+  </g>
+</svg>
