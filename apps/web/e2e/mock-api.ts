@@ -303,6 +303,7 @@ const tasks: TaskDetailResponse[] = [
       action('mock-bounty-open', 'requester', 'cancel'),
       action('mock-bounty-open', 'requester', 'update'),
     ],
+    referenceCode: 'TSK-MOCKSH01',
     reward: '240000000',
     submissionCount: 0,
     tags: ['bounty', 'open'],
@@ -1454,6 +1455,17 @@ function filteredTasks(url: URL) {
   const maxReward = url.searchParams.get('maxReward');
   const deadlineHours = url.searchParams.get('deadlineHours');
   const taskDropId = url.searchParams.get('taskDropId');
+  const query = url.searchParams.get('q');
+
+  // Minimal stand-in for ADR-0099's reference-code short-circuit (apps/backend/src/lib/task-search.ts):
+  // match `q` against a task's referenceCode case-insensitively, with or without the `TSK-` prefix.
+  // Free-text ranking over descriptions is not reproduced here -- nothing in this suite exercises it.
+  if (query) {
+    const normalized = query.trim().toUpperCase().replace(/^TSK-/, '');
+    filtered = filtered.filter(
+      (taskItem) => taskItem.referenceCode?.toUpperCase().replace(/^TSK-/, '') === normalized
+    );
+  }
 
   if (status && status !== 'ALL') {
     filtered = filtered.filter((taskItem) => taskItem.status === status);
