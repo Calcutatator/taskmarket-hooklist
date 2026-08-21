@@ -56,6 +56,7 @@ jobs:
       slap_chop: ${{ steps.filter.outputs.slap_chop }}
       quality_js: ${{ steps.filter.outputs.quality_js }}
       other: ${{ steps.filter.outputs.other }}
+      skill: ${{ steps.filter.outputs.skill }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -118,6 +119,8 @@ jobs:
           affected "@taskmarket/backend" && BACKEND=true
           SLAP_CHOP=false
           affected "@taskmarket/slap-chop-games" && SLAP_CHOP=true
+          DOCS=false
+          affected "@taskmarket/docs" && DOCS=true
 
           # quality-js and js-tests(other) each run turbo across a *set* of packages (every
           # workspace package except a few named exclusions -- see the Makefile), not one single
@@ -215,6 +218,28 @@ jobs:
             WEB=true
             echo "js-tests-web block changed in ci.yml"
           fi
+          if [ "$DOCS" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || block_changed "Makefile" '^docs-og-check:' '^[a-zA-Z0-9_.-]+:'; }; then
+            DOCS=true
+            echo "docs-relevant block changed in Makefile"
+          fi
+
+          # skill-conformance covers skill tests across backend+cli(other)+web, plus a docs-og
+          # check -- not one single package, so it's authorised by any of the outputs those
+          # already answer, rather than a new independent path check that could disagree with
+          # them. One combined output because verify-ci-gate.mjs's condition parser only
+          # understands a single `needs.changes.outputs.X == 'true'` shape, not a compound one --
+          # see its own comment on CONDITION.
+          SKILL=false
+          if [ "$WEB" = "true" ] || [ "$BACKEND" = "true" ] || [ "$OTHER" = "true" ] || [ "$DOCS" = "true" ]; then
+            SKILL=true
+          fi
+          if [ "$SKILL" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || block_changed "Makefile" '^skill-conformance:' '^[a-zA-Z0-9_.-]+:' \
+              || block_changed ".github/workflows/ci.yml" '^  skill-conformance:' '^  [a-zA-Z_-]+:$'; }; then
+            SKILL=true
+            echo "skill-conformance-relevant block changed in Makefile or ci.yml"
+          fi
 
           echo "contracts=$CONTRACTS" >> "$GITHUB_OUTPUT"
           echo "web=$WEB" >> "$GITHUB_OUTPUT"
@@ -222,8 +247,11 @@ jobs:
           echo "slap_chop=$SLAP_CHOP" >> "$GITHUB_OUTPUT"
           echo "quality_js=$QUALITY_JS" >> "$GITHUB_OUTPUT"
           echo "other=$OTHER" >> "$GITHUB_OUTPUT"
+          echo "skill=$SKILL" >> "$GITHUB_OUTPUT"
 
   skill-conformance:
+    needs: changes
+    if: needs.changes.outputs.skill == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2204
     # The docs build installs Playwright OS and browser dependencies. A slow Ubuntu
     # mirror can consume most of the previous 10-minute budget before Vocs starts.

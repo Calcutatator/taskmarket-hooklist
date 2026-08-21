@@ -24,7 +24,7 @@ function run(args, needs) {
   });
 }
 
-const ALWAYS_JOBS = ["skill-conformance", "adr"];
+const ALWAYS_JOBS = ["adr"];
 
 // Conditional job -> the detector output that authorises it.
 const CONDITIONAL_JOBS = {
@@ -37,6 +37,7 @@ const CONDITIONAL_JOBS = {
   "quality-js": "quality_js",
   "js-tests-web": "web",
   "js-tests-other": "other",
+  "skill-conformance": "skill",
 };
 
 const BASE_OUTPUTS = {
@@ -44,6 +45,7 @@ const BASE_OUTPUTS = {
   web: "true",
   backend: "true",
   slap_chop: "true",
+  skill: "true",
   quality_js: "true",
   other: "true",
 };

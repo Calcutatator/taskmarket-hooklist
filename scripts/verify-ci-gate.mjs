@@ -23,7 +23,7 @@ const ALWAYS = null;
 
 const JOBS = {
   changes: ALWAYS,
-  "skill-conformance": ALWAYS,
+  "skill-conformance": "needs.changes.outputs.skill == 'true'",
   adr: ALWAYS,
   "quality-js": "needs.changes.outputs.quality_js == 'true'",
   "backend-tests": "needs.changes.outputs.backend == 'true'",
