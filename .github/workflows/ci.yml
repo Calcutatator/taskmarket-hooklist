@@ -27,22 +27,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Which parts of the tree this run actually touches. Computed with git rather than a
-  # third-party action so there is nothing extra to pin or trust.
+  # Which parts of the tree this run actually touches, so unaffected jobs can skip instead
+  # of redoing full-repo work that Turborepo has no remote cache to shortcut in CI (no
+  # TURBO_TOKEN/TURBO_TEAM configured, so every runner starts cold).
   #
-  # `quality-contracts` is the most expensive job in this workflow by a distance -- around 19
-  # minutes, nearly all of it compiling Solidity twice -- and it ran on every pull request,
-  # including ones that touch no Solidity at all. That is the bulk of the cost of gating a
-  # frontend change.
+  # `quality-contracts` is the most expensive job by a distance -- around 19 minutes, nearly
+  # all of it compiling Solidity twice. Package-level jobs (storybook, slap-chop-games,
+  # web-build/ui-e2e, backend-tests, js-tests-web) are the next tier: single-app, Playwright- or
+  # Postgres-backed, genuinely isolated by package boundary. quality-js and js-tests-other are
+  # broader -- each runs turbo across every workspace package except a few named exclusions
+  # (see the Makefile), not one single package -- so they skip only when *nothing outside their
+  # own exclusion set* is affected, and still thread Turborepo's `--filter=...[ref]` selection
+  # through on top of that so a run that IS relevant still does less internal work.
+  #
+  # Turborepo is the source of truth for "did a package or anything it depends on change" --
+  # it already reads the real pnpm workspace graph, so a packages/shared edit correctly marks
+  # every package that depends on it as affected too, without hand-maintained path lists that
+  # drift out of sync as the workspace grows. `packages/contracts` is Foundry/Solidity, outside
+  # that graph entirely, so it still needs its own direct path check.
   changes:
     runs-on: blacksmith-32vcpu-ubuntu-2204
     timeout-minutes: 45
     outputs:
+      base_sha: ${{ steps.filter.outputs.base_sha }}
       contracts: ${{ steps.filter.outputs.contracts }}
+      web: ${{ steps.filter.outputs.web }}
+      backend: ${{ steps.filter.outputs.backend }}
+      slap_chop: ${{ steps.filter.outputs.slap_chop }}
+      quality_js: ${{ steps.filter.outputs.quality_js }}
+      other: ${{ steps.filter.outputs.other }}
+      skill: ${{ steps.filter.outputs.skill }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      # Needed only so `pnpm turbo ... --dry=json` below can resolve the workspace graph.
+      # This adds a fixed ~30-60s to every run's critical path in exchange for skipping (or
+      # narrowing) everything downstream that turns out to be unaffected -- a clear net win
+      # once quality-contracts alone is 19 minutes.
+      - run: make install
 
       - id: filter
         run: |
@@ -50,21 +83,175 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE="origin/${{ github.base_ref }}"
             git fetch -q origin "${{ github.base_ref }}"
-            RANGE="$(git merge-base "$BASE" HEAD)...HEAD"
+            MERGE_BASE="$(git merge-base "$BASE" HEAD)"
           else
-            RANGE="HEAD^...HEAD"
+            MERGE_BASE="HEAD^"
           fi
+          BASE_SHA="$(git rev-parse "$MERGE_BASE")"
+          RANGE="$MERGE_BASE...HEAD"
           echo "range: $RANGE"
-          if git diff --name-only "$RANGE" | grep -Eq \
-            '^(packages/contracts/|Makefile$|scripts/run-ci-test\.mjs$|\.github/workflows/ci\.yml$)'; then
-            echo "contracts=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "contracts=false" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+
+          # `build` is defined for every package and turbo.json sets no task-specific `inputs`,
+          # so this uses turbo's default (every file in the package) as the affected signal --
+          # not because build itself matters here, just as a graph-walk probe.
+          #
+          # pnpm/turbo can print a variable number of preamble lines before the JSON (an engine
+          # warning, an update-available banner, or nothing at all, depending on environment) --
+          # `sed -n '/^{/,$p'` finds the actual start of the object regardless of how many there
+          # are, rather than assuming a fixed line count and risking stripping the JSON itself.
+          pnpm turbo build --filter="...[$BASE_SHA]" --dry=json 2>/dev/null \
+            | sed -n '/^{/,$p' > /tmp/turbo-affected.json || echo '{"packages":[]}' > /tmp/turbo-affected.json
+          AFFECTED="$(node -e "console.log(JSON.stringify(require('/tmp/turbo-affected.json').packages || []))")"
+          echo "affected packages: $AFFECTED"
+
+          affected() { echo "$AFFECTED" | grep -q "\"$1\""; }
+
+          CONTRACTS=false
+          if git diff --name-only "$RANGE" | grep -Eq '^(packages/contracts/|scripts/run-ci-test\.mjs$)'; then
+            CONTRACTS=true
+            git diff --name-only "$RANGE" | grep -E '^(packages/contracts/|scripts/run-ci-test\.mjs$)' | head -5
           fi
-          git diff --name-only "$RANGE" | grep -E \
-            '^(packages/contracts/|Makefile$|scripts/run-ci-test\.mjs$|\.github/workflows/ci\.yml$)' | head -5 || true
+
+          WEB=false
+          affected "@taskmarket/web" && WEB=true
+          BACKEND=false
+          affected "@taskmarket/backend" && BACKEND=true
+          SLAP_CHOP=false
+          affected "@taskmarket/slap-chop-games" && SLAP_CHOP=true
+          DOCS=false
+          affected "@taskmarket/docs" && DOCS=true
+
+          # quality-js and js-tests(other) each run turbo across a *set* of packages (every
+          # workspace package except a few named exclusions -- see the Makefile), not one single
+          # package, so there's no single package name to check with `affected` above. Instead,
+          # ask whether anything in the affected list falls outside that job's own exclusion set
+          # -- mirroring the exact --filter='!@taskmarket/X' exclusions each job's own turbo
+          # invocation already uses, so this can't drift out of sync with what actually runs.
+          any_affected_outside() {
+            node -e '
+              const affected = JSON.parse(process.argv[1]);
+              const excluded = new Set(process.argv.slice(2));
+              process.exit(affected.some((p) => !excluded.has(p)) ? 0 : 1);
+            ' "$AFFECTED" "$@"
+          }
+          QUALITY_JS=false
+          any_affected_outside "@taskmarket/contracts" "@taskmarket/docs" "@taskmarket/web" && QUALITY_JS=true
+          OTHER=false
+          any_affected_outside "@taskmarket/contracts" "@taskmarket/docs" "@taskmarket/backend" "@taskmarket/web" && OTHER=true
+
+          # Makefile and ci.yml are large, multi-target/multi-job files shared across this
+          # whole workflow -- diffing the whole file would re-trigger every job on any
+          # unrelated edit elsewhere in either. Extract just each job/target's own block from
+          # each side and compare those instead. Covers the case turbo's package graph can't:
+          # someone editing the job/target definition itself, not the package it drives.
+          extract_block() {
+            # $1=ref $2=path $3=block-start pattern $4=sibling-boundary pattern
+            git show "$1:$2" 2>/dev/null | awk -v start="$3" -v sib="$4" '
+              $0 ~ start { p=1 }
+              p && $0 ~ sib && $0 !~ start { exit }
+              p { print }
+            '
+          }
+          block_changed() {
+            ! diff -q \
+              <(extract_block "$MERGE_BASE" "$1" "$2" "$3") \
+              <(extract_block "HEAD" "$1" "$2" "$3") \
+              >/dev/null
+          }
+          MAKEFILE_HEADER_CHANGED=false
+          block_changed "Makefile" '^SHELL :=' '^[a-zA-Z0-9_.-]+:' && MAKEFILE_HEADER_CHANGED=true
+
+          if [ "$CONTRACTS" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || block_changed "Makefile" '^contract:' '^[a-zA-Z0-9_.-]+:' \
+              || block_changed ".github/workflows/ci.yml" '^  quality-contracts:' '^  [a-zA-Z_-]+:$'; }; then
+            CONTRACTS=true
+            echo "contracts-relevant block changed in Makefile or ci.yml"
+          fi
+          if [ "$WEB" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || block_changed ".github/workflows/ci.yml" '^  storybook:' '^  [a-zA-Z_-]+:$' \
+              || block_changed ".github/workflows/ci.yml" '^  web-build:' '^  [a-zA-Z_-]+:$' \
+              || block_changed ".github/workflows/ci.yml" '^  ui-e2e:' '^  [a-zA-Z_-]+:$'; }; then
+            WEB=true
+            echo "web-relevant block changed in Makefile or ci.yml"
+          fi
+          if [ "$BACKEND" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || block_changed ".github/workflows/ci.yml" '^  backend-tests:' '^  [a-zA-Z_-]+:$'; }; then
+            BACKEND=true
+            echo "backend-relevant block changed in Makefile or ci.yml"
+          fi
+          if [ "$SLAP_CHOP" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || block_changed "Makefile" '^slap-chop:' '^[a-zA-Z0-9_.-]+:' \
+              || block_changed ".github/workflows/ci.yml" '^  slap-chop-games:' '^  [a-zA-Z_-]+:$'; }; then
+            SLAP_CHOP=true
+            echo "slap-chop-relevant block changed in Makefile or ci.yml"
+          fi
+          if [ "$QUALITY_JS" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || block_changed "Makefile" '^ci-quality-js:' '^[a-zA-Z0-9_.-]+:' \
+              || block_changed ".github/workflows/ci.yml" '^  quality-js:' '^  [a-zA-Z_-]+:$'; }; then
+            QUALITY_JS=true
+            echo "quality-js-relevant block changed in Makefile or ci.yml"
+          fi
+          # ci-test: is one Makefile target shared by backend-tests, js-tests-web, and
+          # js-tests-other (a case statement keyed on CI_TEST_TARGET) -- a change anywhere in it
+          # could affect any of the three, and there's no cheap way to tell which case branch
+          # changed without parsing the case statement itself, so treat it as relevant to all
+          # three alike. Conservative, not precise, but still narrower than the old "any Makefile
+          # edit reruns everything" behaviour.
+          CI_TEST_CHANGED=false
+          block_changed "Makefile" '^ci-test:' '^[a-zA-Z0-9_.-]+:' && CI_TEST_CHANGED=true
+          if [ "$BACKEND" = "false" ] && [ "$CI_TEST_CHANGED" = "true" ]; then
+            BACKEND=true
+            echo "ci-test: target changed in Makefile"
+          fi
+          if [ "$WEB" = "false" ] && [ "$CI_TEST_CHANGED" = "true" ]; then
+            WEB=true
+            echo "ci-test: target changed in Makefile"
+          fi
+          if [ "$OTHER" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || [ "$CI_TEST_CHANGED" = "true" ] \
+              || block_changed ".github/workflows/ci.yml" '^  js-tests-other:' '^  [a-zA-Z_-]+:$'; }; then
+            OTHER=true
+            echo "js-tests-other-relevant block changed in Makefile or ci.yml"
+          fi
+          if [ "$WEB" = "false" ] && block_changed ".github/workflows/ci.yml" '^  js-tests-web:' '^  [a-zA-Z_-]+:$'; then
+            WEB=true
+            echo "js-tests-web block changed in ci.yml"
+          fi
+          if [ "$DOCS" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || block_changed "Makefile" '^docs-og-check:' '^[a-zA-Z0-9_.-]+:'; }; then
+            DOCS=true
+            echo "docs-relevant block changed in Makefile"
+          fi
+
+          # skill-conformance covers skill tests across backend+cli(other)+web, plus a docs-og
+          # check -- not one single package, so it's authorised by any of the outputs those
+          # already answer, rather than a new independent path check that could disagree with
+          # them. One combined output because verify-ci-gate.mjs's condition parser only
+          # understands a single `needs.changes.outputs.X == 'true'` shape, not a compound one --
+          # see its own comment on CONDITION.
+          SKILL=false
+          if [ "$WEB" = "true" ] || [ "$BACKEND" = "true" ] || [ "$OTHER" = "true" ] || [ "$DOCS" = "true" ]; then
+            SKILL=true
+          fi
+          if [ "$SKILL" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
+              || block_changed "Makefile" '^skill-conformance:' '^[a-zA-Z0-9_.-]+:' \
+              || block_changed ".github/workflows/ci.yml" '^  skill-conformance:' '^  [a-zA-Z_-]+:$'; }; then
+            SKILL=true
+            echo "skill-conformance-relevant block changed in Makefile or ci.yml"
+          fi
+
+          echo "contracts=$CONTRACTS" >> "$GITHUB_OUTPUT"
+          echo "web=$WEB" >> "$GITHUB_OUTPUT"
+          echo "backend=$BACKEND" >> "$GITHUB_OUTPUT"
+          echo "slap_chop=$SLAP_CHOP" >> "$GITHUB_OUTPUT"
+          echo "quality_js=$QUALITY_JS" >> "$GITHUB_OUTPUT"
+          echo "other=$OTHER" >> "$GITHUB_OUTPUT"
+          echo "skill=$SKILL" >> "$GITHUB_OUTPUT"
 
   skill-conformance:
+    needs: changes
+    if: needs.changes.outputs.skill == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2204
     # The docs build installs Playwright OS and browser dependencies. A slow Ubuntu
     # mirror can consume most of the previous 10-minute budget before Vocs starts.
@@ -157,6 +344,8 @@ jobs:
             await postComment({ github, context, workspace: process.env.GITHUB_WORKSPACE });
 
   quality-js:
+    needs: changes
+    if: needs.changes.outputs.quality_js == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
 
@@ -164,6 +353,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+          # Needs the merge-base commit reachable so CI_BASE_REF below can resolve -- this job
+          # spans too much of the workspace to skip outright, but turbo's own affected-package
+          # filter still narrows what it actually does.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
         with:
@@ -180,9 +373,11 @@ jobs:
       # budget; lint, format, type checking, and builds are independent quality gates.
       - name: Run non-test JavaScript checks
         timeout-minutes: 5
-        run: make ci-quality-js
+        run: make ci-quality-js CI_BASE_REF='${{ needs.changes.outputs.base_sha }}'
 
   backend-tests:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
     strategy:
@@ -238,22 +433,22 @@ jobs:
         env:
           DATABASE_URL: postgresql://taskmarket:taskmarket@localhost:5432/taskmarket_test
 
-  js-tests:
+  # Split from a single js-tests job (which used to bundle these target: web/other matrix legs
+  # together) because a job-level `if:` can't gate one matrix leg differently from another --
+  # web and other are gated on different changes outputs, so they need to be different jobs.
+  js-tests-web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2204
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: web
-            shard: 1/2
+          - shard: 1/2
             label: web-1-of-2
-          - target: web
-            shard: 2/2
+          - shard: 2/2
             label: web-2-of-2
-          - target: other
-            shard: ""
-            label: other-js
 
     steps:
       - uses: actions/checkout@v7
@@ -275,10 +470,45 @@ jobs:
         timeout-minutes: 6
         run: >-
           make ci-test
-          CI_TEST_TARGET='${{ matrix.target }}'
+          CI_TEST_TARGET='web'
           CI_TEST_SHARD='${{ matrix.shard }}'
 
+  # See js-tests-web above for why this is a separate job. Turbo's own --filter='...[ref]' still
+  # narrows what it does inside a relevant run; `other` here only decides whether to run at all.
+  js-tests-other:
+    needs: changes
+    if: needs.changes.outputs.other == 'true'
+    runs-on: blacksmith-32vcpu-ubuntu-2204
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          # Needed so CI_BASE_REF below can resolve for turbo's affected-package filter.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      - run: make install
+
+      - name: Test other-js
+        timeout-minutes: 6
+        run: >-
+          make ci-test
+          CI_TEST_TARGET='other'
+          CI_BASE_REF='${{ needs.changes.outputs.base_sha }}'
+
   web-build:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2204
     timeout-minutes: 45
 
@@ -463,6 +693,8 @@ jobs:
           retention-days: 30
 
   storybook:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
     # Browsers and OS-level Playwright deps ship pre-baked in this image, so there is no
@@ -539,6 +771,8 @@ jobs:
   # Keep its checks isolated from the existing marketplace UI so a foundation regression is
   # directly attributable and the app remains independently deployable.
   slap-chop-games:
+    needs: changes
+    if: needs.changes.outputs.slap_chop == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2204
     timeout-minutes: 45
     # See storybook above for why this runs in Playwright's own image rather than
@@ -636,7 +870,8 @@ jobs:
       [
         quality-js,
         backend-tests,
-        js-tests,
+        js-tests-web,
+        js-tests-other,
         web-build,
         changes,
         quality-contracts,
@@ -657,7 +892,8 @@ jobs:
           NEEDS: ${{ toJSON(needs) }}
 
   ui-e2e:
-    needs: web-build
+    needs: [web-build, changes]
+    if: needs.changes.outputs.web == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 45
     # See storybook above for why this runs in Playwright's own image rather than
@@ -779,8 +1015,10 @@ jobs:
       [
         quality-js,
         backend-tests,
-        js-tests,
+        js-tests-web,
+        js-tests-other,
         web-build,
+        changes,
         storybook,
         slap-chop-games,
         ui-e2e,

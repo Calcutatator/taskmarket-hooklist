@@ -888,12 +888,18 @@ ci-config-fix:
 slap-chop-health:
 	$(ENV_LOADER) && node scripts/verify-slap-chop-health.mjs
 
+# When set (by CI, to the merge-base commit), narrows every turbo call below to packages
+# Turborepo's own workspace-graph analysis says are affected since that ref (plus whatever
+# depends on them), on top of the static --filter exclusions already there. Empty for local
+# use, which keeps running everything -- there's no "since" to compare against outside CI.
+TURBO_AFFECTED = $(if $(CI_BASE_REF),--filter='...[$(CI_BASE_REF)]')
+
 ci-quality-js: ci-config-check
 	$(ENV_LOADER) && \
-	pnpm turbo build --filter='!@taskmarket/contracts' --filter='!@taskmarket/docs' --filter='!@taskmarket/web' && \
-	pnpm turbo lint:check --filter='!@taskmarket/contracts' && \
-	pnpm turbo format:check --filter='!@taskmarket/contracts' && \
-	pnpm turbo type-check --filter='!@taskmarket/contracts' && \
+	pnpm turbo build --filter='!@taskmarket/contracts' --filter='!@taskmarket/docs' --filter='!@taskmarket/web' $(TURBO_AFFECTED) && \
+	pnpm turbo lint:check --filter='!@taskmarket/contracts' $(TURBO_AFFECTED) && \
+	pnpm turbo format:check --filter='!@taskmarket/contracts' $(TURBO_AFFECTED) && \
+	pnpm turbo type-check --filter='!@taskmarket/contracts' $(TURBO_AFFECTED) && \
 	$(MAKE) discord-blueprint-check
 
 ci-test:
@@ -917,7 +923,8 @@ ci-test:
 					--filter='!@taskmarket/contracts' \
 					--filter='!@taskmarket/docs' \
 					--filter='!@taskmarket/backend' \
-					--filter='!@taskmarket/web';; \
+					--filter='!@taskmarket/web' \
+					$(TURBO_AFFECTED);; \
 		*) \
 			echo "Usage: make ci-test CI_TEST_TARGET=<backend|web|other> [CI_TEST_SHARD=1/2]"; \
 			exit 1;; \

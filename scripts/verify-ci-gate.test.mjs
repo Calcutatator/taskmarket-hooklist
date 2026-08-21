@@ -24,25 +24,40 @@ function run(args, needs) {
   });
 }
 
-const ALWAYS_JOBS = [
-  "skill-conformance",
-  "adr",
-  "quality-js",
-  "backend-tests",
-  "js-tests",
-  "web-build",
-  "storybook",
-  "slap-chop-games",
-  "ui-e2e",
-];
+const ALWAYS_JOBS = ["adr"];
 
-// A run where contracts changed and every job passed.
+// Conditional job -> the detector output that authorises it.
+const CONDITIONAL_JOBS = {
+  "quality-contracts": "contracts",
+  "backend-tests": "backend",
+  "web-build": "web",
+  storybook: "web",
+  "slap-chop-games": "slap_chop",
+  "ui-e2e": "web",
+  "quality-js": "quality_js",
+  "js-tests-web": "web",
+  "js-tests-other": "other",
+  "skill-conformance": "skill",
+};
+
+const BASE_OUTPUTS = {
+  contracts: "true",
+  web: "true",
+  backend: "true",
+  slap_chop: "true",
+  skill: "true",
+  quality_js: "true",
+  other: "true",
+};
+
+// A run where every detector output is relevant and every job passed.
 function allGreen(overrides = {}) {
   const needs = {
-    changes: { result: "success", outputs: { contracts: "true" } },
-    "quality-contracts": { result: "success" },
+    changes: { result: "success", outputs: { ...BASE_OUTPUTS } },
   };
   for (const job of ALWAYS_JOBS) needs[job] = { result: "success" };
+  for (const job of Object.keys(CONDITIONAL_JOBS))
+    needs[job] = { result: "success" };
   return { ...needs, ...overrides };
 }
 
@@ -77,44 +92,61 @@ test("names every failing job instead of stopping at the first", () => {
 
 for (const result of ["failure", "cancelled", "timed_out", "skipped"]) {
   test(`rejects an unconditional job reporting ${result}`, () => {
-    const run1 = run(
-      ["--gate", "quality"],
-      allGreen({ "web-build": { result } }),
-    );
+    const run1 = run(["--gate", "quality"], allGreen({ adr: { result } }));
     assert.equal(run1.status, 1);
-    assert.match(run1.stdout, /must always run|FAILED\s+web-build/);
+    assert.match(run1.stdout, /must always run|FAILED\s+adr/);
   });
 }
 
-test("accepts a contracts skip the detector authorised", () => {
-  const needs = allGreen({
-    changes: { result: "success", outputs: { contracts: "false" } },
-    "quality-contracts": { result: "skipped" },
-  });
-  assert.equal(run(["--gate", "quality"], needs).status, 0);
-});
+// Every conditional job gets the same coverage instead of writing this five times -- one per
+// entry in CONDITIONAL_JOBS -- so a new conditional job is exercised the moment it is added there.
+// Picks any one gate each job is actually a member of (most are members of both).
+for (const [job, key] of Object.entries(CONDITIONAL_JOBS)) {
+  const gate = job === "ui-e2e" ? "ui" : "quality";
 
-test("rejects a contracts skip the detector said was relevant", () => {
-  const needs = allGreen({ "quality-contracts": { result: "skipped" } });
-  const result = run(["--gate", "quality"], needs);
-  assert.equal(result.status, 1);
-  assert.match(
-    result.stdout,
-    /quality-contracts \(skipped, contracts=true so expected success\)/,
-  );
-});
-
-test("rejects a contracts run the detector said was irrelevant", () => {
-  const needs = allGreen({
-    changes: { result: "success", outputs: { contracts: "false" } },
+  test(`accepts a ${job} skip the detector authorised`, () => {
+    // Every job keyed on the same detector output must skip together, or a same-key sibling
+    // still expecting success (e.g. storybook and ui-e2e both key on `web`) fails the gate.
+    const siblingOverrides = Object.fromEntries(
+      Object.entries(CONDITIONAL_JOBS)
+        .filter(([, k]) => k === key)
+        .map(([j]) => [j, { result: "skipped" }]),
+    );
+    const needs = allGreen({
+      changes: {
+        result: "success",
+        outputs: { ...BASE_OUTPUTS, [key]: "false" },
+      },
+      ...siblingOverrides,
+    });
+    assert.equal(run(["--gate", gate], needs).status, 0);
   });
-  const result = run(["--gate", "quality"], needs);
-  assert.equal(result.status, 1);
-  assert.match(
-    result.stdout,
-    /quality-contracts \(success, contracts=false so expected skipped\)/,
-  );
-});
+
+  test(`rejects a ${job} skip the detector said was relevant`, () => {
+    const needs = allGreen({ [job]: { result: "skipped" } });
+    const result = run(["--gate", gate], needs);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stdout,
+      new RegExp(`${job} \\(skipped, ${key}=true so expected success\\)`),
+    );
+  });
+
+  test(`rejects a ${job} run the detector said was irrelevant`, () => {
+    const needs = allGreen({
+      changes: {
+        result: "success",
+        outputs: { ...BASE_OUTPUTS, [key]: "false" },
+      },
+    });
+    const result = run(["--gate", gate], needs);
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stdout,
+      new RegExp(`${job} \\(success, ${key}=false so expected skipped\\)`),
+    );
+  });
+}
 
 test("fails closed when the detector did not succeed", () => {
   const needs = allGreen({
@@ -130,15 +162,19 @@ test("refuses to decide when the detector outputs are absent", () => {
   const needs = allGreen({ changes: { result: "success" } });
   const result = run(["--gate", "quality"], needs);
   assert.equal(result.status, 2);
-  assert.match(result.stderr, /'contracts' missing from NEEDS/);
+  assert.match(result.stderr, /missing from NEEDS/);
 });
 
-// `ui` has no conditional member, so it must not require the detector it does not depend on.
-test("the ui gate decides without the detector", () => {
-  const needs = allGreen();
-  delete needs.changes;
-  delete needs["quality-contracts"];
-  assert.equal(run(["--gate", "ui"], needs).status, 0);
+// Both gates now have conditional members (quality: quality-contracts; ui: web-build,
+// storybook, slap-chop-games, ui-e2e), so both must fail closed without the detector.
+test("both gates fail closed without the detector", () => {
+  for (const g of ["quality", "ui"]) {
+    const needs = allGreen();
+    delete needs.changes;
+    const result = run(["--gate", g], needs);
+    assert.equal(result.status, 1, `gate ${g}`);
+    assert.match(result.stdout, /failing closed/);
+  }
 });
 
 test("rejects a job the gate does not list in needs", () => {

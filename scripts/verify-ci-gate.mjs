@@ -23,23 +23,25 @@ const ALWAYS = null;
 
 const JOBS = {
   changes: ALWAYS,
-  "skill-conformance": ALWAYS,
+  "skill-conformance": "needs.changes.outputs.skill == 'true'",
   adr: ALWAYS,
-  "quality-js": ALWAYS,
-  "backend-tests": ALWAYS,
-  "js-tests": ALWAYS,
-  "web-build": ALWAYS,
+  "quality-js": "needs.changes.outputs.quality_js == 'true'",
+  "backend-tests": "needs.changes.outputs.backend == 'true'",
+  "js-tests-web": "needs.changes.outputs.web == 'true'",
+  "js-tests-other": "needs.changes.outputs.other == 'true'",
+  "web-build": "needs.changes.outputs.web == 'true'",
   "quality-contracts": "needs.changes.outputs.contracts == 'true'",
-  storybook: ALWAYS,
-  "slap-chop-games": ALWAYS,
-  "ui-e2e": ALWAYS,
+  storybook: "needs.changes.outputs.web == 'true'",
+  "slap-chop-games": "needs.changes.outputs.slap_chop == 'true'",
+  "ui-e2e": "needs.changes.outputs.web == 'true'",
 };
 
 const GATES = {
   quality: [
     "quality-js",
     "backend-tests",
-    "js-tests",
+    "js-tests-web",
+    "js-tests-other",
     "web-build",
     "changes",
     "quality-contracts",
@@ -51,8 +53,10 @@ const GATES = {
   ui: [
     "quality-js",
     "backend-tests",
-    "js-tests",
+    "js-tests-web",
+    "js-tests-other",
     "web-build",
+    "changes",
     "storybook",
     "slap-chop-games",
     "ui-e2e",
