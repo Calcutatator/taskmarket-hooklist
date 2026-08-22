@@ -10,9 +10,11 @@ vi.mock('@/lib/api/server', async (importOriginal) => {
 
 import { ApiConnectionError } from '@/lib/api/server';
 
-import HookPage from './page';
+import HookPage, { generateMetadata } from './page';
 
 const address = '0x1111111111111111111111111111111111111111';
+const canonicalMixedCaseAddress = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
+const mixedCaseAddress = '0xAbCdEfAbCdEfAbCdEfAbCdEfAbCdEfAbCdEfAbCd';
 const hook = {
   activePhaseTaskCount: 1,
   address,
@@ -32,6 +34,25 @@ describe('public Hooklist detail route', () => {
 
     expect(api.fetchHook).toHaveBeenCalledWith(address);
     expect(screen.getAllByRole('link', { name: /View task/i })).toHaveLength(8);
+  });
+
+  it('uses lowercase canonical metadata and permanently redirects mixed-case addresses', async () => {
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ address: mixedCaseAddress }),
+    });
+
+    expect(metadata.alternates).toEqual({
+      canonical: `/hooks/${canonicalMixedCaseAddress}`,
+    });
+    expect(metadata.openGraph).toMatchObject({
+      url: `/hooks/${canonicalMixedCaseAddress}`,
+    });
+    await expect(
+      HookPage({ params: Promise.resolve({ address: mixedCaseAddress }) })
+    ).rejects.toMatchObject({
+      digest: `NEXT_REDIRECT;replace;/hooks/${canonicalMixedCaseAddress};308;`,
+    });
+    expect(api.fetchHook).not.toHaveBeenCalled();
   });
 
   it('returns a Next 404 for malformed and missing hook addresses', async () => {

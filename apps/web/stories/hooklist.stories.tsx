@@ -1,8 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { expect, userEvent, within } from 'storybook/test';
 
+// storybook-coverage: components/market/hook-inspection.tsx
 // storybook-coverage: components/market/hooklist.tsx
-import { HookBuilder, HookInspection, HooklistDirectory } from '@/components/market/hooklist';
+import { HookInspection } from '@/components/market/hook-inspection';
+import { HookBuilder, HooklistDirectory } from '@/components/market/hooklist';
 import { initialHookBuilderInput, type PublicHook } from '@/lib/hooklist';
 
 function HooklistCatalog() {
@@ -101,6 +103,15 @@ export const BuilderDraft: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByText('Draft scaffold')).toBeVisible();
     await expect(canvas.getByText(/This output is intentionally marked x-draft/i)).toBeVisible();
+    const checkClaim = canvas.getByRole('checkbox', { name: /checkClaim/i });
+    await userEvent.click(checkClaim);
+    await expect(checkClaim).toBeChecked();
+    await expect(canvas.getByLabelText('taskmarket-hook.json preview')).toHaveTextContent(
+      '"checkClaim"'
+    );
+    await expect(canvas.getByLabelText('Solidity scaffold preview')).toHaveTextContent(
+      'function _checkClaim('
+    );
   },
   render: () => (
     <div className="mx-auto max-w-7xl p-4 sm:p-8">

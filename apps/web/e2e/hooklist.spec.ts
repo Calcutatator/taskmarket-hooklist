@@ -3,6 +3,8 @@ import { expect, test } from '@playwright/test';
 import { startMockApiServer } from './mock-api';
 
 let mockApi: Awaited<ReturnType<typeof startMockApiServer>>;
+const canonicalHookAddress = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
+const mixedCaseHookAddress = '0xAbCdEfAbCdEfAbCdEfAbCdEfAbCdEfAbCdEfAbCd';
 
 test.beforeAll(async () => {
   mockApi = await startMockApiServer();
@@ -43,4 +45,17 @@ test('renders the Next 404 for malformed and unobserved Hooklist detail routes',
 
   await page.goto('/hooks/0x2222222222222222222222222222222222222222');
   await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
+});
+
+test('redirects mixed-case Hooklist addresses to the lowercase canonical detail URL', async ({
+  page,
+}) => {
+  await page.goto(`/hooks/${mixedCaseHookAddress}`);
+
+  await expect(page).toHaveURL(new RegExp(`/hooks/${canonicalHookAddress}$`));
+  await expect(page.getByRole('heading', { name: canonicalHookAddress })).toBeVisible();
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    'href',
+    new RegExp(`/hooks/${canonicalHookAddress}$`)
+  );
 });

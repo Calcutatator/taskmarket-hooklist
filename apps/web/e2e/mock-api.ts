@@ -1789,7 +1789,7 @@ export async function startMockApiServer(
         hooks: [
           {
             activePhaseTaskCount: 2,
-            address: '0x1111111111111111111111111111111111111111',
+            address: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
             modes: ['bounty', 'claim'],
             taskCount: 4,
             taskIds: ['mock-bounty-open', 'mock-claim-open'],
@@ -1803,10 +1803,10 @@ export async function startMockApiServer(
     if (url.pathname.startsWith('/api/hooks/')) {
       const address = decodeURIComponent(url.pathname.slice('/api/hooks/'.length));
       const hook =
-        address.toLowerCase() === '0x1111111111111111111111111111111111111111'
+        address.toLowerCase() === '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd'
           ? {
               activePhaseTaskCount: 2,
-              address: '0x1111111111111111111111111111111111111111',
+              address: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
               modes: ['bounty', 'claim'],
               taskCount: 4,
               taskIds: ['mock-bounty-open', 'mock-claim-open'],
