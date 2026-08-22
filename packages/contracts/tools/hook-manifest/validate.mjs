@@ -123,25 +123,58 @@ function formatRawIntegerError(path, issue) {
   return `${path}: raw numeric literal ${summarizedSource(issue.source)} ${issue.reason}; manifest numbers must be exact JavaScript safe integers`;
 }
 
-function collectRawIntegerErrors(manifest, issuesByHolder, rootIssue) {
-  const errors = [];
-  if (rootIssue) errors.push(formatRawIntegerError("$", rootIssue));
+/**
+ * JSON paths whose numeric values are constrained by the manifest's safe
+ * integer schema definitions. `*` matches one object property or array
+ * index. Keep this list in lock-step with every safePositiveInteger and
+ * safeNonnegativeInteger reference in the schema; the validator tests do a
+ * completeness audit against the canonical schema.
+ */
+export const rawSafeIntegerPathPatterns = Object.freeze([
+  Object.freeze(["deployments", "*", "chainId"]),
+  Object.freeze(["deployments", "*", "deployment", "blockNumber"]),
+  Object.freeze(["deployments", "*", "gas", "estimates", "*", "typical"]),
+  Object.freeze(["deployments", "*", "gas", "estimates", "*", "maximum"]),
+  Object.freeze(["sourceVerification", "verifiers", "*", "chainId"]),
+  Object.freeze(["privilegedRoles", "*", "holders", "*", "chainId"]),
+  Object.freeze(["externalDependencies", "*", "deployments", "*", "chainId"]),
+  Object.freeze(["protocolDefault", "chains", "*"]),
+]);
 
-  const visit = (value, path) => {
+function isRawSafeIntegerPath(pathSegments) {
+  return rawSafeIntegerPathPatterns.some(
+    (pattern) =>
+      pattern.length === pathSegments.length &&
+      pattern.every(
+        (segment, index) => segment === "*" || segment === pathSegments[index],
+      ),
+  );
+}
+
+function collectRawIntegerErrors(manifest, issuesByHolder) {
+  const errors = [];
+
+  const visit = (value, path, pathSegments) => {
     if (value === null || typeof value !== "object") return;
     const holderIssues = issuesByHolder.get(value);
     if (holderIssues) {
       for (const [key, issue] of holderIssues) {
-        errors.push(
-          formatRawIntegerError(appendPropertyPath(path, key, value), issue),
-        );
+        const childPathSegments = [...pathSegments, key];
+        if (isRawSafeIntegerPath(childPathSegments)) {
+          errors.push(
+            formatRawIntegerError(appendPropertyPath(path, key, value), issue),
+          );
+        }
       }
     }
     for (const [key, child] of Object.entries(value)) {
-      visit(child, appendPropertyPath(path, key, value));
+      visit(child, appendPropertyPath(path, key, value), [
+        ...pathSegments,
+        key,
+      ]);
     }
   };
-  visit(manifest, "$");
+  visit(manifest, "$", []);
   return errors;
 }
 
@@ -485,10 +518,8 @@ export function inspectJson(source) {
   }
 
   const issuesByHolder = new WeakMap();
-  let rootIssue;
   let manifest;
   try {
-    const trimmedSource = source.trim();
     manifest = JSON.parse(
       source,
       function inspectRawNumber(key, value, context) {
@@ -509,7 +540,6 @@ export function inspectJson(source) {
           issuesByHolder.set(this, holderIssues);
         }
         holderIssues.set(key, issue);
-        if (key === "" && numberSource === trimmedSource) rootIssue = issue;
         return value;
       },
     );
@@ -521,11 +551,7 @@ export function inspectJson(source) {
     };
   }
 
-  const rawErrors = collectRawIntegerErrors(
-    manifest,
-    issuesByHolder,
-    rootIssue,
-  );
+  const rawErrors = collectRawIntegerErrors(manifest, issuesByHolder);
   const inspected = inspect(manifest);
   const errors = [...new Set([...rawErrors, ...inspected.errors])];
   return { manifest, errors, publishable: errors.length === 0 };

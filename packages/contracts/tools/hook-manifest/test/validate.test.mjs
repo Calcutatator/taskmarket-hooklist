@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { inspect, inspectJson, validate, validateJson } from "../validate.mjs";
+import {
+  inspect,
+  inspectJson,
+  rawSafeIntegerPathPatterns,
+  validate,
+  validateJson,
+} from "../validate.mjs";
 
 const fixture = (name) =>
   JSON.parse(
@@ -33,6 +39,14 @@ const errorsFor = (manifest, expectedPath) => {
     `expected ${expectedPath} in:\n${errors.join("\n")}`,
   );
   return errors;
+};
+
+const sourceWithRawMarkers = (manifest, markers) => {
+  let source = JSON.stringify(manifest, null, 2);
+  for (const [marker, token] of Object.entries(markers)) {
+    source = source.replaceAll(JSON.stringify(marker), token);
+  }
+  return source;
 };
 
 test("valid immutable, proxy, multi-chain, and portal-ready fixtures validate", () => {
@@ -155,6 +169,146 @@ test("raw-source inspection handles huge exponents, strings, syntax, and schema 
     assert.equal(result.publishable, false);
     assert.match(result.errors[0], /^\$: invalid JSON:/);
   }
+});
+
+test("raw-source inspection ignores arbitrary JSON values and x-* extensions", () => {
+  const manifest = proxy();
+  manifest.hookData.schema = {};
+  manifest.hookData.examples[0].decoded = {
+    fractional: "__decodedFraction__",
+    unsafe: "__decodedUnsafe__",
+    nested: { value: "__decodedNestedFraction__" },
+  };
+  manifest["x-arbitrary"] = {
+    fractional: "__extensionFraction__",
+    nested: {
+      deployments: [
+        {
+          chainId: "__extensionChainId__",
+          gas: { estimates: { checkFund: { typical: "__extensionGas__" } } },
+        },
+      ],
+    },
+  };
+  manifest.hookData["x-arbitrary"] = {
+    chainId: "__nestedExtensionChainId__",
+  };
+
+  const source = sourceWithRawMarkers(manifest, {
+    __decodedFraction__: "1.5",
+    __decodedUnsafe__: "9007199254740992",
+    __decodedNestedFraction__: "1e-1",
+    __extensionFraction__: "9007199254740991.1",
+    __extensionChainId__: "9007199254740992",
+    __extensionGas__: "1.5",
+    __nestedExtensionChainId__: "1e999999999999999999999",
+  });
+  const result = inspectJson(source);
+  assert.equal(result.publishable, true, result.errors.join("\n"));
+  assert.deepEqual(result.errors, []);
+});
+
+test("raw-source inspection covers every schema-owned safe-integer field", () => {
+  const manifest = proxy();
+  const markers = {};
+  let markerIndex = 0;
+  const mark = () => {
+    const marker = `__safeInteger${markerIndex++}__`;
+    markers[marker] = "9007199254740991.1";
+    return marker;
+  };
+
+  manifest.deployments[0].chainId = mark();
+  manifest.deployments[0].deployment.blockNumber = mark();
+  for (const estimate of Object.values(manifest.deployments[0].gas.estimates)) {
+    estimate.typical = mark();
+    estimate.maximum = mark();
+  }
+  for (const verifier of manifest.sourceVerification.verifiers)
+    verifier.chainId = mark();
+  for (const role of manifest.privilegedRoles)
+    for (const holder of role.holders) holder.chainId = mark();
+  for (const dependency of manifest.externalDependencies)
+    for (const deployment of dependency.deployments)
+      deployment.chainId = mark();
+  for (
+    let index = 0;
+    index < manifest.protocolDefault.chains.length;
+    index += 1
+  )
+    manifest.protocolDefault.chains[index] = mark();
+
+  const result = inspectJson(sourceWithRawMarkers(manifest, markers));
+  assert.equal(result.publishable, false);
+  for (const path of [
+    "$.deployments[0].chainId",
+    "$.deployments[0].deployment.blockNumber",
+    "$.deployments[0].gas.estimates.checkFund.typical",
+    "$.deployments[0].gas.estimates.checkFund.maximum",
+    "$.sourceVerification.verifiers[0].chainId",
+    "$.privilegedRoles[0].holders[0].chainId",
+    "$.externalDependencies[0].deployments[0].chainId",
+    "$.protocolDefault.chains[0]",
+  ]) {
+    assert.ok(
+      result.errors.some(
+        (error) =>
+          error.includes(path) && error.includes("raw numeric literal"),
+      ),
+      `expected ${path} in:\n${result.errors.join("\n")}`,
+    );
+  }
+});
+
+test("raw safe-integer patterns stay aligned with the canonical schema", () => {
+  assert.deepEqual(rawSafeIntegerPathPatterns, [
+    ["deployments", "*", "chainId"],
+    ["deployments", "*", "deployment", "blockNumber"],
+    ["deployments", "*", "gas", "estimates", "*", "typical"],
+    ["deployments", "*", "gas", "estimates", "*", "maximum"],
+    ["sourceVerification", "verifiers", "*", "chainId"],
+    ["privilegedRoles", "*", "holders", "*", "chainId"],
+    ["externalDependencies", "*", "deployments", "*", "chainId"],
+    ["protocolDefault", "chains", "*"],
+  ]);
+
+  const canonicalSchema = readFileSync(
+    resolve("schemas/taskmarket-hook.schema.json"),
+    "utf8",
+  );
+  const safeIntegerSchemaPaths = [];
+  const collectSafeIntegerReferences = (value, path = []) => {
+    if (Array.isArray(value)) {
+      value.forEach((child, index) =>
+        collectSafeIntegerReferences(child, [...path, `[${index}]`]),
+      );
+      return;
+    }
+    if (value === null || typeof value !== "object") return;
+    if (
+      value.$ref === "#/$defs/safePositiveInteger" ||
+      value.$ref === "#/$defs/safeNonnegativeInteger"
+    ) {
+      safeIntegerSchemaPaths.push(path.join("."));
+    }
+    Object.entries(value).forEach(([key, child]) =>
+      collectSafeIntegerReferences(child, [...path, key]),
+    );
+  };
+  collectSafeIntegerReferences(JSON.parse(canonicalSchema));
+  assert.deepEqual(safeIntegerSchemaPaths, [
+    "$defs.roleHolder.properties.chainId",
+    "$defs.gas.properties.estimates.patternProperties.^(checkFund|checkClaim|checkSelectWorker|checkSubmit|checkEvaluate|checkComplete|onComplete|onForfeit|onCancel|onExpire)$.properties.typical",
+    "$defs.gas.properties.estimates.patternProperties.^(checkFund|checkClaim|checkSelectWorker|checkSubmit|checkEvaluate|checkComplete|onComplete|onForfeit|onCancel|onExpire)$.properties.maximum",
+    "$defs.dependencyDeployment.properties.chainId",
+    "$defs.chainDeployment.properties.chainId",
+    "$defs.chainDeployment.properties.deployment.properties.blockNumber",
+    "$defs.publishableEvidence.properties.deployments.items.properties.deployment.properties.blockNumber",
+    "$defs.publishableEvidence.properties.deployments.items.properties.gas.properties.estimates.patternProperties.^(checkFund|checkClaim|checkSelectWorker|checkSubmit|checkEvaluate|checkComplete|onComplete|onForfeit|onCancel|onExpire)$.properties.typical",
+    "$defs.publishableEvidence.properties.deployments.items.properties.gas.properties.estimates.patternProperties.^(checkFund|checkClaim|checkSelectWorker|checkSubmit|checkEvaluate|checkComplete|onComplete|onForfeit|onCancel|onExpire)$.properties.maximum",
+    "properties.sourceVerification.properties.verifiers.items.properties.chainId",
+    "properties.protocolDefault.properties.chains.items",
+  ]);
 });
 
 test("CLI validates raw numeric literals before ordinary object inspection", () => {
