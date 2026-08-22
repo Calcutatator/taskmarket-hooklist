@@ -55,10 +55,20 @@ describe('Hooklist manifest builder', () => {
     });
     expect(manifest.deployments[0]).toMatchObject({
       chainId: 1,
+      gas: {
+        estimates: {
+          checkFund: {
+            maximum: 0,
+            methodology: 'DRAFT: gas has not been measured.',
+            typical: 0,
+          },
+        },
+      },
       network: 'draft',
       proxy: { kind: 'none', upgradeable: false },
     });
     expect(manifest.deployments[0].deployment.transactionHash).toBe(`0x${'0'.repeat(64)}`);
+    expect(manifest).not.toHaveProperty('gas');
     expect(manifest).not.toHaveProperty('proxy');
   });
 
@@ -84,7 +94,11 @@ describe('Hooklist manifest builder', () => {
       network: 'base-sepolia',
       proxy: { kind: 'none', upgradeable: false },
     });
-    expect(manifest.gas.network).toBe('base-sepolia');
+    expect(manifest).not.toHaveProperty('gas');
+    expect(manifest.deployments[0].gas.estimates.checkFund).toMatchObject({
+      maximum: 120000,
+      typical: 100000,
+    });
     expect(manifest.sourceVerification.verifiers).toEqual([
       expect.objectContaining({ chainId: 84532 }),
     ]);
@@ -98,7 +112,7 @@ describe('Hooklist manifest builder', () => {
       privilegedRoles: JSON.stringify([
         {
           name: 'proxy administrator',
-          holders: [admin],
+          holders: [{ chainId: 8453, address: admin }],
           capabilities: ['upgrade hook implementation'],
         },
       ]),
@@ -118,6 +132,67 @@ describe('Hooklist manifest builder', () => {
       upgradeable: true,
       upgradeAuthorityDescription: input.upgradeAuthorityDescription,
     });
+  });
+
+  it.each([
+    {
+      label: 'legacy string holder',
+      holders: ['0x4444444444444444444444444444444444444444'],
+    },
+    {
+      label: 'holder on another chain',
+      holders: [{ chainId: 84532, address: '0x4444444444444444444444444444444444444444' }],
+    },
+    {
+      label: 'normalized duplicate holders',
+      holders: [
+        { chainId: 8453, address: `0x${'a'.repeat(40)}` },
+        { chainId: 8453, address: `0x${'A'.repeat(40)}` },
+      ],
+    },
+  ])('rejects privileged-role evidence with a $label', ({ holders }) => {
+    const input = {
+      ...evidence,
+      privilegedRoles: JSON.stringify([
+        {
+          name: 'administrator',
+          holders,
+          capabilities: ['upgrade hook implementation'],
+        },
+      ]),
+    };
+
+    expect(manifestReadiness(input)).toMatchObject({
+      missing: expect.arrayContaining(['schema-valid privileged roles JSON array']),
+      ready: false,
+    });
+  });
+
+  it('requires exact-unique privileged-role names and capabilities', () => {
+    const holder = {
+      chainId: 8453,
+      address: '0x4444444444444444444444444444444444444444',
+    };
+    const duplicateNames = {
+      ...evidence,
+      privilegedRoles: JSON.stringify([
+        { name: 'admin', holders: [holder], capabilities: ['upgrade'] },
+        { name: 'admin', holders: [holder], capabilities: ['pause'] },
+      ]),
+    };
+    const duplicateCapabilities = {
+      ...evidence,
+      privilegedRoles: JSON.stringify([
+        { name: 'admin', holders: [holder], capabilities: ['upgrade', 'upgrade'] },
+      ]),
+    };
+
+    for (const input of [duplicateNames, duplicateCapabilities]) {
+      expect(manifestReadiness(input)).toMatchObject({
+        missing: expect.arrayContaining(['schema-valid privileged roles JSON array']),
+        ready: false,
+      });
+    }
   });
 
   it('keeps verifier evidence for a different chain non-publishable', () => {
@@ -179,7 +254,7 @@ describe('Hooklist manifest builder', () => {
         'nonzero maximum gas at least typical gas',
       ])
     );
-    expect(buildHookManifest(incomplete).gas.estimates.checkFund).toMatchObject({
+    expect(buildHookManifest(incomplete).deployments[0].gas.estimates.checkFund).toMatchObject({
       maximum: 100000,
       typical: 100000,
     });
@@ -206,7 +281,10 @@ describe('Hooklist manifest builder', () => {
 
       const manifest = buildHookManifest(input);
       expect(manifest.deployments[0].deployment.blockNumber).toBe(0);
-      expect(manifest.gas.estimates.checkFund).toMatchObject({ maximum: 0, typical: 0 });
+      expect(manifest.deployments[0].gas.estimates.checkFund).toMatchObject({
+        maximum: 0,
+        typical: 0,
+      });
       expect(JSON.stringify(manifest)).not.toContain('9007199254740992');
     }
   );
@@ -235,7 +313,10 @@ describe('Hooklist manifest builder', () => {
     });
     const manifest = buildHookManifest(input);
     expect(manifest.deployments[0].deployment.blockNumber).toBe(0);
-    expect(manifest.gas.estimates.checkFund).toMatchObject({ maximum: 0, typical: 0 });
+    expect(manifest.deployments[0].gas.estimates.checkFund).toMatchObject({
+      maximum: 0,
+      typical: 0,
+    });
   });
 
   it('accepts and exactly serializes the maximum safe integer boundary', () => {
@@ -250,7 +331,7 @@ describe('Hooklist manifest builder', () => {
     expect(manifestReadiness(input)).toMatchObject({ missing: [], ready: true });
     const manifest = buildHookManifest(input);
     expect(manifest.deployments[0].deployment.blockNumber).toBe(Number.MAX_SAFE_INTEGER);
-    expect(manifest.gas.estimates.checkFund).toMatchObject({
+    expect(manifest.deployments[0].gas.estimates.checkFund).toMatchObject({
       maximum: Number.MAX_SAFE_INTEGER,
       typical: Number.MAX_SAFE_INTEGER,
     });
@@ -448,8 +529,8 @@ describe('Hooklist manifest builder', () => {
           {
             name: 'policy API',
             kind: 'api',
+            deployments: [{ chainId: 8453, url: 'https:example.com/policy' }],
             purpose: 'Reads policy metadata.',
-            url: 'https:example.com/policy',
           },
         ]),
       },
@@ -487,7 +568,12 @@ describe('Hooklist manifest builder', () => {
       dependency: {
         name: 'registry',
         kind: 'contract',
-        addresses: ['0x3333333333333333333333333333333333333333'],
+        deployments: [
+          {
+            chainId: 8453,
+            addresses: ['0x3333333333333333333333333333333333333333'],
+          },
+        ],
         purpose: 'Reads approved configuration.',
       },
     },
@@ -496,7 +582,7 @@ describe('Hooklist manifest builder', () => {
       dependency: {
         name: 'policy API',
         kind: 'api',
-        url: 'https://api.example.com/v1/policy',
+        deployments: [{ chainId: 8453, url: 'https://api.example.com/v1/policy' }],
         purpose: 'Reads policy metadata.',
       },
     },
@@ -505,7 +591,7 @@ describe('Hooklist manifest builder', () => {
       dependency: {
         name: 'operator handbook',
         kind: 'other',
-        url: 'https://docs.example.com/operator',
+        deployments: [{ chainId: 8453, url: 'https://docs.example.com/operator' }],
         purpose: 'Documents manual recovery.',
       },
     },
@@ -514,7 +600,12 @@ describe('Hooklist manifest builder', () => {
       dependency: {
         name: 'custom registry',
         kind: 'other',
-        addresses: ['0x4444444444444444444444444444444444444444'],
+        deployments: [
+          {
+            chainId: 8453,
+            addresses: ['0x4444444444444444444444444444444444444444'],
+          },
+        ],
         purpose: 'Provides a custom registry.',
       },
     },
@@ -527,21 +618,112 @@ describe('Hooklist manifest builder', () => {
     ).toBe(true);
   });
 
+  it('requires exact-unique dependency names', () => {
+    const deployment = {
+      chainId: 8453,
+      addresses: ['0x3333333333333333333333333333333333333333'],
+    };
+    const externalDependencies = JSON.stringify([
+      {
+        name: 'registry',
+        kind: 'contract',
+        deployments: [deployment],
+        purpose: 'Reads configuration.',
+      },
+      {
+        name: 'registry',
+        kind: 'oracle',
+        deployments: [deployment],
+        purpose: 'Reads policy state.',
+      },
+    ]);
+
+    expect(manifestReadiness({ ...evidence, externalDependencies })).toMatchObject({
+      missing: expect.arrayContaining(['schema-valid external dependencies JSON array']),
+      ready: false,
+    });
+  });
+
   it.each([
     {
+      label: 'legacy top-level locator',
+      dependency: {
+        name: 'registry',
+        kind: 'contract',
+        addresses: ['0x3333333333333333333333333333333333333333'],
+        purpose: 'Reads configuration.',
+      },
+    },
+    {
+      label: 'binding on an undeclared chain',
+      dependency: {
+        name: 'registry',
+        kind: 'contract',
+        deployments: [
+          {
+            chainId: 84532,
+            addresses: ['0x3333333333333333333333333333333333333333'],
+          },
+        ],
+        purpose: 'Reads configuration.',
+      },
+    },
+    {
+      label: 'duplicate bindings for one chain',
+      dependency: {
+        name: 'registry',
+        kind: 'contract',
+        deployments: [
+          {
+            chainId: 8453,
+            addresses: ['0x3333333333333333333333333333333333333333'],
+          },
+          {
+            chainId: 8453,
+            addresses: ['0x4444444444444444444444444444444444444444'],
+          },
+        ],
+        purpose: 'Reads configuration.',
+      },
+    },
+    {
+      label: 'normalized duplicate addresses',
+      dependency: {
+        name: 'registry',
+        kind: 'contract',
+        deployments: [
+          {
+            chainId: 8453,
+            addresses: [`0x${'a'.repeat(40)}`, `0x${'A'.repeat(40)}`],
+          },
+        ],
+        purpose: 'Reads configuration.',
+      },
+    },
+    {
       label: 'contract without addresses',
-      dependency: { name: 'registry', kind: 'contract', purpose: 'Reads configuration.' },
+      dependency: {
+        name: 'registry',
+        kind: 'contract',
+        deployments: [{ chainId: 8453 }],
+        purpose: 'Reads configuration.',
+      },
     },
     {
       label: 'oracle with empty addresses',
-      dependency: { name: 'oracle', kind: 'oracle', addresses: [], purpose: 'Reads a price.' },
+      dependency: {
+        name: 'oracle',
+        kind: 'oracle',
+        deployments: [{ chainId: 8453, addresses: [] }],
+        purpose: 'Reads a price.',
+      },
     },
     {
       label: 'token with a zero address',
       dependency: {
         name: 'token',
         kind: 'token',
-        addresses: [`0x${'0'.repeat(40)}`],
+        deployments: [{ chainId: 8453, addresses: [`0x${'0'.repeat(40)}`] }],
         purpose: 'Transfers rewards.',
       },
     },
@@ -550,31 +732,45 @@ describe('Hooklist manifest builder', () => {
       dependency: {
         name: 'policy API',
         kind: 'api',
-        addresses: ['0x3333333333333333333333333333333333333333'],
+        deployments: [
+          {
+            chainId: 8453,
+            addresses: ['0x3333333333333333333333333333333333333333'],
+          },
+        ],
         purpose: 'Reads policy metadata.',
       },
     },
     {
-      label: 'API with an empty addresses property',
+      label: 'API with a forbidden addresses property',
       dependency: {
         name: 'policy API',
         kind: 'api',
-        addresses: [],
-        url: 'https://api.example.com/v1/policy',
+        deployments: [
+          {
+            chainId: 8453,
+            addresses: ['0x3333333333333333333333333333333333333333'],
+            url: 'https://api.example.com/v1/policy',
+          },
+        ],
         purpose: 'Reads policy metadata.',
       },
     },
     {
       label: 'other dependency without a locator',
-      dependency: { name: 'custom system', kind: 'other', purpose: 'Provides policy.' },
+      dependency: {
+        name: 'custom system',
+        kind: 'other',
+        deployments: [{ chainId: 8453 }],
+        purpose: 'Provides policy.',
+      },
     },
     {
       label: 'other URL dependency with an empty addresses property',
       dependency: {
         name: 'custom system',
         kind: 'other',
-        addresses: [],
-        url: 'https://dependency.example.com',
+        deployments: [{ chainId: 8453, addresses: [], url: 'https://dependency.example.com' }],
         purpose: 'Provides policy.',
       },
     },
@@ -742,8 +938,11 @@ contract PolicyGuardHook is BaseTMPHook {
       evidence: evidence.conformanceEvidenceUrl,
       status: 'tested',
     });
-    expect(manifest.gas.network).toBe('base');
-    expect(manifest.gas.estimates.checkFund).toMatchObject({ maximum: 120000, typical: 100000 });
+    expect(manifest).not.toHaveProperty('gas');
+    expect(manifest.deployments[0].gas.estimates.checkFund).toMatchObject({
+      maximum: 120000,
+      typical: 100000,
+    });
     expect(solidity).toContain('@taskmarket/contracts/src/hooks/base/BaseTMPHook.sol');
     expect(solidity).toContain('error HookPolicyNotImplemented();');
     expect(solidity).toContain('function _checkFund');

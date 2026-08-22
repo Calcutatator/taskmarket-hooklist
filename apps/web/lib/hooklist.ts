@@ -288,67 +288,131 @@ function validVerifierList(value: string, status: string, deploymentChainId: num
   return status === 'not-applicable' && verifiers.length === 0;
 }
 
-function validExternalDependencies(value: string) {
-  const dependencies = parseArray(value);
-  return (
-    dependencies !== null &&
-    dependencies.every((dependency) => {
-      if (
-        typeof dependency !== 'object' ||
-        dependency === null ||
-        Array.isArray(dependency) ||
-        !hasOnlyKeys(dependency, ['name', 'kind', 'addresses', 'url', 'purpose']) ||
-        !isNonEmptyString((dependency as { name?: unknown }).name) ||
-        !isNonEmptyString((dependency as { purpose?: unknown }).purpose)
-      )
-        return false;
-
-      const kind = (dependency as { kind?: string }).kind ?? '';
-      if (!['contract', 'oracle', 'token', 'relayer', 'api', 'other'].includes(kind)) return false;
-
-      const hasAddresses = Object.hasOwn(dependency, 'addresses');
-      const addresses = (dependency as { addresses?: unknown }).addresses;
-      if (
-        hasAddresses &&
-        (!Array.isArray(addresses) ||
-          addresses.length === 0 ||
-          !addresses.every((address) => isNonZeroAddress(String(address))))
-      )
-        return false;
-
-      const hasUrl = Object.hasOwn(dependency, 'url');
-      if (hasUrl && !isHttpsUrl(String((dependency as { url?: unknown }).url))) return false;
-
-      if (['contract', 'oracle', 'token', 'relayer'].includes(kind)) return hasAddresses;
-      if (kind === 'api') return hasUrl;
-      return hasAddresses || hasUrl;
-    })
-  );
+function isPositiveSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 
-function validPrivilegedRoles(value: string) {
-  const roles = parseArray(value);
-  return (
-    roles !== null &&
-    roles.every(
-      (role) =>
-        typeof role === 'object' &&
-        role !== null &&
-        !Array.isArray(role) &&
-        hasOnlyKeys(role, ['name', 'holders', 'capabilities', 'renounceable']) &&
-        isNonEmptyString((role as { name?: unknown }).name) &&
-        Array.isArray((role as { holders?: unknown }).holders) &&
-        (role as { holders: unknown[] }).holders.length > 0 &&
-        (role as { holders: unknown[] }).holders.every((holder) =>
-          isNonZeroAddress(String(holder))
-        ) &&
-        Array.isArray((role as { capabilities?: unknown }).capabilities) &&
-        (role as { capabilities: unknown[] }).capabilities.length > 0 &&
-        (role as { capabilities: unknown[] }).capabilities.every(isNonEmptyString) &&
-        (!Object.hasOwn(role, 'renounceable') ||
-          typeof (role as { renounceable: unknown }).renounceable === 'boolean')
+function validExternalDependencies(value: string, deploymentChainId: number | null) {
+  const dependencies = parseArray(value);
+  if (dependencies === null) return false;
+  const names = new Set<string>();
+  return dependencies.every((dependency) => {
+    if (
+      typeof dependency !== 'object' ||
+      dependency === null ||
+      Array.isArray(dependency) ||
+      !hasOnlyKeys(dependency, ['name', 'kind', 'deployments', 'purpose']) ||
+      !isNonEmptyString((dependency as { name?: unknown }).name) ||
+      !isNonEmptyString((dependency as { purpose?: unknown }).purpose)
     )
-  );
+      return false;
+
+    const name = (dependency as { name: string }).name;
+    if (names.has(name)) return false;
+    names.add(name);
+
+    const kind = (dependency as { kind?: string }).kind ?? '';
+    if (!['contract', 'oracle', 'token', 'relayer', 'api', 'other'].includes(kind)) return false;
+
+    const deployments = (dependency as { deployments?: unknown }).deployments;
+    if (!Array.isArray(deployments) || deployments.length === 0) return false;
+    const chainIds = new Set<number>();
+    return deployments.every((binding) => {
+      if (
+        typeof binding !== 'object' ||
+        binding === null ||
+        Array.isArray(binding) ||
+        !hasOnlyKeys(binding, ['chainId', 'addresses', 'url'])
+      )
+        return false;
+
+      const chainId = (binding as { chainId?: unknown }).chainId;
+      if (
+        !isPositiveSafeInteger(chainId) ||
+        deploymentChainId === null ||
+        chainId !== deploymentChainId ||
+        chainIds.has(chainId)
+      )
+        return false;
+      chainIds.add(chainId);
+
+      const hasAddresses = Object.hasOwn(binding, 'addresses');
+      const addresses = (binding as { addresses?: unknown }).addresses;
+      if (hasAddresses) {
+        if (
+          !Array.isArray(addresses) ||
+          addresses.length === 0 ||
+          !addresses.every((address) => typeof address === 'string' && isNonZeroAddress(address))
+        )
+          return false;
+        const normalizedAddresses = addresses.map((address) => address.toLowerCase());
+        if (new Set(normalizedAddresses).size !== normalizedAddresses.length) return false;
+      }
+
+      const hasUrl = Object.hasOwn(binding, 'url');
+      const url = (binding as { url?: unknown }).url;
+      if (hasUrl && (typeof url !== 'string' || !isHttpsUrl(url))) return false;
+
+      if (['contract', 'oracle', 'token', 'relayer'].includes(kind)) return hasAddresses;
+      if (kind === 'api') return hasUrl && !hasAddresses;
+      return hasAddresses || hasUrl;
+    });
+  });
+}
+
+function validPrivilegedRoles(value: string, deploymentChainId: number | null) {
+  const roles = parseArray(value);
+  if (roles === null) return false;
+  const names = new Set<string>();
+  return roles.every((role) => {
+    if (
+      typeof role === 'object' &&
+      role !== null &&
+      !Array.isArray(role) &&
+      hasOnlyKeys(role, ['name', 'holders', 'capabilities', 'renounceable']) &&
+      isNonEmptyString((role as { name?: unknown }).name) &&
+      Array.isArray((role as { holders?: unknown }).holders) &&
+      (role as { holders: unknown[] }).holders.length > 0 &&
+      Array.isArray((role as { capabilities?: unknown }).capabilities) &&
+      (role as { capabilities: unknown[] }).capabilities.length > 0 &&
+      (role as { capabilities: unknown[] }).capabilities.every(isNonEmptyString) &&
+      (!Object.hasOwn(role, 'renounceable') ||
+        typeof (role as { renounceable: unknown }).renounceable === 'boolean')
+    ) {
+      const name = (role as { name: string }).name;
+      if (names.has(name)) return false;
+      names.add(name);
+
+      const capabilities = (role as { capabilities: string[] }).capabilities;
+      if (new Set(capabilities).size !== capabilities.length) return false;
+
+      const holderKeys = new Set<string>();
+      return (role as { holders: unknown[] }).holders.every((holder) => {
+        if (
+          typeof holder !== 'object' ||
+          holder === null ||
+          Array.isArray(holder) ||
+          !hasOnlyKeys(holder, ['chainId', 'address'])
+        )
+          return false;
+        const chainId = (holder as { chainId?: unknown }).chainId;
+        const address = (holder as { address?: unknown }).address;
+        if (
+          !isPositiveSafeInteger(chainId) ||
+          deploymentChainId === null ||
+          chainId !== deploymentChainId ||
+          typeof address !== 'string' ||
+          !isNonZeroAddress(address)
+        )
+          return false;
+        const holderKey = `${chainId}:${address.toLowerCase()}`;
+        if (holderKeys.has(holderKey)) return false;
+        holderKeys.add(holderKey);
+        return true;
+      });
+    }
+    return false;
+  });
 }
 
 function validStringArray(value: string) {
@@ -493,9 +557,9 @@ export function manifestReadiness(input: HookBuilderInput) {
   if (input.securityAuditDate && !isValidDate(input.securityAuditDate))
     missing.push('security audit date');
   if (!input.securityNotes.trim()) missing.push('security notes');
-  if (!validExternalDependencies(input.externalDependencies))
+  if (!validExternalDependencies(input.externalDependencies, deploymentChainId))
     missing.push('schema-valid external dependencies JSON array');
-  if (!validPrivilegedRoles(input.privilegedRoles))
+  if (!validPrivilegedRoles(input.privilegedRoles, deploymentChainId))
     missing.push('schema-valid privileged roles JSON array');
   if (
     input.upgradeability === 'erc1967' &&
@@ -503,7 +567,15 @@ export function manifestReadiness(input: HookBuilderInput) {
       const holders = (role as { holders?: unknown[] }).holders;
       return (
         Array.isArray(holders) &&
-        holders.some((holder) => String(holder).toLowerCase() === input.proxyAdmin.toLowerCase())
+        holders.some(
+          (holder) =>
+            typeof holder === 'object' &&
+            holder !== null &&
+            !Array.isArray(holder) &&
+            (holder as { chainId?: unknown }).chainId === deploymentChainId &&
+            String((holder as { address?: unknown }).address).toLowerCase() ===
+              input.proxyAdmin.toLowerCase()
+        )
       );
     })
   )
@@ -568,6 +640,18 @@ export function buildHookManifest(input: HookBuilderInput) {
         runtimeCodehash: nonZeroBytes32Pattern.test(input.runtimeCodehash)
           ? input.runtimeCodehash
           : placeholderHash,
+        gas: {
+          estimates: Object.fromEntries(
+            callbacks.map((callback) => [
+              callback,
+              {
+                typical,
+                maximum,
+                methodology: input.gasMethodology || 'DRAFT: gas has not been measured.',
+              },
+            ])
+          ),
+        },
         proxy:
           input.upgradeability === 'erc1967'
             ? {
@@ -614,19 +698,6 @@ export function buildHookManifest(input: HookBuilderInput) {
       requirements: livenessRequirements,
       failureMode: input.livenessFailureMode || 'DRAFT: failure mode has not been reviewed.',
       ...(input.livenessRecovery ? { recovery: input.livenessRecovery } : {}),
-    },
-    gas: {
-      network: deploymentNetwork || 'draft',
-      estimates: Object.fromEntries(
-        callbacks.map((callback) => [
-          callback,
-          {
-            typical,
-            maximum,
-            methodology: input.gasMethodology || 'DRAFT: gas has not been measured.',
-          },
-        ])
-      ),
     },
     security: {
       audits: [

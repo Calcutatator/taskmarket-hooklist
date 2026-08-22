@@ -51,7 +51,12 @@ const publishableDependencyCases = [
     dependency: {
       name: 'configuration registry',
       kind: 'contract',
-      addresses: ['0x3333333333333333333333333333333333333333'],
+      deployments: [
+        {
+          chainId: 8453,
+          addresses: ['0x3333333333333333333333333333333333333333'],
+        },
+      ],
       purpose: 'Reads approved configuration.',
     },
   },
@@ -60,7 +65,12 @@ const publishableDependencyCases = [
     dependency: {
       name: 'reward token',
       kind: 'token',
-      addresses: ['0x3333333333333333333333333333333333333333'],
+      deployments: [
+        {
+          chainId: 8453,
+          addresses: ['0x3333333333333333333333333333333333333333'],
+        },
+      ],
       purpose: 'Transfers rewards.',
     },
   },
@@ -69,7 +79,12 @@ const publishableDependencyCases = [
     dependency: {
       name: 'price oracle',
       kind: 'oracle',
-      addresses: ['0x3333333333333333333333333333333333333333'],
+      deployments: [
+        {
+          chainId: 8453,
+          addresses: ['0x3333333333333333333333333333333333333333'],
+        },
+      ],
       purpose: 'Reads a reference price.',
     },
   },
@@ -78,7 +93,12 @@ const publishableDependencyCases = [
     dependency: {
       name: 'automation relayer',
       kind: 'relayer',
-      addresses: ['0x3333333333333333333333333333333333333333'],
+      deployments: [
+        {
+          chainId: 8453,
+          addresses: ['0x3333333333333333333333333333333333333333'],
+        },
+      ],
       purpose: 'Submits lifecycle updates.',
     },
   },
@@ -87,7 +107,7 @@ const publishableDependencyCases = [
     dependency: {
       name: 'policy API',
       kind: 'api',
-      url: 'https://api.example.com/v1/policy',
+      deployments: [{ chainId: 8453, url: 'https://api.example.com/v1/policy' }],
       purpose: 'Reads policy metadata.',
     },
   },
@@ -96,7 +116,7 @@ const publishableDependencyCases = [
     dependency: {
       name: 'operator handbook',
       kind: 'other',
-      url: 'https://docs.example.com/operator',
+      deployments: [{ chainId: 8453, url: 'https://docs.example.com/operator' }],
       purpose: 'Documents manual recovery.',
     },
   },
@@ -105,7 +125,12 @@ const publishableDependencyCases = [
     dependency: {
       name: 'custom registry',
       kind: 'other',
-      addresses: ['0x4444444444444444444444444444444444444444'],
+      deployments: [
+        {
+          chainId: 8453,
+          addresses: ['0x4444444444444444444444444444444444444444'],
+        },
+      ],
       purpose: 'Provides custom policy.',
     },
   },
@@ -113,74 +138,144 @@ const publishableDependencyCases = [
 
 const rejectedDependencyCases = [
   {
+    label: 'legacy top-level address locator',
+    dependency: {
+      name: 'configuration registry',
+      kind: 'contract',
+      addresses: ['0x3333333333333333333333333333333333333333'],
+      purpose: 'Reads approved configuration.',
+    },
+    errorPath: '$.externalDependencies[0].deployments',
+  },
+  {
+    label: 'binding on an undeclared chain',
+    dependency: {
+      name: 'configuration registry',
+      kind: 'contract',
+      deployments: [
+        {
+          chainId: 84532,
+          addresses: ['0x3333333333333333333333333333333333333333'],
+        },
+      ],
+      purpose: 'Reads approved configuration.',
+    },
+    errorPath: '$.externalDependencies[0].deployments[0].chainId',
+  },
+  {
+    label: 'duplicate chain bindings',
+    dependency: {
+      name: 'configuration registry',
+      kind: 'contract',
+      deployments: [
+        {
+          chainId: 8453,
+          addresses: ['0x3333333333333333333333333333333333333333'],
+        },
+        {
+          chainId: 8453,
+          addresses: ['0x4444444444444444444444444444444444444444'],
+        },
+      ],
+      purpose: 'Reads approved configuration.',
+    },
+    errorPath: '$.externalDependencies[0].deployments[1].chainId',
+  },
+  {
+    label: 'normalized duplicate addresses',
+    dependency: {
+      name: 'configuration registry',
+      kind: 'contract',
+      deployments: [
+        {
+          chainId: 8453,
+          addresses: [`0x${'a'.repeat(40)}`, `0x${'A'.repeat(40)}`],
+        },
+      ],
+      purpose: 'Reads approved configuration.',
+    },
+    errorPath: '$.externalDependencies[0].deployments[0].addresses[1]',
+  },
+  {
     label: 'contract without addresses',
     dependency: {
       name: 'configuration registry',
       kind: 'contract',
+      deployments: [{ chainId: 8453 }],
       purpose: 'Reads approved configuration.',
     },
-    errorPath: '$.externalDependencies[0].addresses',
+    errorPath: '$.externalDependencies[0].deployments[0].addresses',
   },
   {
     label: 'relayer with empty addresses',
     dependency: {
       name: 'automation relayer',
       kind: 'relayer',
-      addresses: [],
+      deployments: [{ chainId: 8453, addresses: [] }],
       purpose: 'Submits lifecycle updates.',
     },
-    errorPath: '$.externalDependencies[0].addresses',
+    errorPath: '$.externalDependencies[0].deployments[0].addresses',
   },
   {
     label: 'oracle with a zero address',
     dependency: {
       name: 'price oracle',
       kind: 'oracle',
-      addresses: [`0x${'0'.repeat(40)}`],
+      deployments: [{ chainId: 8453, addresses: [`0x${'0'.repeat(40)}`] }],
       purpose: 'Reads a reference price.',
     },
-    errorPath: '$.externalDependencies[0].addresses[0]',
+    errorPath: '$.externalDependencies[0].deployments[0].addresses[0]',
   },
   {
     label: 'API without a URL',
     dependency: {
       name: 'policy API',
       kind: 'api',
-      addresses: ['0x3333333333333333333333333333333333333333'],
+      deployments: [
+        {
+          chainId: 8453,
+          addresses: ['0x3333333333333333333333333333333333333333'],
+        },
+      ],
       purpose: 'Reads policy metadata.',
     },
-    errorPath: '$.externalDependencies[0].url',
+    errorPath: '$.externalDependencies[0].deployments[0].url',
   },
   {
-    label: 'API URL with empty addresses',
+    label: 'API URL with forbidden addresses',
     dependency: {
       name: 'policy API',
       kind: 'api',
-      addresses: [],
-      url: 'https://api.example.com/v1/policy',
+      deployments: [
+        {
+          chainId: 8453,
+          addresses: ['0x3333333333333333333333333333333333333333'],
+          url: 'https://api.example.com/v1/policy',
+        },
+      ],
       purpose: 'Reads policy metadata.',
     },
-    errorPath: '$.externalDependencies[0].addresses',
+    errorPath: '$.externalDependencies[0].deployments[0].addresses',
   },
   {
     label: 'other dependency without a locator',
     dependency: {
       name: 'custom policy',
       kind: 'other',
+      deployments: [{ chainId: 8453 }],
       purpose: 'Provides custom policy.',
     },
-    errorPath: '$.externalDependencies[0]',
+    errorPath: '$.externalDependencies[0].deployments[0]',
   },
   {
     label: 'other URL with empty addresses',
     dependency: {
       name: 'custom policy',
       kind: 'other',
-      addresses: [],
-      url: 'https://dependency.example.com',
+      deployments: [{ chainId: 8453, addresses: [], url: 'https://dependency.example.com' }],
       purpose: 'Provides custom policy.',
     },
-    errorPath: '$.externalDependencies[0].addresses',
+    errorPath: '$.externalDependencies[0].deployments[0].addresses',
   },
 ] as const;
 
@@ -194,6 +289,14 @@ describe('Hooklist canonical manifest integration', () => {
 
     expect(manifestReadiness(readyInput).ready).toBe(true);
     expect(manifest).not.toHaveProperty('x-draft');
+    expect(manifest).not.toHaveProperty('gas');
+    expect(manifest.deployments[0].gas.estimates).toEqual({
+      checkFund: {
+        maximum: 120000,
+        methodology: readyInput.gasMethodology,
+        typical: 100000,
+      },
+    });
     expect(validate(manifest)).toEqual([]);
   });
 
@@ -221,7 +324,11 @@ describe('Hooklist canonical manifest integration', () => {
       network: 'base-sepolia',
       proxy: { kind: 'none', upgradeable: false },
     });
-    expect(manifest.gas.network).toBe('base-sepolia');
+    expect(manifest).not.toHaveProperty('gas');
+    expect(manifest.deployments[0].gas.estimates.checkFund).toMatchObject({
+      maximum: 120000,
+      typical: 100000,
+    });
     expect(validate(manifest)).toEqual([]);
   });
 
@@ -329,8 +436,8 @@ describe('Hooklist canonical manifest integration', () => {
       expect(manifestReadiness(input).ready).toBe(true);
       expect(manifest).not.toHaveProperty('x-draft');
       expect(manifest.externalDependencies).toEqual([dependency]);
-      if (!Object.hasOwn(dependency, 'addresses')) {
-        expect(manifest.externalDependencies[0]).not.toHaveProperty('addresses');
+      if (!Object.hasOwn(dependency.deployments[0], 'addresses')) {
+        expect(manifest.externalDependencies[0].deployments[0]).not.toHaveProperty('addresses');
       }
       expect(validate(manifest)).toEqual([]);
     }
@@ -362,7 +469,7 @@ describe('Hooklist canonical manifest integration', () => {
       privilegedRoles: JSON.stringify([
         {
           name: 'proxy administrator',
-          holders: [admin],
+          holders: [{ chainId: 8453, address: admin }],
           capabilities: ['upgrade hook implementation'],
           renounceable: false,
         },

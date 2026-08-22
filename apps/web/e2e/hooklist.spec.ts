@@ -34,6 +34,23 @@ test('opens the native Hooklist builder and preserves its explicit draft state',
   await expect(page.getByLabel('taskmarket-hook.json preview')).toContainText(
     '"network": "base-sepolia"'
   );
+  const manifest = JSON.parse(
+    (await page.getByLabel('taskmarket-hook.json preview').textContent()) ?? '{}'
+  );
+  expect(manifest).not.toHaveProperty('gas');
+  expect(manifest.deployments[0].gas.estimates.checkFund).toMatchObject({
+    maximum: 0,
+    methodology: 'DRAFT: gas has not been measured.',
+    typical: 0,
+  });
+  await expect(page.getByLabel('External dependencies JSON array')).toHaveAttribute(
+    'placeholder',
+    /"chainId":84532/
+  );
+  await expect(page.getByLabel('Privileged roles JSON array')).toHaveAttribute(
+    'placeholder',
+    /"chainId":84532/
+  );
   await expect
     .poll(() =>
       page.evaluate(

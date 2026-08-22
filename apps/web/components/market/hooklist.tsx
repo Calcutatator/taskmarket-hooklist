@@ -398,8 +398,8 @@ export function HookBuilder({
                 />
               </Field>
               <p className="text-sm leading-5 text-muted-foreground sm:col-span-2">
-                The deployment, verifier evidence, proxy authority, and gas measurements must all
-                describe this chain.
+                The deployment, verifier evidence, dependency bindings, privileged-role holders,
+                proxy authority, and gas measurements must all describe this chain.
               </p>
               <Field label="Taskmarket Diamond address">
                 <Input
@@ -486,8 +486,8 @@ export function HookBuilder({
             <CardHeader>
               <CardTitle>Deployment authority and gas</CardTitle>
               <CardDescription>
-                Proxy metadata belongs to the deployment chain above. Authority and gas limits are
-                safety data, not cosmetic fields.
+                Proxy metadata and callback gas estimates belong to the deployment chain above.
+                Authority and gas limits are safety data, not cosmetic fields.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -707,6 +707,7 @@ export function HookBuilder({
               <Field label="External dependencies JSON array">
                 <Textarea
                   onChange={(event) => update('externalDependencies', event.target.value)}
+                  placeholder={`[{"name":"Price API","kind":"api","purpose":"Reads a reference price.","deployments":[{"chainId":${input.deploymentChainId || '84532'},"url":"https://api.example/prices"}]}]`}
                   value={input.externalDependencies}
                 />
               </Field>
@@ -714,6 +715,7 @@ export function HookBuilder({
                 <Textarea
                   className="sm:col-span-2"
                   onChange={(event) => update('privilegedRoles', event.target.value)}
+                  placeholder={`[{"name":"Proxy admin","holders":[{"chainId":${input.deploymentChainId || '84532'},"address":"0x..."}],"capabilities":["Upgrade the hook implementation"],"renounceable":true}]`}
                   value={input.privilegedRoles}
                 />
               </Field>

@@ -120,6 +120,14 @@ export const BuilderDraft: Story = {
     await expect(canvas.getByLabelText('taskmarket-hook.json preview')).toHaveTextContent(
       '"network": "base-sepolia"'
     );
+    const draftManifest = JSON.parse(
+      canvas.getByLabelText('taskmarket-hook.json preview').textContent ?? '{}'
+    );
+    await expect(draftManifest).not.toHaveProperty('gas');
+    await expect(draftManifest.deployments[0].gas.estimates.checkClaim).toMatchObject({
+      maximum: 0,
+      typical: 0,
+    });
   },
   render: () => (
     <div className="mx-auto max-w-7xl p-4 sm:p-8">
@@ -141,6 +149,22 @@ export const BuilderReady: Story = {
     await expect(canvas.getByLabelText('taskmarket-hook.json preview')).toHaveTextContent(
       '"network": "base-sepolia"'
     );
+    const manifest = JSON.parse(
+      canvas.getByLabelText('taskmarket-hook.json preview').textContent ?? '{}'
+    );
+    await expect(manifest).not.toHaveProperty('gas');
+    await expect(manifest.deployments[0].gas.estimates.checkFund).toMatchObject({
+      maximum: 120000,
+      typical: 100000,
+    });
+    await expect(manifest.externalDependencies[0].deployments[0]).toEqual({
+      chainId: 84532,
+      url: 'https://api.example.com/v1/policy',
+    });
+    await expect(manifest.privilegedRoles[0].holders[0]).toEqual({
+      address: '0x4444444444444444444444444444444444444444',
+      chainId: 84532,
+    });
   },
   render: () => (
     <div className="mx-auto max-w-7xl p-4 sm:p-8">
@@ -157,6 +181,14 @@ export const BuilderReady: Story = {
           deploymentNetwork: 'base-sepolia',
           deploymentTransactionHash: `0x${'1'.repeat(64)}`,
           description: 'Rejects incomplete configuration.',
+          externalDependencies: JSON.stringify([
+            {
+              name: 'policy API',
+              kind: 'api',
+              deployments: [{ chainId: 84532, url: 'https://api.example.com/v1/policy' }],
+              purpose: 'Reads policy metadata.',
+            },
+          ]),
           gasMethodology: 'Foundry gas snapshot on a Base Sepolia fork.',
           hookAddress: '0x1111111111111111111111111111111111111111',
           livenessFailureMode: 'A rejecting callback blocks task creation.',
@@ -165,6 +197,19 @@ export const BuilderReady: Story = {
           maximumGas: '120000',
           name: 'Approved configuration',
           protocolDefaultStatus: 'not-default',
+          privilegedRoles: JSON.stringify([
+            {
+              name: 'configuration administrator',
+              holders: [
+                {
+                  chainId: 84532,
+                  address: '0x4444444444444444444444444444444444444444',
+                },
+              ],
+              capabilities: ['update approved configuration'],
+              renounceable: true,
+            },
+          ]),
           repository: 'https://github.com/taskmarket/hooks',
           runtimeCodehash: `0x${'2'.repeat(64)}`,
           securityAuditScope: 'Generated hook source and deployment metadata.',
