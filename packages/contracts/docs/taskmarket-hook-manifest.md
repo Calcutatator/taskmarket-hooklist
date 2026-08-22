@@ -74,6 +74,16 @@ integers: chain IDs are positive and blocks/gas values are nonnegative (or posit
 published). Values above `9007199254740991` are rejected so browser and CLI consumers
 cannot silently compare rounded chain or measurement data.
 
+File, request-body, and registry ingestion must validate the raw UTF-8 JSON through the
+exported `inspectJson(source)` or `validateJson(source)` entry point. These functions use
+the original JSON number token, so a fractional value such as `9007199254740991.1`
+cannot be rounded to a publishable safe integer by `JSON.parse`. Exact safe integers in
+plain decimal, `.0`, or mathematically integral exponent form are accepted; fractional
+or out-of-range mathematical values are rejected. The object-based `inspect(manifest)`
+and `validate(manifest)` functions remain useful for in-memory builders, but an already
+parsed object cannot reveal precision that an earlier parse discarded. Consumers must
+not parse untrusted manifest JSON before calling the raw-source entry point.
+
 Gas evidence is deployment-specific. Every deployment includes
 `gas.estimates.<callback>` with `typical`, `maximum`, and `methodology`; there is no
 free-form global network label. Each deployment must cover the manifest's `callbacks`

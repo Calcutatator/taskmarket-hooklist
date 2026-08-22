@@ -49,13 +49,13 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 9007199254740991,
-      "description": "A positive JavaScript safe integer. Manifest numeric values are parsed by JavaScript and must not lose precision."
+      "description": "A positive JavaScript safe integer after lossless raw-source numeric validation."
     },
     "safeNonnegativeInteger": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991,
-      "description": "A nonnegative JavaScript safe integer. Manifest numeric values are parsed by JavaScript and must not lose precision."
+      "description": "A nonnegative JavaScript safe integer after lossless raw-source numeric validation."
     },
     "httpsUri": {
       "type": "string",
@@ -910,7 +910,7 @@
       }
     }
   },
-  "$comment": "Generic Draft 2020-12 validation enforces non-placeholder evidence whenever x-draft is absent or false. A true/object x-draft marker conditionally permits placeholder editing output but explicitly marks it non-publishable. The CLI additionally enforces unique deployment chainIds; exact callback-to-gas-estimate coverage and typical <= maximum on every deployment; unique role/dependency names; declared-chain and normalized duplicate checks for role holders and dependency bindings; same-chain proxy authority links; normalized verifier (chainId, url) uniqueness and verified coverage of every declared chain; exact all/some-chain default semantics; and always reports drafts non-publishable.",
+  "$comment": "Generic Draft 2020-12 validation enforces non-placeholder evidence whenever x-draft is absent or false. A true/object x-draft marker conditionally permits placeholder editing output but explicitly marks it non-publishable. Raw JSON ingestion must also use the exported lossless inspector so fractional or unsafe mathematical values cannot be rounded by JSON.parse before schema validation. The CLI uses that raw-source path and additionally enforces unique deployment chainIds; exact callback-to-gas-estimate coverage and typical <= maximum on every deployment; unique role/dependency names; declared-chain and normalized duplicate checks for role holders and dependency bindings; same-chain proxy authority links; normalized verifier (chainId, url) uniqueness and verified coverage of every declared chain; exact all/some-chain default semantics; and always reports drafts non-publishable.",
   "allOf": [
     {
       "if": { "properties": { "x-draft": {} }, "required": ["x-draft"] },

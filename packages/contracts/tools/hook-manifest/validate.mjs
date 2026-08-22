@@ -14,6 +14,9 @@ const schema = JSON.parse(
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 addFormats(ajv);
 const validateSchema = ajv.compile(schema);
+const maxSafeIntegerSource = String(Number.MAX_SAFE_INTEGER);
+const jsonNumberSourcePattern =
+  /^-?(0|[1-9][0-9]*)(?:\.([0-9]+))?(?:[eE]([+-]?)([0-9]+))?$/;
 
 function displayPath(instancePath) {
   return instancePath
@@ -36,6 +39,110 @@ function formatSchemaError(error) {
   if (error.keyword === "additionalProperties")
     path += `.${error.params.additionalProperty}`;
   return `${path}: ${error.message}`;
+}
+
+function appendPropertyPath(path, key, holder) {
+  if (Array.isArray(holder) && /^(0|[1-9][0-9]*)$/.test(key))
+    return `${path}[${key}]`;
+  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)) return `${path}.${key}`;
+  return `${path}[${JSON.stringify(key)}]`;
+}
+
+function boundedExponent(sign, digits, limit) {
+  if (!digits) return 0;
+  let magnitude = 0;
+  for (const character of digits) {
+    const digit = character.charCodeAt(0) - 48;
+    if (magnitude > Math.floor((limit - digit) / 10)) {
+      magnitude = limit;
+      break;
+    }
+    magnitude = magnitude * 10 + digit;
+  }
+  return sign === "-" ? -magnitude : magnitude;
+}
+
+function rawIntegerIssue(source) {
+  const match = jsonNumberSourcePattern.exec(source);
+  if (!match) return "is not a valid JSON number";
+
+  const [, integerDigits, fractionDigits = "", exponentSign, exponentDigits] =
+    match;
+  const coefficient = `${integerDigits}${fractionDigits}`.replace(/^0+/, "");
+  if (coefficient.length === 0) return null;
+
+  // The exponent only matters relative to the token's coefficient and the
+  // 16-digit safe-integer boundary. Saturating here avoids BigInt conversion
+  // or exponentiation for adversarial exponents with millions of digits.
+  const exponentLimit = source.length + maxSafeIntegerSource.length + 1;
+  const exponent = boundedExponent(exponentSign, exponentDigits, exponentLimit);
+  const decimalShift = exponent - fractionDigits.length;
+
+  let integerDigitsSource;
+  if (decimalShift < 0) {
+    const requiredTrailingZeros = -decimalShift;
+    let availableTrailingZeros = 0;
+    for (
+      let index = coefficient.length - 1;
+      index >= 0 && coefficient[index] === "0";
+      index -= 1
+    ) {
+      availableTrailingZeros += 1;
+    }
+    if (requiredTrailingZeros > availableTrailingZeros)
+      return "has a fractional mathematical value";
+
+    const integerLength = coefficient.length - requiredTrailingZeros;
+    if (integerLength > maxSafeIntegerSource.length)
+      return "is outside the JavaScript safe-integer range";
+    integerDigitsSource = coefficient.slice(0, integerLength);
+  } else {
+    const integerLength = coefficient.length + decimalShift;
+    if (integerLength > maxSafeIntegerSource.length)
+      return "is outside the JavaScript safe-integer range";
+    integerDigitsSource = `${coefficient}${"0".repeat(decimalShift)}`;
+  }
+
+  if (
+    integerDigitsSource.length === maxSafeIntegerSource.length &&
+    integerDigitsSource > maxSafeIntegerSource
+  ) {
+    return "is outside the JavaScript safe-integer range";
+  }
+  return null;
+}
+
+function summarizedSource(source) {
+  if (source.length <= 80) return JSON.stringify(source);
+  return JSON.stringify(
+    `${source.slice(0, 40)}…(${source.length} characters)…${source.slice(-20)}`,
+  );
+}
+
+function formatRawIntegerError(path, issue) {
+  return `${path}: raw numeric literal ${summarizedSource(issue.source)} ${issue.reason}; manifest numbers must be exact JavaScript safe integers`;
+}
+
+function collectRawIntegerErrors(manifest, issuesByHolder, rootIssue) {
+  const errors = [];
+  if (rootIssue) errors.push(formatRawIntegerError("$", rootIssue));
+
+  const visit = (value, path) => {
+    if (value === null || typeof value !== "object") return;
+    const holderIssues = issuesByHolder.get(value);
+    if (holderIssues) {
+      for (const [key, issue] of holderIssues) {
+        errors.push(
+          formatRawIntegerError(appendPropertyPath(path, key, value), issue),
+        );
+      }
+    }
+    for (const [key, child] of Object.entries(value)) {
+      visit(child, appendPropertyPath(path, key, value));
+    }
+  };
+  visit(manifest, "$");
+  return errors;
 }
 
 function normalizedEffectiveHttpsUrl(value) {
@@ -363,6 +470,71 @@ export function validate(manifest) {
   return inspect(manifest).errors;
 }
 
+/**
+ * Parse and inspect raw manifest JSON without allowing JSON.parse to hide a
+ * fractional or unsafe integer through IEEE-754 rounding. Callers ingesting
+ * files or request bodies should use this entry point instead of pre-parsing.
+ */
+export function inspectJson(source) {
+  if (typeof source !== "string") {
+    return {
+      manifest: undefined,
+      errors: ["$: raw JSON source must be a string"],
+      publishable: false,
+    };
+  }
+
+  const issuesByHolder = new WeakMap();
+  let rootIssue;
+  let manifest;
+  try {
+    const trimmedSource = source.trim();
+    manifest = JSON.parse(
+      source,
+      function inspectRawNumber(key, value, context) {
+        if (typeof value !== "number") return value;
+        const numberSource = context?.source;
+        if (typeof numberSource !== "string") {
+          throw new Error(
+            "the current Node.js runtime does not expose JSON number source text",
+          );
+        }
+        const reason = rawIntegerIssue(numberSource);
+        if (reason === null) return value;
+
+        const issue = { source: numberSource, reason };
+        let holderIssues = issuesByHolder.get(this);
+        if (!holderIssues) {
+          holderIssues = new Map();
+          issuesByHolder.set(this, holderIssues);
+        }
+        holderIssues.set(key, issue);
+        if (key === "" && numberSource === trimmedSource) rootIssue = issue;
+        return value;
+      },
+    );
+  } catch (error) {
+    return {
+      manifest: undefined,
+      errors: [`$: invalid JSON: ${error.message}`],
+      publishable: false,
+    };
+  }
+
+  const rawErrors = collectRawIntegerErrors(
+    manifest,
+    issuesByHolder,
+    rootIssue,
+  );
+  const inspected = inspect(manifest);
+  const errors = [...new Set([...rawErrors, ...inspected.errors])];
+  return { manifest, errors, publishable: errors.length === 0 };
+}
+
+export function validateJson(source) {
+  return inspectJson(source).errors;
+}
+
 const invokedAsScript =
   process.argv[1] &&
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
@@ -375,7 +547,7 @@ if (invokedAsScript) {
     process.exitCode = 2;
   } else {
     try {
-      const errors = validate(JSON.parse(readFileSync(file, "utf8")));
+      const errors = validateJson(readFileSync(file, "utf8"));
       if (errors.length) {
         console.error(
           `Invalid ${file}:\n${errors.map((error) => `- ${error}`).join("\n")}`,
