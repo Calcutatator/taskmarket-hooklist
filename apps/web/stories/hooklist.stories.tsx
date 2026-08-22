@@ -3,6 +3,7 @@ import { expect, userEvent, within } from 'storybook/test';
 
 // storybook-coverage: components/market/hook-inspection.tsx
 // storybook-coverage: components/market/hooklist.tsx
+import HooksLoading from '@/app/(public)/hooks/loading';
 import { HookInspection } from '@/components/market/hook-inspection';
 import { HookBuilder, HooklistDirectory } from '@/components/market/hooklist';
 import { initialHookBuilderInput, type PublicHook } from '@/lib/hooklist';
@@ -96,6 +97,37 @@ export const MissingInspection: Story = {
       <HookInspection hook={null} />
     </div>
   ),
+};
+
+export const UnavailableInspection: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText('Could not load this hook')).toBeVisible();
+    await expect(
+      canvas.getByText('The hook detail API is unavailable. Try again shortly.')
+    ).toBeVisible();
+    await expect(canvas.getByRole('link', { name: 'Return to Hooklist' })).toHaveAttribute(
+      'href',
+      '/hooks'
+    );
+  },
+  render: () => (
+    <div className="mx-auto max-w-5xl p-4 sm:p-8">
+      <HookInspection
+        errorMessage="The hook detail API is unavailable. Try again shortly."
+        hook={null}
+      />
+    </div>
+  ),
+};
+
+export const RouteLoading: Story = {
+  play: async ({ canvasElement }) => {
+    const skeletons = canvasElement.querySelectorAll('[data-slot="skeleton"]');
+    await expect(skeletons).toHaveLength(5);
+    for (const skeleton of skeletons) await expect(skeleton).toBeVisible();
+  },
+  render: () => <HooksLoading />,
 };
 
 export const BuilderDraft: Story = {
