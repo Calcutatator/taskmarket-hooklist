@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, URL } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
@@ -36,6 +36,16 @@ function formatSchemaError(error) {
   if (error.keyword === "additionalProperties")
     path += `.${error.params.additionalProperty}`;
   return `${path}: ${error.message}`;
+}
+
+function normalizedEffectiveHttpsUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || !url.hostname) return null;
+    return url.href;
+  } catch {
+    return null;
+  }
 }
 
 function checkSemanticConsistency(manifest, errors) {
@@ -144,13 +154,16 @@ function checkSemanticConsistency(manifest, errors) {
         Number.isInteger(verifier.chainId) &&
         typeof verifier.url === "string"
       ) {
-        const key = JSON.stringify([verifier.chainId, verifier.url]);
-        if (evidenceKeys.has(key)) {
-          errors.push(
-            `$.sourceVerification.verifiers[${index}].url: duplicates chainId and url from verifier ${evidenceKeys.get(key)}`,
-          );
-        } else {
-          evidenceKeys.set(key, index);
+        const normalizedUrl = normalizedEffectiveHttpsUrl(verifier.url);
+        if (normalizedUrl !== null) {
+          const key = JSON.stringify([verifier.chainId, normalizedUrl]);
+          if (evidenceKeys.has(key)) {
+            errors.push(
+              `$.sourceVerification.verifiers[${index}].url: duplicates chainId and normalized URL from verifier ${evidenceKeys.get(key)}`,
+            );
+          } else {
+            evidenceKeys.set(key, index);
+          }
         }
       }
     });

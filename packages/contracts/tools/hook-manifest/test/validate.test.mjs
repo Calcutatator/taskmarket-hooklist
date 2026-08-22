@@ -132,6 +132,27 @@ test("CLI uses canonical standard formats for malformed HTTPS URIs and emails", 
   }
 });
 
+test("CLI requires a nonempty HTTPS authority", () => {
+  for (const url of [
+    "https:example.com",
+    "https:/example.com",
+    "https:///example.com",
+  ]) {
+    const manifest = proxy();
+    manifest.author.url = url;
+    errorsFor(manifest, "$.author.url");
+  }
+
+  for (const url of [
+    "https://example.com",
+    "https://EXAMPLE.com:443/source?view=code#L1",
+  ]) {
+    const manifest = proxy();
+    manifest.author.url = url;
+    assert.deepEqual(validate(manifest), []);
+  }
+});
+
 test("allows x-* only at schema extension points", () => {
   const allowed = immutable();
   allowed["x-publisher"] = { id: 1 };
@@ -276,16 +297,68 @@ test("requires source-verification evidence consistent with its status", () => {
   }
 });
 
-test("rejects duplicate verifier evidence keyed by chainId and URL", () => {
-  const manifest = proxy();
-  manifest.sourceVerification.verifiers[1] = {
-    ...structuredClone(manifest.sourceVerification.verifiers[0]),
-    status: "pending",
-  };
-  const errors = validate(manifest);
-  assert.deepEqual(errors, [
-    "$.sourceVerification.verifiers[1].url: duplicates chainId and url from verifier 0",
-  ]);
+test("rejects duplicate verifier evidence by normalized effective HTTPS URL", () => {
+  const duplicateError =
+    "$.sourceVerification.verifiers[1].url: duplicates chainId and normalized URL from verifier 0";
+
+  for (const [firstUrl, secondUrl] of [
+    [
+      "https://verifier.example.com/source",
+      "https://verifier.example.com/source",
+    ],
+    [
+      "https://Verifier.Example.com:443/contracts/../source",
+      "https://verifier.example.com/source",
+    ],
+    ["https://verifier.example.com", "https://verifier.example.com/"],
+  ]) {
+    const manifest = proxy();
+    manifest.sourceVerification.verifiers[0].url = firstUrl;
+    manifest.sourceVerification.verifiers[1].url = secondUrl;
+    assert.deepEqual(validate(manifest), [duplicateError]);
+  }
+
+  const emptyAuthorityAlias = proxy();
+  emptyAuthorityAlias.sourceVerification.verifiers[0].url =
+    "https://verifier.example.com/source";
+  emptyAuthorityAlias.sourceVerification.verifiers[1].url =
+    "https:///verifier.example.com/source";
+  const errors = errorsFor(
+    emptyAuthorityAlias,
+    "$.sourceVerification.verifiers[1].url",
+  );
+  assert.ok(errors.includes(duplicateError), errors.join("\n"));
+
+  for (const [firstUrl, secondUrl] of [
+    [
+      "https://verifier.example.com/source?view=source",
+      "https://verifier.example.com/source?view=bytecode",
+    ],
+    [
+      "https://verifier.example.com/source#L1",
+      "https://verifier.example.com/source#L2",
+    ],
+  ]) {
+    const distinct = proxy();
+    distinct.sourceVerification.verifiers[0].url = firstUrl;
+    distinct.sourceVerification.verifiers[1].url = secondUrl;
+    assert.deepEqual(validate(distinct), []);
+  }
+
+  const differentChains = immutable();
+  differentChains.sourceVerification.verifiers[0].url =
+    "https://verifier.example.com/";
+  differentChains.deployments.push({
+    ...structuredClone(differentChains.deployments[0]),
+    chainId: 1,
+    network: "Ethereum",
+  });
+  differentChains.sourceVerification.verifiers.push({
+    chainId: 1,
+    url: "https://Verifier.Example.com:443",
+    status: "verified",
+  });
+  assert.deepEqual(validate(differentChains), []);
 });
 
 test("validates privileged roles, dependencies, liveness, and security details", () => {

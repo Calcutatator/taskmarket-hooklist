@@ -237,6 +237,31 @@ test("AJV standard formats reject malformed HTTPS URIs and short-form emails", (
   assertSchemaInvalid(manifest, ["/author/url", "/author/contact"]);
 });
 
+test("AJV requires a nonempty HTTPS authority", () => {
+  for (const url of [
+    "https:example.com",
+    "https:/example.com",
+    "https:///example.com",
+  ]) {
+    const manifest = proxy();
+    manifest.author.url = url;
+    assertSchemaInvalid(manifest, ["/author/url"]);
+  }
+
+  for (const url of [
+    "https://example.com",
+    "https://EXAMPLE.com:443/source?view=code#L1",
+  ]) {
+    const manifest = proxy();
+    manifest.author.url = url;
+    assert.equal(
+      validateSchema(manifest),
+      true,
+      `${url}: ${JSON.stringify(validateSchema.errors, null, 2)}`,
+    );
+  }
+});
+
 test("AJV requires kind-specific proxy locators and concrete upgrade authority", () => {
   const roleLinked = proxy();
   delete roleLinked.proxy.admin;

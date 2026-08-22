@@ -50,7 +50,7 @@
     "httpsUri": {
       "type": "string",
       "format": "uri",
-      "pattern": "^https://[^\\s]+$"
+      "pattern": "^https://[^/?#\\s]+(?:[/?#][^\\s]*)?$"
     },
     "extensions": {
       "type": "object",
@@ -841,7 +841,7 @@
       }
     }
   },
-  "$comment": "Generic Draft 2020-12 validation enforces non-placeholder evidence whenever x-draft is absent or false. A true/object x-draft marker conditionally permits placeholder editing output but explicitly marks it non-publishable. The CLI additionally enforces unique deployment chainIds and verifier (chainId, url) pairs, verifier/protocol-default chains drawn from deployments, concrete proxy authority links to privileged roles, exact callback-to-gas-estimate coverage, typical <= maximum, exact all/some-chain default semantics, and always reports drafts non-publishable.",
+  "$comment": "Generic Draft 2020-12 validation enforces non-placeholder evidence whenever x-draft is absent or false. A true/object x-draft marker conditionally permits placeholder editing output but explicitly marks it non-publishable. The CLI additionally enforces unique deployment chainIds and normalized verifier (chainId, url) pairs, verifier/protocol-default chains drawn from deployments, concrete proxy authority links to privileged roles, exact callback-to-gas-estimate coverage, typical <= maximum, exact all/some-chain default semantics, and always reports drafts non-publishable.",
   "allOf": [
     {
       "if": { "properties": { "x-draft": {} }, "required": ["x-draft"] },

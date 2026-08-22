@@ -30,13 +30,19 @@ and the chain; a valid manifest is not an endorsement.
 
 Every externally rendered URL is HTTPS-only: author and source links, verifier and
 dependency URLs, audit reports, listings, conformance evidence, and protocol-default
-evidence. Consumers must still escape and safely render those untrusted destinations.
+evidence. The spelling must start with `https://` and include a nonempty authority;
+shortened forms such as `https:example.com`, `https:/example.com`, and the empty-authority
+`https:///example.com` form are invalid. Consumers must still escape and safely render
+those untrusted destinations.
 
 For publication, `sourceVerification.status: verified` requires at least one verifier
 and every verifier entry must be verified. `partially-verified` requires both verified
 and pending/unverified evidence. Verifier chain IDs must match declared deployments,
-and each `(chainId, url)` pair must be unique so contradictory duplicate entries cannot
-satisfy partial verification.
+and each `(chainId, normalized URL)` pair must be unique so contradictory duplicate
+entries cannot satisfy partial verification. The CLI uses the standard WHATWG URL
+serialization for this comparison, which includes lowercasing the host, removing the
+default HTTPS port, resolving path dot segments, and adding the implied root slash.
+Query strings and fragments remain significant.
 
 ## Required deployment evidence
 
