@@ -46,14 +46,17 @@ describe('public Hooklist detail route', () => {
     });
   });
 
-  it('retains an explicit API-unavailable state instead of turning it into a 404', async () => {
-    api.fetchHook.mockRejectedValue(
-      new ApiConnectionError('unavailable', { path: `/api/hooks/${address}`, status: 503 })
-    );
+  it.each([404, 503])(
+    'retains an explicit API-unavailable state for an HTTP %s instead of turning it into a Next 404',
+    async (status) => {
+      api.fetchHook.mockRejectedValue(
+        new ApiConnectionError('unavailable', { path: `/api/hooks/${address}`, status })
+      );
 
-    render(await HookPage({ params: Promise.resolve({ address }) }));
+      render(await HookPage({ params: Promise.resolve({ address }) }));
 
-    expect(screen.getByText('Could not load this hook')).toBeVisible();
-    expect(screen.getByText(/public market API is unavailable/i)).toBeVisible();
-  });
+      expect(screen.getByText('Could not load this hook')).toBeVisible();
+      expect(screen.getByText(/public market API is unavailable/i)).toBeVisible();
+    }
+  );
 });

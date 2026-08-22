@@ -261,8 +261,9 @@ export function HookBuilder({
             Create an evidence-backed hook package
           </h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-            Generate a safe Solidity scaffold and versioned manifest. The manifest remains a draft
-            until every deployment and trust declaration is entered and reviewed.
+            Generate a fail-closed Solidity scaffold and versioned manifest. Every selected callback
+            reverts until you implement its policy, and the manifest remains a draft until every
+            deployment and trust declaration is entered and reviewed.
           </p>
         </div>
         <Button asChild variant="outline">
@@ -714,9 +715,10 @@ export function HookBuilder({
             <CardHeader>
               <CardTitle>Publish after independent review</CardTitle>
               <CardDescription>
-                Download both files, compile the scaffold against the installed contracts package,
-                and run the manifest validator before submitting the repository and deployment
-                evidence through the public listing process.
+                Replace every fail-closed callback stub, download both files, compile the scaffold
+                against the installed contracts package, and run the manifest validator before
+                submitting the repository and deployment evidence through the public listing
+                process.
               </CardDescription>
             </CardHeader>
           </Card>

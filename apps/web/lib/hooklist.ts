@@ -129,6 +129,7 @@ const addressPattern = /^0x[0-9a-fA-F]{40}$/;
 const nonZeroBytes32Pattern = /^0x(?!0{64}$)[0-9a-fA-F]{64}$/;
 const hexBytesPattern = /^0x(?:[0-9a-fA-F]{2})*$/;
 const commitPattern = /^[0-9a-fA-F]{7,64}$/;
+const canonicalPositiveIntegerPattern = /^[1-9][0-9]*$/;
 const sourcePathPattern =
   /^(?![A-Za-z]:)(?!.*(?:^|\/)\.\.?(?:\/|$))(?!.*\/\/)(?!.*\\)[^/]+(?:\/[^/]+)*$/;
 
@@ -167,6 +168,12 @@ function parseJson(value: string) {
 function parseArray(value: string) {
   const parsed = parseJson(value);
   return parsed && Array.isArray(parsed.value) ? parsed.value : null;
+}
+
+function parseCanonicalPositiveSafeInteger(value: string) {
+  if (!canonicalPositiveIntegerPattern.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 function isPortableSourcePath(value: string) {
@@ -373,6 +380,9 @@ function contractName(value: string) {
 
 export function manifestReadiness(input: HookBuilderInput) {
   const missing: string[] = [];
+  const deploymentBlockNumber = parseCanonicalPositiveSafeInteger(input.deploymentBlockNumber);
+  const typicalGas = parseCanonicalPositiveSafeInteger(input.typicalGas);
+  const maximumGas = parseCanonicalPositiveSafeInteger(input.maximumGas);
   if (!input.name.trim()) missing.push('project name');
   if ([...input.name].length > 120) missing.push('project name at most 120 characters');
   if (!input.description.trim()) missing.push('description');
@@ -394,19 +404,10 @@ export function manifestReadiness(input: HookBuilderInput) {
   if (!isNonZeroAddress(input.hookAddress)) missing.push('nonzero deployed hook address');
   if (!nonZeroBytes32Pattern.test(input.deploymentTransactionHash))
     missing.push('deployment transaction hash');
-  if (
-    !Number.isInteger(Number(input.deploymentBlockNumber)) ||
-    Number(input.deploymentBlockNumber) <= 0
-  )
-    missing.push('deployment block number');
+  if (deploymentBlockNumber === null) missing.push('deployment block number');
   if (!nonZeroBytes32Pattern.test(input.runtimeCodehash)) missing.push('runtime codehash');
-  if (!Number.isInteger(Number(input.typicalGas)) || Number(input.typicalGas) <= 0)
-    missing.push('nonzero typical gas estimate');
-  if (
-    !Number.isInteger(Number(input.maximumGas)) ||
-    Number(input.maximumGas) < Number(input.typicalGas) ||
-    Number(input.maximumGas) <= 0
-  )
+  if (typicalGas === null) missing.push('nonzero typical gas estimate');
+  if (maximumGas === null || (typicalGas !== null && maximumGas < typicalGas))
     missing.push('nonzero maximum gas at least typical gas');
   if (!input.gasMethodology.trim()) missing.push('gas methodology');
   if (input.hookDataEncoding === 'abi') {
@@ -513,10 +514,10 @@ export function buildHookManifest(input: HookBuilderInput) {
   const livenessRequirements = parseArray(input.livenessRequirements) ?? [];
   const placeholderAddress = `0x${'0'.repeat(40)}`;
   const placeholderHash = `0x${'0'.repeat(64)}`;
-  const typical = Number.isInteger(Number(input.typicalGas)) ? Number(input.typicalGas) : 0;
-  const maximum = Number.isInteger(Number(input.maximumGas))
-    ? Math.max(Number(input.maximumGas), typical)
-    : typical;
+  const deploymentBlockNumber = parseCanonicalPositiveSafeInteger(input.deploymentBlockNumber);
+  const typical = parseCanonicalPositiveSafeInteger(input.typicalGas) ?? 0;
+  const parsedMaximum = parseCanonicalPositiveSafeInteger(input.maximumGas);
+  const maximum = parsedMaximum === null ? typical : Math.max(parsedMaximum, typical);
   const callbacks = input.callbacks.length ? input.callbacks : ['checkFund'];
   const manifest = {
     manifestVersion: '1.0.0',
@@ -548,9 +549,7 @@ export function buildHookManifest(input: HookBuilderInput) {
           transactionHash: nonZeroBytes32Pattern.test(input.deploymentTransactionHash)
             ? input.deploymentTransactionHash
             : placeholderHash,
-          blockNumber: Number.isInteger(Number(input.deploymentBlockNumber))
-            ? Number(input.deploymentBlockNumber)
-            : 0,
+          blockNumber: deploymentBlockNumber ?? 0,
         },
         runtimeCodehash: nonZeroBytes32Pattern.test(input.runtimeCodehash)
           ? input.runtimeCodehash
@@ -656,31 +655,33 @@ export function buildHookSolidity(input: HookBuilderInput) {
   const selected = new Set(input.callbacks);
   const methods: Record<HookCallback, string> = {
     checkFund:
-      'function _checkFund(bytes32, ITMPCore.TaskContext calldata, bytes calldata) internal override returns (bool) { return true; }',
+      'function _checkFund(bytes32, ITMPCore.TaskContext calldata, bytes calldata) internal override returns (bool) { revert HookPolicyNotImplemented(); }',
     checkClaim:
-      'function _checkClaim(bytes32, ITMPCore.TaskContext calldata, address) internal override returns (bool) { return true; }',
+      'function _checkClaim(bytes32, ITMPCore.TaskContext calldata, address) internal override returns (bool) { revert HookPolicyNotImplemented(); }',
     checkSelectWorker:
-      'function _checkSelectWorker(bytes32, ITMPCore.TaskContext calldata, address) internal override returns (bool) { return true; }',
+      'function _checkSelectWorker(bytes32, ITMPCore.TaskContext calldata, address) internal override returns (bool) { revert HookPolicyNotImplemented(); }',
     checkSubmit:
-      'function _checkSubmit(bytes32, ITMPCore.TaskContext calldata, address, bytes32) internal override returns (bool) { return true; }',
+      'function _checkSubmit(bytes32, ITMPCore.TaskContext calldata, address, bytes32) internal override returns (bool) { revert HookPolicyNotImplemented(); }',
     checkEvaluate:
-      'function _checkEvaluate(bytes32, ITMPCore.TaskContext calldata, address) internal override returns (bool) { return true; }',
+      'function _checkEvaluate(bytes32, ITMPCore.TaskContext calldata, address) internal override returns (bool) { revert HookPolicyNotImplemented(); }',
     checkComplete:
-      'function _checkComplete(bytes32, ITMPCore.TaskContext calldata, ITMPCore.Verdict calldata) internal override returns (bool) { return true; }',
+      'function _checkComplete(bytes32, ITMPCore.TaskContext calldata, ITMPCore.Verdict calldata) internal override returns (bool) { revert HookPolicyNotImplemented(); }',
     onComplete:
-      'function _onComplete(bytes32, ITMPCore.TaskContext calldata, ITMPCore.Verdict calldata) internal override { }',
+      'function _onComplete(bytes32, ITMPCore.TaskContext calldata, ITMPCore.Verdict calldata) internal override { revert HookPolicyNotImplemented(); }',
     onForfeit:
-      'function _onForfeit(bytes32, ITMPCore.TaskContext calldata, address) internal override { }',
-    onCancel: 'function _onCancel(bytes32, ITMPCore.TaskContext calldata) internal override { }',
-    onExpire: 'function _onExpire(bytes32, ITMPCore.TaskContext calldata) internal override { }',
+      'function _onForfeit(bytes32, ITMPCore.TaskContext calldata, address) internal override { revert HookPolicyNotImplemented(); }',
+    onCancel:
+      'function _onCancel(bytes32, ITMPCore.TaskContext calldata) internal override { revert HookPolicyNotImplemented(); }',
+    onExpire:
+      'function _onExpire(bytes32, ITMPCore.TaskContext calldata) internal override { revert HookPolicyNotImplemented(); }',
   };
   const overrides = hookCallbacks
     .map(([callback]) =>
       selected.has(callback)
-        ? `    // TODO: implement ${callback} policy.\n    ${methods[callback]}`
+        ? `    // TODO: implement ${callback} policy; this stub intentionally reverts.\n    ${methods[callback]}`
         : ''
     )
     .filter(Boolean)
     .join('\n\n');
-  return `// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport { BaseTMPHook } from "@taskmarket/contracts/src/hooks/base/BaseTMPHook.sol";\nimport { ITMPCore } from "@taskmarket/contracts/src/interfaces/ITMPCore.sol";\n\n/// @notice Safe-by-default Taskmarket hook scaffold.\ncontract ${name} is BaseTMPHook {\n    constructor(address taskmarket_) BaseTMPHook(taskmarket_) { }\n\n${overrides}\n}\n`;
+  return `// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport { BaseTMPHook } from "@taskmarket/contracts/src/hooks/base/BaseTMPHook.sol";\nimport { ITMPCore } from "@taskmarket/contracts/src/interfaces/ITMPCore.sol";\n\n/// @notice Fail-closed Taskmarket hook scaffold; selected callbacks revert until implemented.\ncontract ${name} is BaseTMPHook {\n    error HookPolicyNotImplemented();\n\n    constructor(address taskmarket_) BaseTMPHook(taskmarket_) { }\n\n${overrides}\n}\n`;
 }

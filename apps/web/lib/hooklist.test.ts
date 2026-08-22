@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildHookManifest,
   buildHookSolidity,
+  hookCallbacks,
   initialHookBuilderInput,
   manifestReadiness,
   type HookBuilderInput,
@@ -70,6 +71,81 @@ describe('Hooklist manifest builder', () => {
         'nonzero maximum gas at least typical gas',
       ])
     );
+    expect(buildHookManifest(incomplete).gas.estimates.checkFund).toMatchObject({
+      maximum: 100000,
+      typical: 100000,
+    });
+  });
+
+  it.each(['9007199254740992', '9007199254740993'])(
+    'rejects unsafe integer %s instead of lossily serializing deployment and gas evidence',
+    (unsafeInteger) => {
+      const input = {
+        ...evidence,
+        deploymentBlockNumber: unsafeInteger,
+        maximumGas: unsafeInteger,
+        typicalGas: unsafeInteger,
+      };
+
+      expect(manifestReadiness(input)).toMatchObject({
+        missing: expect.arrayContaining([
+          'deployment block number',
+          'nonzero typical gas estimate',
+          'nonzero maximum gas at least typical gas',
+        ]),
+        ready: false,
+      });
+
+      const manifest = buildHookManifest(input);
+      expect(manifest.deployments[0].deployment.blockNumber).toBe(0);
+      expect(manifest.gas.estimates.checkFund).toMatchObject({ maximum: 0, typical: 0 });
+      expect(JSON.stringify(manifest)).not.toContain('9007199254740992');
+    }
+  );
+
+  it.each([
+    ['exponent notation', '1e3'],
+    ['decimal notation', '1.0'],
+    ['surrounding whitespace', ' 123 '],
+    ['a leading zero', '0123'],
+    ['an explicit plus sign', '+123'],
+    ['a hexadecimal prefix', '0x10'],
+  ])('rejects %s in canonical positive integer fields', (_label, value) => {
+    const input = {
+      ...evidence,
+      deploymentBlockNumber: value,
+      maximumGas: value,
+      typicalGas: value,
+    };
+    expect(manifestReadiness(input)).toMatchObject({
+      missing: expect.arrayContaining([
+        'deployment block number',
+        'nonzero typical gas estimate',
+        'nonzero maximum gas at least typical gas',
+      ]),
+      ready: false,
+    });
+    const manifest = buildHookManifest(input);
+    expect(manifest.deployments[0].deployment.blockNumber).toBe(0);
+    expect(manifest.gas.estimates.checkFund).toMatchObject({ maximum: 0, typical: 0 });
+  });
+
+  it('accepts and exactly serializes the maximum safe integer boundary', () => {
+    const maximumSafeInteger = String(Number.MAX_SAFE_INTEGER);
+    const input = {
+      ...evidence,
+      deploymentBlockNumber: maximumSafeInteger,
+      maximumGas: maximumSafeInteger,
+      typicalGas: maximumSafeInteger,
+    };
+
+    expect(manifestReadiness(input)).toMatchObject({ missing: [], ready: true });
+    const manifest = buildHookManifest(input);
+    expect(manifest.deployments[0].deployment.blockNumber).toBe(Number.MAX_SAFE_INTEGER);
+    expect(manifest.gas.estimates.checkFund).toMatchObject({
+      maximum: Number.MAX_SAFE_INTEGER,
+      typical: Number.MAX_SAFE_INTEGER,
+    });
   });
 
   it('accepts a canonical ABI example and emits deterministic bigint-string JSON', () => {
@@ -501,6 +577,47 @@ describe('Hooklist manifest builder', () => {
     });
   });
 
+  it('emits an exact fail-closed scaffold for selected check and after-hook callbacks', () => {
+    const solidity = buildHookSolidity({
+      ...evidence,
+      callbacks: ['checkFund', 'onCancel'],
+      name: 'Policy guard',
+    });
+
+    expect(solidity).toBe(`// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { BaseTMPHook } from "@taskmarket/contracts/src/hooks/base/BaseTMPHook.sol";
+import { ITMPCore } from "@taskmarket/contracts/src/interfaces/ITMPCore.sol";
+
+/// @notice Fail-closed Taskmarket hook scaffold; selected callbacks revert until implemented.
+contract PolicyGuardHook is BaseTMPHook {
+    error HookPolicyNotImplemented();
+
+    constructor(address taskmarket_) BaseTMPHook(taskmarket_) { }
+
+    // TODO: implement checkFund policy; this stub intentionally reverts.
+    function _checkFund(bytes32, ITMPCore.TaskContext calldata, bytes calldata) internal override returns (bool) { revert HookPolicyNotImplemented(); }
+
+    // TODO: implement onCancel policy; this stub intentionally reverts.
+    function _onCancel(bytes32, ITMPCore.TaskContext calldata) internal override { revert HookPolicyNotImplemented(); }
+}
+`);
+  });
+
+  it('fails closed for every selectable lifecycle callback', () => {
+    const callbacks = hookCallbacks.map(([callback]) => callback);
+    const solidity = buildHookSolidity({ ...evidence, callbacks });
+
+    expect(solidity.match(/revert HookPolicyNotImplemented\(\);/g)).toHaveLength(callbacks.length);
+    expect(solidity).not.toContain('return true;');
+    for (const callback of callbacks) {
+      expect(solidity).toContain(
+        `TODO: implement ${callback} policy; this stub intentionally reverts.`
+      );
+    }
+  });
+
   it('emits a schema-shaped ready manifest and an internal BaseTMPHook scaffold', () => {
     const manifest = buildHookManifest(evidence);
     const solidity = buildHookSolidity(evidence);
@@ -514,7 +631,9 @@ describe('Hooklist manifest builder', () => {
     });
     expect(manifest.gas.estimates.checkFund).toMatchObject({ maximum: 120000, typical: 100000 });
     expect(solidity).toContain('@taskmarket/contracts/src/hooks/base/BaseTMPHook.sol');
+    expect(solidity).toContain('error HookPolicyNotImplemented();');
     expect(solidity).toContain('function _checkFund');
+    expect(solidity).toContain('revert HookPolicyNotImplemented();');
     expect(solidity).not.toContain('function supportsInterface');
   });
 });

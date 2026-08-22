@@ -87,21 +87,39 @@ describe('server API fetchers', () => {
     );
   });
 
-  it('returns null for a missing hook without hiding API availability failures', async () => {
+  it('returns null when the hook endpoint fulfills its nullable 200 contract', async () => {
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValueOnce(
+      vi.fn(
+        async () =>
           new Response(JSON.stringify(null), {
             headers: { 'content-type': 'application/json' },
             status: 200,
           })
-        )
-        .mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+      )
     );
 
     await expect(fetchHook('0x1111111111111111111111111111111111111111')).resolves.toBeNull();
+  });
+
+  it('does not mistake an HTTP 404 for the nullable missing-hook response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('not found', { status: 404 }))
+    );
+
+    await expect(fetchHook('0x1111111111111111111111111111111111111111')).rejects.toMatchObject({
+      name: 'ApiConnectionError',
+      status: 404,
+    } satisfies Partial<ApiConnectionError>);
+  });
+
+  it('preserves hook endpoint availability failures', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('unavailable', { status: 503 }))
+    );
+
     await expect(fetchHook('0x1111111111111111111111111111111111111111')).rejects.toMatchObject({
       name: 'ApiConnectionError',
       status: 503,

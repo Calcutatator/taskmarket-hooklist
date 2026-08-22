@@ -139,12 +139,7 @@ export async function fetchHookIndex(searchParams?: { limit?: number }) {
 }
 
 export async function fetchHook(address: string) {
-  try {
-    return await readJson<HookIndexEntry | null>(`/api/hooks/${encodeURIComponent(address)}`);
-  } catch (error) {
-    if (error instanceof ApiConnectionError && error.status === 404) return null;
-    throw error;
-  }
+  return readJson<HookIndexEntry | null>(`/api/hooks/${encodeURIComponent(address)}`);
 }
 
 export async function fetchAgentCount() {
