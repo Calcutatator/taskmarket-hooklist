@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { inspect, validate } from "../validate.mjs";
+import { inspect, inspectJson, validate, validateJson } from "../validate.mjs";
 
 const fixture = (name) =>
   JSON.parse(
@@ -12,6 +13,19 @@ const immutable = () => fixture("valid/simple-immutable.json");
 const proxy = () => fixture("valid/advanced-proxy.json");
 const multiChain = () => fixture("valid/multi-chain-proxies.json");
 const portalReady = () => fixture("valid/portal-ready.json");
+const portalReadySource = () =>
+  readFileSync(
+    resolve("tools/hook-manifest/fixtures/valid/portal-ready.json"),
+    "utf8",
+  );
+const sourceWithChainId = (token) => {
+  const source = portalReadySource();
+  assert.ok(
+    source.includes('"chainId": 8453'),
+    "chainId source replacement target must exist",
+  );
+  return source.replace('"chainId": 8453', `"chainId": ${token}`);
+};
 const errorsFor = (manifest, expectedPath) => {
   const errors = validate(manifest);
   assert.ok(
@@ -26,6 +40,159 @@ test("valid immutable, proxy, multi-chain, and portal-ready fixtures validate", 
   assert.deepEqual(validate(proxy()), []);
   assert.deepEqual(validate(multiChain()), []);
   assert.deepEqual(validate(portalReady()), []);
+});
+
+test("raw-source inspection rejects precision loss hidden by JSON.parse", () => {
+  const source = sourceWithChainId("9007199254740991.1");
+  const parsed = JSON.parse(source);
+  assert.equal(parsed.deployments[0].chainId, Number.MAX_SAFE_INTEGER);
+  assert.equal(inspect(parsed).publishable, true);
+
+  const result = inspectJson(source);
+  assert.equal(
+    result.manifest?.deployments[0].chainId,
+    Number.MAX_SAFE_INTEGER,
+  );
+  assert.equal(result.publishable, false);
+  assert.ok(
+    result.errors.some(
+      (error) =>
+        error.includes("$.deployments[0].chainId") &&
+        error.includes('"9007199254740991.1"') &&
+        error.includes("fractional mathematical value"),
+    ),
+    result.errors.join("\n"),
+  );
+  assert.deepEqual(validateJson(source), result.errors);
+});
+
+test("raw-source inspection accepts exact safe integers in decimal and exponent forms", () => {
+  for (const [token, expected] of [
+    ["8453", 8453],
+    ["8453.0", 8453],
+    ["845300e-2", 8453],
+    ["8.453e3", 8453],
+    ["100000000000000000000e-20", 1],
+    ["9007199254740991", Number.MAX_SAFE_INTEGER],
+    ["9007199254740991.0", Number.MAX_SAFE_INTEGER],
+    ["90071992547409910e-1", Number.MAX_SAFE_INTEGER],
+    ["9.007199254740990e15", Number.MAX_SAFE_INTEGER - 1],
+    ["9.007199254740991e15", Number.MAX_SAFE_INTEGER],
+  ]) {
+    const result = inspectJson(sourceWithChainId(token));
+    assert.equal(result.manifest?.deployments[0].chainId, expected, token);
+    assert.deepEqual(result.errors, [], token);
+    assert.equal(result.publishable, true, token);
+  }
+});
+
+test("raw-source inspection rejects fractional and unsafe exponent boundaries", () => {
+  for (const [token, reason] of [
+    ["9007199254740991.1", "fractional mathematical value"],
+    ["9007199254740990.9", "fractional mathematical value"],
+    ["-9007199254740991.1", "fractional mathematical value"],
+    ["1e-1", "fractional mathematical value"],
+    ["9007199254740991e-1", "fractional mathematical value"],
+    ["9.007199254740991e14", "fractional mathematical value"],
+    ["9007199254740992", "outside the JavaScript safe-integer range"],
+    ["-9007199254740992", "outside the JavaScript safe-integer range"],
+    ["9007199254740991e1", "outside the JavaScript safe-integer range"],
+    ["9.007199254740992e15", "outside the JavaScript safe-integer range"],
+  ]) {
+    const result = inspectJson(sourceWithChainId(token));
+    assert.equal(result.publishable, false, token);
+    assert.ok(
+      result.errors.some(
+        (error) =>
+          error.includes("$.deployments[0].chainId") && error.includes(reason),
+      ),
+      `${token}:\n${result.errors.join("\n")}`,
+    );
+  }
+});
+
+test("raw-source inspection handles huge exponents, strings, syntax, and schema minima safely", () => {
+  const hugeExponent = "9".repeat(10_000);
+  for (const [token, reason] of [
+    [`1e${hugeExponent}`, "outside the JavaScript safe-integer range"],
+    [`1e-${hugeExponent}`, "fractional mathematical value"],
+  ]) {
+    const result = inspectJson(sourceWithChainId(token));
+    const rawError = result.errors.find((error) =>
+      error.includes("raw numeric literal"),
+    );
+    assert.equal(result.publishable, false);
+    assert.ok(rawError?.includes(reason), rawError);
+    assert.ok(rawError.length < 300, "huge literals must be summarized");
+  }
+
+  for (const token of [`0e${hugeExponent}`, `-0e-${hugeExponent}`, "-1.0"]) {
+    const result = inspectJson(sourceWithChainId(token));
+    assert.equal(result.publishable, false, token);
+    assert.ok(
+      result.errors.some(
+        (error) =>
+          error.includes("$.deployments[0].chainId") &&
+          error.includes("must be >= 1"),
+      ),
+      `${token}:\n${result.errors.join("\n")}`,
+    );
+    assert.ok(
+      result.errors.every((error) => !error.includes("raw numeric literal")),
+      `${token}:\n${result.errors.join("\n")}`,
+    );
+  }
+
+  const numericStringSource = portalReadySource().replace(
+    "Rejects tasks that do not include an approved configuration.",
+    "9007199254740991.1 and 1e999999999999999999 are text, not numbers.",
+  );
+  assert.equal(inspectJson(numericStringSource).publishable, true);
+
+  for (const malformed of ['{"chainId": 01}', '{"chainId":']) {
+    const result = inspectJson(malformed);
+    assert.equal(result.manifest, undefined);
+    assert.equal(result.publishable, false);
+    assert.match(result.errors[0], /^\$: invalid JSON:/);
+  }
+});
+
+test("CLI validates raw numeric literals before ordinary object inspection", () => {
+  const fractionalFixture =
+    "tools/hook-manifest/fixtures/invalid/fractional-numeric-literal.json";
+  const raw = readFileSync(resolve(fractionalFixture), "utf8");
+  assert.equal(inspect(JSON.parse(raw)).publishable, true);
+  assert.equal(inspectJson(raw).publishable, false);
+
+  const invalidResult = spawnSync(
+    process.execPath,
+    ["tools/hook-manifest/validate.mjs", fractionalFixture],
+    { cwd: process.cwd(), encoding: "utf8" },
+  );
+  assert.equal(invalidResult.status, 1, invalidResult.stderr);
+  assert.match(invalidResult.stderr, /raw numeric literal/);
+  for (const path of [
+    "$.deployments[0].chainId",
+    "$.deployments[0].deployment.blockNumber",
+    "$.deployments[0].gas.estimates.checkFund.typical",
+    "$.deployments[0].gas.estimates.checkFund.maximum",
+    "$.sourceVerification.verifiers[0].chainId",
+  ]) {
+    assert.ok(
+      invalidResult.stderr.includes(path),
+      `expected ${path} in:\n${invalidResult.stderr}`,
+    );
+  }
+
+  const validResult = spawnSync(
+    process.execPath,
+    [
+      "tools/hook-manifest/validate.mjs",
+      "tools/hook-manifest/fixtures/valid/portal-ready.json",
+    ],
+    { cwd: process.cwd(), encoding: "utf8" },
+  );
+  assert.equal(validResult.status, 0, validResult.stderr);
 });
 
 test("bundled invalid fixtures reject their intended fields", () => {
@@ -869,4 +1036,15 @@ test("documents ABI hookData as structurally checked publisher-attested metadata
   assert.match(docs, /publisher-attested metadata/i);
   assert.match(docs, /independently ABI-decode/i);
   assert.doesNotMatch(docs, /validator proves.*ABI/i);
+});
+
+test("documents raw-source ingestion and the already-parsed precision limit", () => {
+  const docs = readFileSync(
+    new URL("../../../docs/taskmarket-hook-manifest.md", import.meta.url),
+    "utf8",
+  );
+  assert.match(docs, /inspectJson\(source\)/);
+  assert.match(docs, /validateJson\(source\)/);
+  assert.match(docs, /already\s+parsed object cannot reveal precision/i);
+  assert.match(docs, /must\s+not parse untrusted manifest JSON before/i);
 });

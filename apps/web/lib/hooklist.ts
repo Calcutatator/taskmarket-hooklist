@@ -134,6 +134,10 @@ const nonZeroBytes32Pattern = /^0x(?!0{64}$)[0-9a-fA-F]{64}$/;
 const hexBytesPattern = /^0x(?:[0-9a-fA-F]{2})*$/;
 const commitPattern = /^[0-9a-fA-F]{7,64}$/;
 const canonicalPositiveIntegerPattern = /^[1-9][0-9]*$/;
+const jsonNumberTokenPattern = /-?(0|[1-9][0-9]*)(?:\.([0-9]+))?(?:[eE]([+-]?)([0-9]+))?/y;
+const maximumSafeIntegerDigits = String(Number.MAX_SAFE_INTEGER);
+const maximumJsonNumberTokenLength = 128;
+const maximumJsonNumberExponent = 1000;
 const sourcePathPattern =
   /^(?![A-Za-z]:)(?!.*(?:^|\/)\.\.?(?:\/|$))(?!.*\/\/)(?!.*\\)[^/]+(?:\/[^/]+)*$/;
 
@@ -162,11 +166,85 @@ function isHttpsUrl(value: string) {
 }
 
 function parseJson(value: string) {
+  if (!hasOnlyExactSafeIntegerJsonNumbers(value)) return null;
   try {
     return { value: JSON.parse(value) as unknown };
   } catch {
     return null;
   }
+}
+
+function isExactSafeIntegerJsonNumber(
+  token: string,
+  integerPart: string,
+  fractionPart: string | undefined,
+  exponentSign: string | undefined,
+  exponentDigits: string | undefined
+) {
+  if (token.length > maximumJsonNumberTokenLength) return false;
+
+  let exponent = 0;
+  if (exponentDigits) {
+    const normalizedExponent = exponentDigits.replace(/^0+/, '') || '0';
+    if (normalizedExponent.length > String(maximumJsonNumberExponent).length) return false;
+    exponent = Number(normalizedExponent);
+    if (exponent > maximumJsonNumberExponent) return false;
+    if (exponentSign === '-') exponent *= -1;
+  }
+
+  const fractionLength = fractionPart?.length ?? 0;
+  const coefficient = `${integerPart}${fractionPart ?? ''}`.replace(/^0+/, '');
+  if (!coefficient) return true;
+
+  const decimalShift = exponent - fractionLength;
+  let integerDigits: string;
+  if (decimalShift >= 0) {
+    const integerLength = coefficient.length + decimalShift;
+    if (integerLength > maximumSafeIntegerDigits.length) return false;
+    integerDigits = `${coefficient}${'0'.repeat(decimalShift)}`;
+  } else {
+    const requiredTrailingZeros = -decimalShift;
+    if (requiredTrailingZeros > coefficient.length) return false;
+    const integerEnd = coefficient.length - requiredTrailingZeros;
+    for (let index = integerEnd; index < coefficient.length; index += 1) {
+      if (coefficient[index] !== '0') return false;
+    }
+    integerDigits = coefficient.slice(0, integerEnd).replace(/^0+/, '') || '0';
+  }
+
+  return (
+    integerDigits.length < maximumSafeIntegerDigits.length ||
+    (integerDigits.length === maximumSafeIntegerDigits.length &&
+      integerDigits <= maximumSafeIntegerDigits)
+  );
+}
+
+function hasOnlyExactSafeIntegerJsonNumbers(value: string) {
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (character === '"') {
+      for (index += 1; index < value.length; index += 1) {
+        if (value[index] === '\\') {
+          index += 1;
+        } else if (value[index] === '"') {
+          break;
+        }
+      }
+      continue;
+    }
+    if (character !== '-' && (character === undefined || character < '0' || character > '9'))
+      continue;
+
+    jsonNumberTokenPattern.lastIndex = index;
+    const match = jsonNumberTokenPattern.exec(value);
+    if (!match) continue;
+    const nextCharacter = value[jsonNumberTokenPattern.lastIndex];
+    if (nextCharacter !== undefined && nextCharacter >= '0' && nextCharacter <= '9') return false;
+    if (!isExactSafeIntegerJsonNumber(match[0], match[1]!, match[2], match[3], match[4]))
+      return false;
+    index = jsonNumberTokenPattern.lastIndex - 1;
+  }
+  return true;
 }
 
 function parseArray(value: string) {

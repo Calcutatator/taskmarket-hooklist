@@ -42,6 +42,33 @@ const evidence = {
   typicalGas: '100000',
 } satisfies HookBuilderInput;
 
+const maximumSafeChainId = Number.MAX_SAFE_INTEGER;
+const maximumSafeDependencyAddress = '0x3333333333333333333333333333333333333333';
+const maximumSafeRoleHolderAddress = '0x4444444444444444444444444444444444444444';
+
+function sourceVerifierJson(chainId: string) {
+  return `[{"chainId":${chainId},"status":"verified","url":"https://example.com/max-safe-source-verification"}]`;
+}
+
+function externalDependencyJson(chainId: string) {
+  return `[{"name":"Maximum-safe contract dependency","kind":"contract","purpose":"Proves exact chain-bound integer handling.","deployments":[{"chainId":${chainId},"addresses":["${maximumSafeDependencyAddress}"]}]}]`;
+}
+
+function privilegedRoleJson(chainId: string) {
+  return `[{"name":"Maximum-safe operator","holders":[{"chainId":${chainId},"address":"${maximumSafeRoleHolderAddress}"}],"capabilities":["operate the hook"]}]`;
+}
+
+function maximumSafeChainBoundEvidence(chainId = String(maximumSafeChainId)) {
+  return {
+    ...evidence,
+    deploymentChainId: String(maximumSafeChainId),
+    externalDependencies: externalDependencyJson(chainId),
+    privilegedRoles: privilegedRoleJson(chainId),
+    sourceVerification: 'verified',
+    sourceVerificationVerifiers: sourceVerifierJson(chainId),
+  } satisfies HookBuilderInput;
+}
+
 describe('Hooklist manifest builder', () => {
   it('keeps an incomplete manifest visibly draft instead of publishing placeholders', () => {
     const manifest = buildHookManifest(initialHookBuilderInput);
@@ -221,7 +248,7 @@ describe('Hooklist manifest builder', () => {
     ['empty', ''],
     ['zero', '0'],
     ['negative', '-1'],
-    ['unsafe', '9007199254740992'],
+    ['unsafe (Number.MAX_SAFE_INTEGER + 1)', '9007199254740992'],
     ['exponent notation', '8.4532e4'],
     ['leading zero', '084532'],
   ])('rejects deployment chain IDs that are %s', (_label, deploymentChainId) => {
@@ -231,7 +258,9 @@ describe('Hooklist manifest builder', () => {
       missing: expect.arrayContaining(['deployment chain ID']),
       ready: false,
     });
-    expect(buildHookManifest(input).deployments[0].chainId).toBe(1);
+    const manifest = buildHookManifest(input);
+    expect(manifest.deployments[0].chainId).toBe(1);
+    expect(manifest).toHaveProperty('x-draft');
   });
 
   it('requires nonzero evidence, valid ABI parameters and JSON, and bounded gas', () => {
@@ -280,6 +309,7 @@ describe('Hooklist manifest builder', () => {
       });
 
       const manifest = buildHookManifest(input);
+      expect(manifest).toHaveProperty('x-draft');
       expect(manifest.deployments[0].deployment.blockNumber).toBe(0);
       expect(manifest.deployments[0].gas.estimates.checkFund).toMatchObject({
         maximum: 0,
@@ -319,10 +349,10 @@ describe('Hooklist manifest builder', () => {
     });
   });
 
-  it('accepts and exactly serializes the maximum safe integer boundary', () => {
+  it('accepts and exactly serializes aligned evidence at the maximum safe integer boundary', () => {
     const maximumSafeInteger = String(Number.MAX_SAFE_INTEGER);
     const input = {
-      ...evidence,
+      ...maximumSafeChainBoundEvidence(),
       deploymentBlockNumber: maximumSafeInteger,
       maximumGas: maximumSafeInteger,
       typicalGas: maximumSafeInteger,
@@ -330,11 +360,129 @@ describe('Hooklist manifest builder', () => {
 
     expect(manifestReadiness(input)).toMatchObject({ missing: [], ready: true });
     const manifest = buildHookManifest(input);
+    expect(manifest).not.toHaveProperty('x-draft');
+    expect(manifest.deployments[0].chainId).toBe(Number.MAX_SAFE_INTEGER);
     expect(manifest.deployments[0].deployment.blockNumber).toBe(Number.MAX_SAFE_INTEGER);
     expect(manifest.deployments[0].gas.estimates.checkFund).toMatchObject({
       maximum: Number.MAX_SAFE_INTEGER,
       typical: Number.MAX_SAFE_INTEGER,
     });
+    expect(manifest.sourceVerification.verifiers).toEqual([
+      expect.objectContaining({ chainId: Number.MAX_SAFE_INTEGER }),
+    ]);
+    expect(manifest.externalDependencies).toEqual([
+      expect.objectContaining({
+        deployments: [
+          expect.objectContaining({
+            addresses: [maximumSafeDependencyAddress],
+            chainId: Number.MAX_SAFE_INTEGER,
+          }),
+        ],
+      }),
+    ]);
+    expect(manifest.privilegedRoles).toEqual([
+      expect.objectContaining({
+        holders: [
+          expect.objectContaining({
+            address: maximumSafeRoleHolderAddress,
+            chainId: Number.MAX_SAFE_INTEGER,
+          }),
+        ],
+      }),
+    ]);
+  });
+
+  it.each([
+    ['MAX_SAFE_INTEGER + 1', '9007199254740992'],
+    ['MAX_SAFE_INTEGER + 0.1', '9007199254740991.1'],
+    ['an unsafe exponent that rounds to MAX_SAFE_INTEGER', '9.0071992547409911e15'],
+  ])('rejects %s in every chain-bound declaration textarea', (_label, numericToken) => {
+    const cases: Array<{
+      label: string;
+      missing: string;
+      output: (manifest: ReturnType<typeof buildHookManifest>) => unknown;
+      override: Partial<HookBuilderInput>;
+    }> = [
+      {
+        label: 'source verifier evidence',
+        missing: 'source verification declaration and verifier evidence',
+        output: (manifest) => manifest.sourceVerification.verifiers,
+        override: { sourceVerificationVerifiers: sourceVerifierJson(numericToken) },
+      },
+      {
+        label: 'external dependency evidence',
+        missing: 'schema-valid external dependencies JSON array',
+        output: (manifest) => manifest.externalDependencies,
+        override: { externalDependencies: externalDependencyJson(numericToken) },
+      },
+      {
+        label: 'privileged role evidence',
+        missing: 'schema-valid privileged roles JSON array',
+        output: (manifest) => manifest.privilegedRoles,
+        override: { privilegedRoles: privilegedRoleJson(numericToken) },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const input = { ...maximumSafeChainBoundEvidence(), ...testCase.override };
+      expect(manifestReadiness(input), testCase.label).toMatchObject({
+        missing: expect.arrayContaining([testCase.missing]),
+        ready: false,
+      });
+      const manifest = buildHookManifest(input);
+      expect(manifest, testCase.label).toHaveProperty('x-draft');
+      expect(testCase.output(manifest), testCase.label).toEqual([]);
+    }
+  });
+
+  it.each(['9007199254740991.0', '9.007199254740991e15'])(
+    'accepts exact MAX_SAFE_INTEGER textarea token %s without rounding',
+    (numericToken) => {
+      const input = maximumSafeChainBoundEvidence(numericToken);
+      expect(manifestReadiness(input)).toMatchObject({ missing: [], ready: true });
+      const manifest = buildHookManifest(input);
+      expect(manifest).not.toHaveProperty('x-draft');
+      expect(manifest.sourceVerification.verifiers[0]?.chainId).toBe(maximumSafeChainId);
+      expect(manifest.externalDependencies[0]?.deployments[0]?.chainId).toBe(maximumSafeChainId);
+      expect(manifest.privilegedRoles[0]?.holders[0]?.chainId).toBe(maximumSafeChainId);
+    }
+  );
+
+  it('rejects an oversized exponent token without evaluating its magnitude', () => {
+    const input = {
+      ...maximumSafeChainBoundEvidence(),
+      sourceVerificationVerifiers: sourceVerifierJson('1e1000000'),
+    };
+    expect(manifestReadiness(input)).toMatchObject({
+      missing: expect.arrayContaining(['source verification declaration and verifier evidence']),
+      ready: false,
+    });
+    expect(buildHookManifest(input).sourceVerification.verifiers).toEqual([]);
+  });
+
+  it('rejects an oversized invalid leading-zero number without scanning it as tiny tokens', () => {
+    const input = {
+      ...maximumSafeChainBoundEvidence(),
+      sourceVerificationVerifiers: sourceVerifierJson(`0${'0'.repeat(256)}`),
+    };
+    expect(manifestReadiness(input)).toMatchObject({
+      missing: expect.arrayContaining(['source verification declaration and verifier evidence']),
+      ready: false,
+    });
+    expect(buildHookManifest(input).sourceVerification.verifiers).toEqual([]);
+  });
+
+  it('ignores numeric-looking strings while guarding textarea number tokens', () => {
+    const requirements = [
+      '9007199254740991.1',
+      '{"chainId":9.0071992547409911e15}',
+      'escaped quote " and backslash \\ before 1e1000000',
+    ];
+    const input = { ...evidence, livenessRequirements: JSON.stringify(requirements) };
+    expect(manifestReadiness(input)).toMatchObject({ missing: [], ready: true });
+    const manifest = buildHookManifest(input);
+    expect(manifest).not.toHaveProperty('x-draft');
+    expect(manifest.liveness.requirements).toEqual(requirements);
   });
 
   it('accepts a canonical ABI example and emits deterministic bigint-string JSON', () => {

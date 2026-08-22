@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 // The canonical validator is an ESM JavaScript tool owned by the contracts package.
 // @ts-expect-error It intentionally has no TypeScript declaration surface.
-import { validate } from '../../../packages/contracts/tools/hook-manifest/validate.mjs';
+import { validateJson } from '../../../packages/contracts/tools/hook-manifest/validate.mjs';
 
 import {
   buildHookManifest,
@@ -313,6 +313,10 @@ function withDependency(dependency: object): HookBuilderInput {
   return { ...readyInput, externalDependencies: JSON.stringify([dependency]) };
 }
 
+function validateManifest(manifest: unknown): string[] {
+  return validateJson(JSON.stringify(manifest)) as string[];
+}
+
 describe('Hooklist canonical manifest integration', () => {
   it('accepts a ready builder fixture with the canonical contracts validator', () => {
     const manifest = buildHookManifest(readyInput);
@@ -327,7 +331,7 @@ describe('Hooklist canonical manifest integration', () => {
         typical: 100000,
       },
     });
-    expect(validate(manifest)).toEqual([]);
+    expect(validateManifest(manifest)).toEqual([]);
   });
 
   it('publishes Base Sepolia chain, verifier, proxy, and gas evidence consistently', () => {
@@ -359,7 +363,7 @@ describe('Hooklist canonical manifest integration', () => {
       maximum: 120000,
       typical: 100000,
     });
-    expect(validate(manifest)).toEqual([]);
+    expect(validateManifest(manifest)).toEqual([]);
   });
 
   it('rejects verifier evidence from outside the selected deployment chain', () => {
@@ -383,7 +387,7 @@ describe('Hooklist canonical manifest integration', () => {
       ready: false,
     });
     expect(draft).toHaveProperty('x-draft');
-    expect(validate(draft)).toEqual(
+    expect(validateManifest(draft)).toEqual(
       expect.arrayContaining([expect.stringContaining('must reference a declared deployment')])
     );
   });
@@ -401,7 +405,7 @@ describe('Hooklist canonical manifest integration', () => {
         ready: false,
       });
       expect(draft).toHaveProperty('x-draft');
-      expect(validate(publishedCandidate)).toEqual(
+      expect(validateManifest(publishedCandidate)).toEqual(
         expect.arrayContaining([expect.stringContaining('$.author.url')])
       );
     }
@@ -428,7 +432,7 @@ describe('Hooklist canonical manifest integration', () => {
         ready: false,
       });
       expect(draft).toHaveProperty('x-draft');
-      expect(validate(draft)).toEqual(
+      expect(validateManifest(draft)).toEqual(
         expect.arrayContaining([expect.stringContaining('duplicates chainId and normalized URL')])
       );
     }
@@ -454,7 +458,7 @@ describe('Hooklist canonical manifest integration', () => {
     expect(manifestReadiness(input).ready).toBe(true);
     expect(manifest).not.toHaveProperty('x-draft');
     expect(manifest).not.toHaveProperty('proxy');
-    expect(validate(manifest)).toEqual([]);
+    expect(validateManifest(manifest)).toEqual([]);
   });
 
   it.each(publishableDependencyCases)(
@@ -469,7 +473,7 @@ describe('Hooklist canonical manifest integration', () => {
       if (!Object.hasOwn(dependency.deployments[0], 'addresses')) {
         expect(manifest.externalDependencies[0].deployments[0]).not.toHaveProperty('addresses');
       }
-      expect(validate(manifest)).toEqual([]);
+      expect(validateManifest(manifest)).toEqual([]);
     }
   );
 
@@ -486,7 +490,7 @@ describe('Hooklist canonical manifest integration', () => {
         ready: false,
       });
       expect(draft).toHaveProperty('x-draft');
-      expect(validate(publishedCandidate)).toEqual(
+      expect(validateManifest(publishedCandidate)).toEqual(
         expect.arrayContaining([expect.stringContaining(errorPath)])
       );
     }
@@ -529,6 +533,6 @@ describe('Hooklist canonical manifest integration', () => {
       kind: 'erc1967',
       upgradeable: true,
     });
-    expect(validate(manifest)).toEqual([]);
+    expect(validateManifest(manifest)).toEqual([]);
   });
 });
