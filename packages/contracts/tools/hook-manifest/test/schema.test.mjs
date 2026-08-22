@@ -50,10 +50,10 @@ function placeholderProxy() {
   manifest.deployments[0].proxy.implementation = zeroAddress;
   manifest.deployments[0].proxy.admin = zeroAddress;
   manifest.deployments[0].proxy.timelock = zeroAddress;
-  manifest.privilegedRoles[0].holders[0] = zeroAddress;
-  manifest.externalDependencies[0].addresses[0] = zeroAddress;
-  manifest.gas.estimates.checkFund.typical = 0;
-  manifest.gas.estimates.checkFund.maximum = 0;
+  manifest.privilegedRoles[0].holders[0].address = zeroAddress;
+  manifest.externalDependencies[0].deployments[0].addresses[0] = zeroAddress;
+  manifest.deployments[0].gas.estimates.checkFund.typical = 0;
+  manifest.deployments[0].gas.estimates.checkFund.maximum = 0;
   return manifest;
 }
 
@@ -88,6 +88,24 @@ test("AJV rejects ambiguous singleton proxy metadata for multi-chain manifests",
         error.instancePath === "" &&
         error.keyword === "additionalProperties" &&
         error.params.additionalProperty === "proxy",
+    ),
+    JSON.stringify(validateSchema.errors, null, 2),
+  );
+});
+
+test("AJV rejects legacy global gas and unbound dependency locators", () => {
+  const manifest = fixture("invalid/legacy-global-runtime-evidence.json");
+  assertSchemaInvalid(manifest, [
+    "/deployments/0",
+    "/deployments/1",
+    "/externalDependencies/0",
+  ]);
+  assert.ok(
+    validateSchema.errors?.some(
+      (error) =>
+        error.instancePath === "" &&
+        error.keyword === "additionalProperties" &&
+        error.params.additionalProperty === "gas",
     ),
     JSON.stringify(validateSchema.errors, null, 2),
   );
@@ -140,10 +158,10 @@ test("AJV rejects every placeholder evidence branch in a published manifest", ()
     "/deployments/0/proxy/implementation",
     "/deployments/0/proxy/admin",
     "/deployments/0/proxy/timelock",
-    "/privilegedRoles/0/holders/0",
-    "/externalDependencies/0/addresses/0",
-    "/gas/estimates/checkFund/typical",
-    "/gas/estimates/checkFund/maximum",
+    "/privilegedRoles/0/holders/0/address",
+    "/externalDependencies/0/deployments/0/addresses/0",
+    "/deployments/0/gas/estimates/checkFund/typical",
+    "/deployments/0/gas/estimates/checkFund/maximum",
   ]);
 });
 
@@ -225,7 +243,8 @@ test("AJV rejects HTTP and executable schemes for externally rendered URLs", () 
   manifest.author.url = "http://example.com/author";
   manifest.source.repository = "javascript:alert(1)";
   manifest.sourceVerification.verifiers[0].url = "data:text/html,unsafe";
-  manifest.externalDependencies[0].url = "http://example.com/oracle";
+  manifest.externalDependencies[0].deployments[0].url =
+    "http://example.com/oracle";
   manifest.security.audits[0] = {
     status: "audited",
     scope: "Hook implementation",
@@ -238,7 +257,7 @@ test("AJV rejects HTTP and executable schemes for externally rendered URLs", () 
     "/author/url",
     "/source/repository",
     "/sourceVerification/verifiers/0/url",
-    "/externalDependencies/0/url",
+    "/externalDependencies/0/deployments/0/url",
     "/security/audits/0/report",
     "/listing/listingUrl",
     "/conformance/evidence",
@@ -323,7 +342,7 @@ test("AJV requires kind-specific proxy locators and concrete upgrade authority",
   assertSchemaInvalid(strayBeacon, ["/deployments/0/proxy/beacon"]);
 });
 
-test("AJV accepts distinct proxy metadata on each deployment", () => {
+test("AJV accepts distinct proxy and gas metadata plus chain-bound dependencies", () => {
   const manifest = multiChain();
   assert.equal(
     validateSchema(manifest),
@@ -334,6 +353,25 @@ test("AJV accepts distinct proxy metadata on each deployment", () => {
     manifest.deployments[0].proxy,
     manifest.deployments[1].proxy,
   );
+  assert.notDeepEqual(manifest.deployments[0].gas, manifest.deployments[1].gas);
+  assert.notDeepEqual(
+    manifest.externalDependencies[0].deployments[0],
+    manifest.externalDependencies[0].deployments[1],
+  );
+});
+
+test("AJV enforces exact callback gas coverage on every deployment", () => {
+  const missing = multiChain();
+  delete missing.deployments[1].gas.estimates.checkFund;
+  assertSchemaInvalid(missing, ["/deployments/1/gas/estimates"]);
+
+  const extra = multiChain();
+  extra.deployments[1].gas.estimates.onExpire = {
+    typical: 1,
+    maximum: 2,
+    methodology: "fixture",
+  };
+  assertSchemaInvalid(extra, ["/deployments/1/gas/estimates/onExpire"]);
 });
 
 test("AJV requires kind-aware non-vacuous external dependency evidence", () => {
@@ -342,6 +380,7 @@ test("AJV requires kind-aware non-vacuous external dependency evidence", () => {
     kind,
     purpose: "Required by hook execution.",
   });
+  const binding = (fields = {}) => ({ chainId: 8453, ...fields });
 
   for (const kind of ["contract", "token", "oracle", "relayer"]) {
     const missing = immutable();
@@ -349,13 +388,23 @@ test("AJV requires kind-aware non-vacuous external dependency evidence", () => {
     assertSchemaInvalid(missing, ["/externalDependencies/0"]);
 
     const empty = immutable();
-    empty.externalDependencies = [{ ...dependency(kind), addresses: [] }];
-    assertSchemaInvalid(empty, ["/externalDependencies/0/addresses"]);
+    empty.externalDependencies = [
+      {
+        ...dependency(kind),
+        deployments: [binding({ addresses: [] })],
+      },
+    ];
+    assertSchemaInvalid(empty, [
+      "/externalDependencies/0/deployments/0/addresses",
+    ]);
   }
 
   const api = immutable();
   api.externalDependencies = [
-    { ...dependency("api"), url: "https://api.example.com/v1" },
+    {
+      ...dependency("api"),
+      deployments: [binding({ url: "https://api.example.com/v1" })],
+    },
   ];
   assert.equal(
     validateSchema(api),
@@ -363,24 +412,34 @@ test("AJV requires kind-aware non-vacuous external dependency evidence", () => {
     JSON.stringify(validateSchema.errors, null, 2),
   );
 
-  api.externalDependencies[0].addresses = [];
-  assertSchemaInvalid(api, ["/externalDependencies/0/addresses"]);
+  api.externalDependencies[0].deployments[0].addresses = [
+    "0x3333333333333333333333333333333333333333",
+  ];
+  assertSchemaInvalid(api, ["/externalDependencies/0/deployments/0/addresses"]);
 
   const apiWithoutUrl = immutable();
   apiWithoutUrl.externalDependencies = [
     {
       ...dependency("api"),
-      addresses: ["0x3333333333333333333333333333333333333333"],
+      deployments: [
+        binding({
+          addresses: ["0x3333333333333333333333333333333333333333"],
+        }),
+      ],
     },
   ];
-  assertSchemaInvalid(apiWithoutUrl, ["/externalDependencies/0"]);
+  assertSchemaInvalid(apiWithoutUrl, ["/externalDependencies/0/deployments/0"]);
 
   for (const kind of ["other"]) {
     const byAddress = immutable();
     byAddress.externalDependencies = [
       {
         ...dependency(kind),
-        addresses: ["0x3333333333333333333333333333333333333333"],
+        deployments: [
+          binding({
+            addresses: ["0x3333333333333333333333333333333333333333"],
+          }),
+        ],
       },
     ];
     assert.equal(
@@ -391,7 +450,10 @@ test("AJV requires kind-aware non-vacuous external dependency evidence", () => {
 
     const byUrl = immutable();
     byUrl.externalDependencies = [
-      { ...dependency(kind), url: "https://dependency.example.com" },
+      {
+        ...dependency(kind),
+        deployments: [binding({ url: "https://dependency.example.com" })],
+      },
     ];
     assert.equal(
       validateSchema(byUrl),
@@ -399,22 +461,36 @@ test("AJV requires kind-aware non-vacuous external dependency evidence", () => {
       JSON.stringify(validateSchema.errors, null, 2),
     );
 
-    byUrl.externalDependencies[0].addresses = [];
-    assertSchemaInvalid(byUrl, ["/externalDependencies/0/addresses"]);
+    byUrl.externalDependencies[0].deployments[0].addresses = [];
+    assertSchemaInvalid(byUrl, [
+      "/externalDependencies/0/deployments/0/addresses",
+    ]);
 
     const missing = immutable();
     missing.externalDependencies = [dependency(kind)];
     assertSchemaInvalid(missing, ["/externalDependencies/0"]);
 
     const empty = immutable();
-    empty.externalDependencies = [{ ...dependency(kind), addresses: [] }];
-    assertSchemaInvalid(empty, ["/externalDependencies/0/addresses"]);
+    empty.externalDependencies = [
+      {
+        ...dependency(kind),
+        deployments: [binding({ addresses: [] })],
+      },
+    ];
+    assertSchemaInvalid(empty, [
+      "/externalDependencies/0/deployments/0/addresses",
+    ]);
 
     const zero = immutable();
     zero.externalDependencies = [
-      { ...dependency(kind), addresses: [`0x${"0".repeat(40)}`] },
+      {
+        ...dependency(kind),
+        deployments: [binding({ addresses: [`0x${"0".repeat(40)}`] })],
+      },
     ];
-    assertSchemaInvalid(zero, ["/externalDependencies/0/addresses/0"]);
+    assertSchemaInvalid(zero, [
+      "/externalDependencies/0/deployments/0/addresses/0",
+    ]);
   }
 });
 

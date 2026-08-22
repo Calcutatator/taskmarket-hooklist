@@ -58,29 +58,39 @@ function checkSemanticConsistency(manifest, errors) {
   const deployments = Array.isArray(manifest.deployments)
     ? manifest.deployments
     : [];
-  const chainIds = deployments
-    .filter((item) => item && Number.isInteger(item.chainId))
-    .map((item) => item.chainId);
-  const declaredChains = new Set(chainIds);
-  chainIds.forEach((chainId, index) => {
-    if (chainIds.indexOf(chainId) !== index)
-      errors.push(`$.deployments[${index}].chainId: must be unique`);
+  const declaredChains = new Set();
+  const firstDeploymentByChain = new Map();
+  deployments.forEach((deployment, deploymentIndex) => {
+    const chainId = deployment?.chainId;
+    if (!Number.isInteger(chainId)) return;
+    declaredChains.add(chainId);
+    if (firstDeploymentByChain.has(chainId)) {
+      errors.push(
+        `$.deployments[${deploymentIndex}].chainId: duplicates deployment chainId from deployment ${firstDeploymentByChain.get(chainId)}`,
+      );
+    } else {
+      firstDeploymentByChain.set(chainId, deploymentIndex);
+    }
   });
 
   const callbacks = Array.isArray(manifest.callbacks) ? manifest.callbacks : [];
-  const estimates = manifest.gas?.estimates;
-  if (estimates && typeof estimates === "object" && !Array.isArray(estimates)) {
+  deployments.forEach((deployment, deploymentIndex) => {
+    const estimates = deployment?.gas?.estimates;
+    if (!estimates || typeof estimates !== "object" || Array.isArray(estimates))
+      return;
     callbacks.forEach((callback) => {
-      if (!Object.hasOwn(estimates, callback))
+      if (!Object.hasOwn(estimates, callback)) {
         errors.push(
-          `$.gas.estimates.${callback}: missing estimate for declared callback`,
+          `$.deployments[${deploymentIndex}].gas.estimates.${callback}: missing estimate for declared callback`,
         );
+      }
     });
     Object.keys(estimates).forEach((callback) => {
-      if (!callbacks.includes(callback))
+      if (!callbacks.includes(callback)) {
         errors.push(
-          `$.gas.estimates.${callback}: estimate is not for a declared callback`,
+          `$.deployments[${deploymentIndex}].gas.estimates.${callback}: estimate is not for a declared callback`,
         );
+      }
       const estimate = estimates[callback];
       if (
         estimate &&
@@ -89,24 +99,53 @@ function checkSemanticConsistency(manifest, errors) {
         estimate.maximum < estimate.typical
       ) {
         errors.push(
-          `$.gas.estimates.${callback}.maximum: must be greater than or equal to typical`,
+          `$.deployments[${deploymentIndex}].gas.estimates.${callback}.maximum: must be greater than or equal to typical`,
         );
       }
     });
-  }
+  });
 
   const privilegedRoles = Array.isArray(manifest.privilegedRoles)
     ? manifest.privilegedRoles
     : [];
-  const holderAddresses = new Set(
-    privilegedRoles.flatMap((role) =>
-      Array.isArray(role?.holders)
-        ? role.holders
-            .filter((holder) => typeof holder === "string")
-            .map((holder) => holder.toLowerCase())
-        : [],
-    ),
-  );
+  const roleNameIndexes = new Map();
+  const holderAddressesByChain = new Set();
+  privilegedRoles.forEach((role, roleIndex) => {
+    const roleName = role?.name;
+    if (typeof roleName === "string") {
+      if (roleNameIndexes.has(roleName)) {
+        errors.push(
+          `$.privilegedRoles[${roleIndex}].name: duplicates role name from privileged role ${roleNameIndexes.get(roleName)}`,
+        );
+      } else {
+        roleNameIndexes.set(roleName, roleIndex);
+      }
+    }
+
+    const holders = Array.isArray(role?.holders) ? role.holders : [];
+    const holderIndexes = new Map();
+    holders.forEach((holder, holderIndex) => {
+      const chainId = holder?.chainId;
+      const address = holder?.address;
+      if (Number.isInteger(chainId) && !declaredChains.has(chainId)) {
+        errors.push(
+          `$.privilegedRoles[${roleIndex}].holders[${holderIndex}].chainId: must reference a declared deployment`,
+        );
+      }
+      if (Number.isInteger(chainId) && typeof address === "string") {
+        const key = JSON.stringify([chainId, address.toLowerCase()]);
+        if (holderIndexes.has(key)) {
+          errors.push(
+            `$.privilegedRoles[${roleIndex}].holders[${holderIndex}].address: duplicates normalized chainId and address from holder ${holderIndexes.get(key)}`,
+          );
+        } else {
+          holderIndexes.set(key, holderIndex);
+        }
+        holderAddressesByChain.add(key);
+      }
+    });
+  });
+
   deployments.forEach((deployment, deploymentIndex) => {
     const proxy = deployment?.proxy;
     if (proxy?.upgradeable !== true) return;
@@ -114,10 +153,13 @@ function checkSemanticConsistency(manifest, errors) {
       const address = proxy[field];
       if (
         typeof address === "string" &&
-        !holderAddresses.has(address.toLowerCase())
+        Number.isInteger(deployment?.chainId) &&
+        !holderAddressesByChain.has(
+          JSON.stringify([deployment.chainId, address.toLowerCase()]),
+        )
       ) {
         errors.push(
-          `$.deployments[${deploymentIndex}].proxy.${field}: must appear in privilegedRoles holders`,
+          `$.deployments[${deploymentIndex}].proxy.${field}: must appear in privilegedRoles holders for deployment chain ${deployment.chainId}`,
         );
       }
     }
@@ -130,13 +172,70 @@ function checkSemanticConsistency(manifest, errors) {
       if (
         matches.length !== 1 ||
         !Array.isArray(matches[0]?.holders) ||
-        matches[0].holders.length === 0
+        !matches[0].holders.some(
+          (holder) => holder?.chainId === deployment?.chainId,
+        )
       ) {
         errors.push(
-          `$.deployments[${deploymentIndex}].proxy.upgradeAuthorityRole: must reference exactly one privilegedRoles entry with holders`,
+          `$.deployments[${deploymentIndex}].proxy.upgradeAuthorityRole: must reference exactly one privilegedRoles entry with holders for deployment chain ${deployment?.chainId}`,
         );
       }
     }
+  });
+
+  const externalDependencies = Array.isArray(manifest.externalDependencies)
+    ? manifest.externalDependencies
+    : [];
+  const dependencyNameIndexes = new Map();
+  externalDependencies.forEach((dependency, dependencyIndex) => {
+    const dependencyName = dependency?.name;
+    if (typeof dependencyName === "string") {
+      if (dependencyNameIndexes.has(dependencyName)) {
+        errors.push(
+          `$.externalDependencies[${dependencyIndex}].name: duplicates dependency name from external dependency ${dependencyNameIndexes.get(dependencyName)}`,
+        );
+      } else {
+        dependencyNameIndexes.set(dependencyName, dependencyIndex);
+      }
+    }
+
+    const bindings = Array.isArray(dependency?.deployments)
+      ? dependency.deployments
+      : [];
+    const bindingIndexes = new Map();
+    bindings.forEach((binding, bindingIndex) => {
+      const chainId = binding?.chainId;
+      if (Number.isInteger(chainId)) {
+        if (!declaredChains.has(chainId)) {
+          errors.push(
+            `$.externalDependencies[${dependencyIndex}].deployments[${bindingIndex}].chainId: must reference a declared deployment`,
+          );
+        }
+        if (bindingIndexes.has(chainId)) {
+          errors.push(
+            `$.externalDependencies[${dependencyIndex}].deployments[${bindingIndex}].chainId: duplicates chainId from deployment binding ${bindingIndexes.get(chainId)}`,
+          );
+        } else {
+          bindingIndexes.set(chainId, bindingIndex);
+        }
+      }
+
+      const addresses = Array.isArray(binding?.addresses)
+        ? binding.addresses
+        : [];
+      const addressIndexes = new Map();
+      addresses.forEach((address, addressIndex) => {
+        if (typeof address !== "string") return;
+        const normalizedAddress = address.toLowerCase();
+        if (addressIndexes.has(normalizedAddress)) {
+          errors.push(
+            `$.externalDependencies[${dependencyIndex}].deployments[${bindingIndex}].addresses[${addressIndex}]: duplicates normalized address from address ${addressIndexes.get(normalizedAddress)}`,
+          );
+        } else {
+          addressIndexes.set(normalizedAddress, addressIndex);
+        }
+      });
+    });
   });
 
   const verifiers = manifest.sourceVerification?.verifiers;
@@ -170,6 +269,31 @@ function checkSemanticConsistency(manifest, errors) {
         }
       }
     });
+
+    if (
+      !isDraft(manifest) &&
+      manifest.sourceVerification?.status === "verified"
+    ) {
+      const verifiedChains = new Set(
+        verifiers
+          .filter(
+            (verifier) =>
+              Number.isInteger(verifier?.chainId) &&
+              verifier?.status === "verified",
+          )
+          .map((verifier) => verifier.chainId),
+      );
+      deployments.forEach((deployment, deploymentIndex) => {
+        if (
+          Number.isInteger(deployment?.chainId) &&
+          !verifiedChains.has(deployment.chainId)
+        ) {
+          errors.push(
+            `$.sourceVerification.verifiers: must include verified evidence for $.deployments[${deploymentIndex}].chainId (${deployment.chainId})`,
+          );
+        }
+      });
+    }
   }
 
   const protocolDefault = manifest.protocolDefault;

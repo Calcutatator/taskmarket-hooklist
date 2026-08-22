@@ -55,6 +55,40 @@ test("bundled invalid fixtures reject their intended fields", () => {
       `expected ${path} in:\n${singletonErrors.join("\n")}`,
     );
   }
+
+  errorsFor(
+    fixture("invalid/dependency-undeclared-chain.json"),
+    "$.externalDependencies[0].deployments[0].chainId",
+  );
+  const duplicateErrors = validate(
+    fixture("invalid/dependency-duplicate-bindings.json"),
+  );
+  for (const path of [
+    "$.externalDependencies[0].deployments[0].addresses[1]",
+    "$.externalDependencies[0].deployments[1].chainId",
+  ]) {
+    assert.ok(
+      duplicateErrors.some((error) => error.includes(path)),
+      `expected ${path} in:\n${duplicateErrors.join("\n")}`,
+    );
+  }
+
+  const legacyErrors = validate(
+    fixture("invalid/legacy-global-runtime-evidence.json"),
+  );
+  for (const path of [
+    "$.gas",
+    "$.deployments[0].gas",
+    "$.deployments[1].gas",
+    "$.externalDependencies[0].addresses",
+    "$.externalDependencies[0].url",
+    "$.externalDependencies[0].deployments",
+  ]) {
+    assert.ok(
+      legacyErrors.some((error) => error.includes(path)),
+      `expected ${path} in:\n${legacyErrors.join("\n")}`,
+    );
+  }
 });
 
 test("enforces nested strings, formats, hashes, enums, and unknown properties", () => {
@@ -113,7 +147,8 @@ test("rejects non-HTTPS schemes for every externally rendered URL", () => {
   manifest.author.url = "http://example.com/author";
   manifest.source.repository = "javascript:alert(1)";
   manifest.sourceVerification.verifiers[0].url = "data:text/html,unsafe";
-  manifest.externalDependencies[0].url = "http://example.com/oracle";
+  manifest.externalDependencies[0].deployments[0].url =
+    "http://example.com/oracle";
   manifest.security.audits[0] = {
     status: "audited",
     scope: "Hook implementation",
@@ -127,7 +162,7 @@ test("rejects non-HTTPS schemes for every externally rendered URL", () => {
     "$.author.url",
     "$.source.repository",
     "$.sourceVerification.verifiers[0].url",
-    "$.externalDependencies[0].url",
+    "$.externalDependencies[0].deployments[0].url",
     "$.security.audits[0].report",
     "$.listing.listingUrl",
     "$.conformance.evidence",
@@ -302,6 +337,40 @@ test("validates proxy authority independently for every deployment", () => {
   errorsFor(manifest, "$.deployments[1].proxy.admin");
 });
 
+test("validates chain-bound role holders, role names, and normalized holder pairs", () => {
+  const wrongChain = proxy();
+  wrongChain.privilegedRoles[0].holders[0].chainId = 84532;
+  errorsFor(wrongChain, "$.privilegedRoles[0].holders[0].chainId");
+  errorsFor(wrongChain, "$.deployments[0].proxy.admin");
+
+  const duplicateHolder = proxy();
+  duplicateHolder.privilegedRoles[0].holders.push({
+    chainId: 8453,
+    address: "0x7777777777777777777777777777777777777777"
+      .toUpperCase()
+      .replace("0X", "0x"),
+  });
+  errorsFor(duplicateHolder, "$.privilegedRoles[0].holders[2].address");
+
+  const duplicateName = proxy();
+  duplicateName.privilegedRoles.push({
+    ...structuredClone(duplicateName.privilegedRoles[1]),
+    holders: [
+      {
+        chainId: 8453,
+        address: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      },
+    ],
+  });
+  errorsFor(duplicateName, "$.privilegedRoles[2].name");
+
+  const duplicateCapability = proxy();
+  duplicateCapability.privilegedRoles[0].capabilities.push(
+    duplicateCapability.privilegedRoles[0].capabilities[0],
+  );
+  errorsFor(duplicateCapability, "$.privilegedRoles[0].capabilities");
+});
+
 test("requires source-verification evidence consistent with its status", () => {
   const verified = immutable();
   verified.sourceVerification.verifiers = [];
@@ -335,6 +404,22 @@ test("requires source-verification evidence consistent with its status", () => {
       ),
     );
   }
+
+  const missingChainCoverage = immutable();
+  const secondDeployment = structuredClone(missingChainCoverage.deployments[0]);
+  secondDeployment.chainId = 84532;
+  secondDeployment.hook = "0x3333333333333333333333333333333333333333";
+  missingChainCoverage.deployments.push(secondDeployment);
+  const coverageErrors = errorsFor(
+    missingChainCoverage,
+    "$.sourceVerification.verifiers",
+  );
+  assert.ok(
+    coverageErrors.some((error) =>
+      error.includes("$.deployments[1].chainId (84532)"),
+    ),
+    coverageErrors.join("\n"),
+  );
 });
 
 test("rejects duplicate verifier evidence by normalized effective HTTPS URL", () => {
@@ -405,16 +490,15 @@ test("validates privileged roles, dependencies, liveness, and security details",
   const manifest = proxy();
   manifest.privilegedRoles[0] = {
     name: "",
-    holders: ["0x12"],
+    holders: [{ chainId: 8453, address: "0x12" }],
     capabilities: [""],
     renounceable: "no",
   };
   manifest.externalDependencies[0] = {
     name: "",
     kind: "unknown",
-    addresses: ["0x12"],
-    url: "bad uri",
     purpose: "",
+    deployments: [{ chainId: 8453, addresses: ["0x12"], url: "bad uri" }],
   };
   manifest.liveness.failureMode = "";
   manifest.security.audits[0] = {
@@ -427,13 +511,13 @@ test("validates privileged roles, dependencies, liveness, and security details",
   const errors = validate(manifest);
   for (const path of [
     "$.privilegedRoles[0].name",
-    "$.privilegedRoles[0].holders[0]",
+    "$.privilegedRoles[0].holders[0].address",
     "$.privilegedRoles[0].capabilities[0]",
     "$.privilegedRoles[0].renounceable",
     "$.externalDependencies[0].name",
     "$.externalDependencies[0].kind",
-    "$.externalDependencies[0].addresses[0]",
-    "$.externalDependencies[0].url",
+    "$.externalDependencies[0].deployments[0].addresses[0]",
+    "$.externalDependencies[0].deployments[0].url",
     "$.externalDependencies[0].purpose",
     "$.liveness.failureMode",
     "$.security.audits[0].status",
@@ -454,96 +538,163 @@ test("requires kind-aware non-vacuous external dependency locators", () => {
     kind,
     purpose: "Required by hook execution.",
   });
+  const binding = (fields = {}) => ({ chainId: 8453, ...fields });
 
   for (const kind of ["contract", "token", "oracle", "relayer"]) {
     const missing = immutable();
     missing.externalDependencies = [dependency(kind)];
-    errorsFor(missing, "$.externalDependencies[0].addresses");
+    errorsFor(missing, "$.externalDependencies[0].deployments");
 
     const empty = immutable();
-    empty.externalDependencies = [{ ...dependency(kind), addresses: [] }];
-    errorsFor(empty, "$.externalDependencies[0].addresses");
+    empty.externalDependencies = [
+      {
+        ...dependency(kind),
+        deployments: [binding({ addresses: [] })],
+      },
+    ];
+    errorsFor(empty, "$.externalDependencies[0].deployments[0].addresses");
 
     const zero = immutable();
     zero.externalDependencies = [
-      { ...dependency(kind), addresses: [`0x${"0".repeat(40)}`] },
+      {
+        ...dependency(kind),
+        deployments: [binding({ addresses: [`0x${"0".repeat(40)}`] })],
+      },
     ];
-    errorsFor(zero, "$.externalDependencies[0].addresses[0]");
+    errorsFor(zero, "$.externalDependencies[0].deployments[0].addresses[0]");
   }
 
   const api = immutable();
   api.externalDependencies = [
-    { ...dependency("api"), url: "https://api.example.com/v1" },
+    {
+      ...dependency("api"),
+      deployments: [binding({ url: "https://api.example.com/v1" })],
+    },
   ];
   assert.deepEqual(validate(api), []);
 
-  api.externalDependencies[0].addresses = [];
-  errorsFor(api, "$.externalDependencies[0].addresses");
+  api.externalDependencies[0].deployments[0].addresses = [
+    "0x3333333333333333333333333333333333333333",
+  ];
+  errorsFor(api, "$.externalDependencies[0].deployments[0].addresses");
 
   const apiWithoutUrl = immutable();
   apiWithoutUrl.externalDependencies = [
     {
       ...dependency("api"),
-      addresses: ["0x3333333333333333333333333333333333333333"],
+      deployments: [
+        binding({
+          addresses: ["0x3333333333333333333333333333333333333333"],
+        }),
+      ],
     },
   ];
-  errorsFor(apiWithoutUrl, "$.externalDependencies[0].url");
+  errorsFor(apiWithoutUrl, "$.externalDependencies[0].deployments[0].url");
 
   for (const kind of ["other"]) {
     const byAddress = immutable();
     byAddress.externalDependencies = [
       {
         ...dependency(kind),
-        addresses: ["0x3333333333333333333333333333333333333333"],
+        deployments: [
+          binding({
+            addresses: ["0x3333333333333333333333333333333333333333"],
+          }),
+        ],
       },
     ];
     assert.deepEqual(validate(byAddress), []);
 
     const byUrl = immutable();
     byUrl.externalDependencies = [
-      { ...dependency(kind), url: "https://dependency.example.com" },
+      {
+        ...dependency(kind),
+        deployments: [binding({ url: "https://dependency.example.com" })],
+      },
     ];
     assert.deepEqual(validate(byUrl), []);
 
-    byUrl.externalDependencies[0].addresses = [];
-    errorsFor(byUrl, "$.externalDependencies[0].addresses");
+    byUrl.externalDependencies[0].deployments[0].addresses = [];
+    errorsFor(byUrl, "$.externalDependencies[0].deployments[0].addresses");
 
     const missing = immutable();
-    missing.externalDependencies = [dependency(kind)];
-    errorsFor(missing, "$.externalDependencies[0]");
+    missing.externalDependencies = [
+      { ...dependency(kind), deployments: [binding()] },
+    ];
+    errorsFor(missing, "$.externalDependencies[0].deployments[0]");
 
     const empty = immutable();
-    empty.externalDependencies = [{ ...dependency(kind), addresses: [] }];
-    errorsFor(empty, "$.externalDependencies[0].addresses");
+    empty.externalDependencies = [
+      {
+        ...dependency(kind),
+        deployments: [binding({ addresses: [] })],
+      },
+    ];
+    errorsFor(empty, "$.externalDependencies[0].deployments[0].addresses");
 
     const zero = immutable();
     zero.externalDependencies = [
-      { ...dependency(kind), addresses: [`0x${"0".repeat(40)}`] },
+      {
+        ...dependency(kind),
+        deployments: [binding({ addresses: [`0x${"0".repeat(40)}`] })],
+      },
     ];
-    errorsFor(zero, "$.externalDependencies[0].addresses[0]");
+    errorsFor(zero, "$.externalDependencies[0].deployments[0].addresses[0]");
   }
+});
+
+test("validates dependency names and deployment bindings with indexed paths", () => {
+  const valid = multiChain();
+  assert.deepEqual(validate(valid), []);
+
+  const sameAddressOnDifferentChains = multiChain();
+  sameAddressOnDifferentChains.externalDependencies[0].deployments[1].addresses[0] =
+    sameAddressOnDifferentChains.externalDependencies[0].deployments[0].addresses[0];
+  assert.deepEqual(validate(sameAddressOnDifferentChains), []);
+
+  const duplicateName = multiChain();
+  duplicateName.externalDependencies.push(
+    structuredClone(duplicateName.externalDependencies[0]),
+  );
+  errorsFor(duplicateName, "$.externalDependencies[1].name");
+
+  errorsFor(
+    fixture("invalid/dependency-undeclared-chain.json"),
+    "$.externalDependencies[0].deployments[0].chainId",
+  );
+
+  const duplicate = fixture("invalid/dependency-duplicate-bindings.json");
+  errorsFor(duplicate, "$.externalDependencies[0].deployments[0].addresses[1]");
+  errorsFor(duplicate, "$.externalDependencies[0].deployments[1].chainId");
 });
 
 test("requires gas estimates to match callbacks exactly and orders bounds", () => {
   const missing = immutable();
-  delete missing.gas.estimates.checkClaim;
-  errorsFor(missing, "$.gas.estimates.checkClaim");
+  delete missing.deployments[0].gas.estimates.checkClaim;
+  errorsFor(missing, "$.deployments[0].gas.estimates.checkClaim");
 
   const extra = immutable();
-  extra.gas.estimates.onExpire = {
+  extra.deployments[0].gas.estimates.onExpire = {
     typical: 1,
     maximum: 2,
     methodology: "fixture",
   };
-  errorsFor(extra, "$.gas.estimates.onExpire");
+  errorsFor(extra, "$.deployments[0].gas.estimates.onExpire");
 
   const reversed = immutable();
-  reversed.gas.estimates.checkFund = {
+  reversed.deployments[0].gas.estimates.checkFund = {
     typical: 10,
     maximum: 9,
     methodology: "fixture",
   };
-  errorsFor(reversed, "$.gas.estimates.checkFund.maximum");
+  errorsFor(reversed, "$.deployments[0].gas.estimates.checkFund.maximum");
+
+  const missingOnSecondDeployment = multiChain();
+  delete missingOnSecondDeployment.deployments[1].gas.estimates.checkFund;
+  errorsFor(
+    missingOnSecondDeployment,
+    "$.deployments[1].gas.estimates.checkFund",
+  );
 });
 
 test("requires default evidence and deployment-consistent chain sets", () => {
@@ -566,6 +717,7 @@ test("requires default evidence and deployment-consistent chain sets", () => {
   secondDeployment.chainId = 84532;
   secondDeployment.hook = "0x3333333333333333333333333333333333333333";
   twoChains.deployments.push(secondDeployment);
+  twoChains.sourceVerification = { status: "unverified", verifiers: [] };
   twoChains.protocolDefault = {
     status: "default-on-some-chains",
     evidence: "https://example.com/evidence",
@@ -625,10 +777,10 @@ test("rejects placeholder publication evidence in otherwise schema-valid manifes
   manifest.deployments[0].proxy.implementation = zeroAddress;
   manifest.deployments[0].proxy.admin = zeroAddress;
   manifest.deployments[0].proxy.timelock = zeroAddress;
-  manifest.privilegedRoles[0].holders[0] = zeroAddress;
-  manifest.externalDependencies[0].addresses[0] = zeroAddress;
-  manifest.gas.estimates.checkFund.typical = 0;
-  manifest.gas.estimates.checkFund.maximum = 0;
+  manifest.privilegedRoles[0].holders[0].address = zeroAddress;
+  manifest.externalDependencies[0].deployments[0].addresses[0] = zeroAddress;
+  manifest.deployments[0].gas.estimates.checkFund.typical = 0;
+  manifest.deployments[0].gas.estimates.checkFund.maximum = 0;
   const errors = validate(manifest);
   for (const path of [
     "$.source.commit",
@@ -641,10 +793,10 @@ test("rejects placeholder publication evidence in otherwise schema-valid manifes
     "$.deployments[0].proxy.implementation",
     "$.deployments[0].proxy.admin",
     "$.deployments[0].proxy.timelock",
-    "$.privilegedRoles[0].holders[0]",
-    "$.externalDependencies[0].addresses[0]",
-    "$.gas.estimates.checkFund.typical",
-    "$.gas.estimates.checkFund.maximum",
+    "$.privilegedRoles[0].holders[0].address",
+    "$.externalDependencies[0].deployments[0].addresses[0]",
+    "$.deployments[0].gas.estimates.checkFund.typical",
+    "$.deployments[0].gas.estimates.checkFund.maximum",
   ])
     assert.ok(
       errors.some((error) => error.includes(path)),
@@ -659,8 +811,8 @@ test("draft manifests with portal placeholders are never reported publishable", 
   draft.deployments[0].deployment.transactionHash = `0x${"0".repeat(64)}`;
   draft.deployments[0].deployment.blockNumber = 0;
   draft.deployments[0].runtimeCodehash = `0x${"0".repeat(64)}`;
-  draft.gas.estimates.checkFund.typical = 0;
-  draft.gas.estimates.checkFund.maximum = 0;
+  draft.deployments[0].gas.estimates.checkFund.typical = 0;
+  draft.deployments[0].gas.estimates.checkFund.maximum = 0;
   draft["x-draft"] = { warning: "Draft output from the portal." };
   const result = inspect(draft);
   assert.equal(result.publishable, false);
