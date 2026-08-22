@@ -167,12 +167,29 @@ export function HooklistDirectory({
   );
 }
 
-function Field({ children, label }: { children: ReactElement<{ id?: string }>; label: string }) {
+function Field({
+  children,
+  description,
+  label,
+}: {
+  children: ReactElement<{ 'aria-describedby'?: string; id?: string }>;
+  description?: ReactNode;
+  label: string;
+}) {
   const id = useId();
+  const descriptionId = `${id}-description`;
   return (
     <div className="grid gap-2">
       <Label htmlFor={id}>{label}</Label>
-      {cloneElement(children, { id })}
+      {cloneElement(children, {
+        ...(description ? { 'aria-describedby': descriptionId } : {}),
+        id,
+      })}
+      {description ? (
+        <p className="text-xs leading-5 text-muted-foreground" id={descriptionId}>
+          {description}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -203,7 +220,13 @@ export function HookBuilder({
     ...(observedAddress ? { hookAddress: observedAddress } : {}),
   });
   const readiness = manifestReadiness(input);
-  const manifest = JSON.stringify(buildHookManifest(input), null, 2);
+  const builtManifest = buildHookManifest(input);
+  const manifest = JSON.stringify(builtManifest, null, 2);
+  const parsedDeploymentChainId = Number(input.deploymentChainId);
+  const deploymentChainIdExample =
+    /^[1-9][0-9]*$/.test(input.deploymentChainId) && Number.isSafeInteger(parsedDeploymentChainId)
+      ? parsedDeploymentChainId
+      : 84532;
   const solidity = buildHookSolidity(input);
   const update = <K extends keyof HookBuilderInput>(key: K, value: HookBuilderInput[K]) =>
     setInput((current) => ({ ...current, [key]: value }));
@@ -704,18 +727,24 @@ export function HookBuilder({
                   value={input.securityAuditDate}
                 />
               </Field>
-              <Field label="External dependencies JSON array">
+              <Field
+                description={`Each dependency binding uses deployments: [{ chainId: ${deploymentChainIdExample}, addresses?: [...], url?: "https://..." }]. API bindings use a URL and no addresses.`}
+                label="External dependencies JSON array"
+              >
                 <Textarea
                   onChange={(event) => update('externalDependencies', event.target.value)}
-                  placeholder={`[{"name":"Price API","kind":"api","purpose":"Reads a reference price.","deployments":[{"chainId":${input.deploymentChainId || '84532'},"url":"https://api.example/prices"}]}]`}
+                  placeholder={`[{"name":"Price API","kind":"api","purpose":"Reads a reference price.","deployments":[{"chainId":${deploymentChainIdExample},"url":"https://api.example/prices"}]}]`}
                   value={input.externalDependencies}
                 />
               </Field>
-              <Field label="Privileged roles JSON array">
+              <Field
+                description={`Each holder uses { chainId: ${deploymentChainIdExample}, address: "0x..." }. A proxy admin holder must use this deployment chain.`}
+                label="Privileged roles JSON array"
+              >
                 <Textarea
                   className="sm:col-span-2"
                   onChange={(event) => update('privilegedRoles', event.target.value)}
-                  placeholder={`[{"name":"Proxy admin","holders":[{"chainId":${input.deploymentChainId || '84532'},"address":"0x..."}],"capabilities":["Upgrade the hook implementation"],"renounceable":true}]`}
+                  placeholder={`[{"name":"Proxy admin","holders":[{"chainId":${deploymentChainIdExample},"address":"0x..."}],"capabilities":["Upgrade the hook implementation"],"renounceable":true}]`}
                   value={input.privilegedRoles}
                 />
               </Field>

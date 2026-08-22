@@ -578,6 +578,21 @@ describe('Hooklist manifest builder', () => {
       },
     },
     {
+      label: 'contract with an address and optional URL',
+      dependency: {
+        name: 'registry',
+        kind: 'contract',
+        deployments: [
+          {
+            chainId: 8453,
+            addresses: ['0x3333333333333333333333333333333333333333'],
+            url: 'https://docs.example.com/registry',
+          },
+        ],
+        purpose: 'Reads approved configuration.',
+      },
+    },
+    {
       label: 'API with a URL and omitted addresses',
       dependency: {
         name: 'policy API',
@@ -604,6 +619,21 @@ describe('Hooklist manifest builder', () => {
           {
             chainId: 8453,
             addresses: ['0x4444444444444444444444444444444444444444'],
+          },
+        ],
+        purpose: 'Provides a custom registry.',
+      },
+    },
+    {
+      label: 'other dependency with an address and URL',
+      dependency: {
+        name: 'custom registry',
+        kind: 'other',
+        deployments: [
+          {
+            chainId: 8453,
+            addresses: ['0x4444444444444444444444444444444444444444'],
+            url: 'https://docs.example.com/custom-registry',
           },
         ],
         purpose: 'Provides a custom registry.',

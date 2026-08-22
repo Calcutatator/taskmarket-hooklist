@@ -28,7 +28,13 @@ test('opens the native Hooklist builder and preserves its explicit draft state',
   ).toBeVisible();
   await expect(page.getByText('Draft scaffold')).toBeVisible();
   await expect(page.getByText(/intentionally marked x-draft/i)).toBeVisible();
-  await page.getByLabel('Deployment chain ID').fill('84532');
+  const deploymentChainId = page.getByLabel('Deployment chain ID');
+  await deploymentChainId.fill('not-a-chain');
+  await expect(page.getByLabel('External dependencies JSON array')).toHaveAttribute(
+    'placeholder',
+    /"chainId":84532/
+  );
+  await deploymentChainId.fill('84532');
   await page.getByLabel('Deployment network').fill('base-sepolia');
   await expect(page.getByLabel('taskmarket-hook.json preview')).toContainText('"chainId": 84532');
   await expect(page.getByLabel('taskmarket-hook.json preview')).toContainText(
@@ -51,6 +57,10 @@ test('opens the native Hooklist builder and preserves its explicit draft state',
     'placeholder',
     /"chainId":84532/
   );
+  await expect(
+    page.getByText(/Each dependency binding uses deployments.*chainId: 84532/)
+  ).toBeVisible();
+  await expect(page.getByText(/Each holder uses.*chainId: 84532/)).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(

@@ -61,6 +61,21 @@ const publishableDependencyCases = [
     },
   },
   {
+    label: 'contract address with optional URL',
+    dependency: {
+      name: 'configuration registry',
+      kind: 'contract',
+      deployments: [
+        {
+          chainId: 8453,
+          addresses: ['0x3333333333333333333333333333333333333333'],
+          url: 'https://docs.example.com/registry',
+        },
+      ],
+      purpose: 'Reads approved configuration.',
+    },
+  },
+  {
     label: 'token address',
     dependency: {
       name: 'reward token',
@@ -129,6 +144,21 @@ const publishableDependencyCases = [
         {
           chainId: 8453,
           addresses: ['0x4444444444444444444444444444444444444444'],
+        },
+      ],
+      purpose: 'Provides custom policy.',
+    },
+  },
+  {
+    label: 'other address and URL',
+    dependency: {
+      name: 'custom registry',
+      kind: 'other',
+      deployments: [
+        {
+          chainId: 8453,
+          addresses: ['0x4444444444444444444444444444444444444444'],
+          url: 'https://docs.example.com/custom-registry',
         },
       ],
       purpose: 'Provides custom policy.',
