@@ -10,6 +10,7 @@ const fixture = (name) =>
   );
 const immutable = () => fixture("valid/simple-immutable.json");
 const proxy = () => fixture("valid/advanced-proxy.json");
+const multiChain = () => fixture("valid/multi-chain-proxies.json");
 const portalReady = () => fixture("valid/portal-ready.json");
 const errorsFor = (manifest, expectedPath) => {
   const errors = validate(manifest);
@@ -20,19 +21,38 @@ const errorsFor = (manifest, expectedPath) => {
   return errors;
 };
 
-test("valid immutable, proxy, and portal-ready fixtures validate", () => {
+test("valid immutable, proxy, multi-chain, and portal-ready fixtures validate", () => {
   assert.deepEqual(validate(immutable()), []);
   assert.deepEqual(validate(proxy()), []);
+  assert.deepEqual(validate(multiChain()), []);
   assert.deepEqual(validate(portalReady()), []);
 });
 
 test("bundled invalid fixtures reject their intended fields", () => {
   errorsFor(fixture("invalid/bad-address.json"), "$.deployments[0].hook");
   const errors = validate(fixture("invalid/ambiguous-status.json"));
-  for (const path of ["$.callbacks[0]", "$.hookData", "$.proxy.kind"]) {
+  for (const path of [
+    "$.callbacks[0]",
+    "$.hookData",
+    "$.deployments[0].proxy.kind",
+  ]) {
     assert.ok(
       errors.some((error) => error.includes(path)),
       `expected ${path} in:\n${errors.join("\n")}`,
+    );
+  }
+
+  const singletonErrors = validate(
+    fixture("invalid/multi-chain-singleton-proxy.json"),
+  );
+  for (const path of [
+    "$.proxy",
+    "$.deployments[0].proxy",
+    "$.deployments[1].proxy",
+  ]) {
+    assert.ok(
+      singletonErrors.some((error) => error.includes(path)),
+      `expected ${path} in:\n${singletonErrors.join("\n")}`,
     );
   }
 });
@@ -196,70 +216,90 @@ test("validates ABI and none hookData examples completely", () => {
 
 test("rejects contradictory proxy declarations and validates authority fields", () => {
   const upgradeableNone = immutable();
-  upgradeableNone.proxy = {
+  upgradeableNone.deployments[0].proxy = {
     kind: "none",
     upgradeable: true,
     implementation: "0x3333333333333333333333333333333333333333",
     upgradeAuthorityDescription: "owner",
   };
-  errorsFor(upgradeableNone, "$.proxy.kind");
+  errorsFor(upgradeableNone, "$.deployments[0].proxy.kind");
 
   const immutableWithAdmin = immutable();
-  immutableWithAdmin.proxy.admin = "0x3333333333333333333333333333333333333333";
-  errorsFor(immutableWithAdmin, "$.proxy.admin");
+  immutableWithAdmin.deployments[0].proxy.admin =
+    "0x3333333333333333333333333333333333333333";
+  errorsFor(immutableWithAdmin, "$.deployments[0].proxy.admin");
 
   const proseOnly = proxy();
-  delete proseOnly.proxy.admin;
-  delete proseOnly.proxy.timelock;
-  delete proseOnly.proxy.upgradeAuthorityRole;
-  errorsFor(proseOnly, "$.proxy");
+  delete proseOnly.deployments[0].proxy.admin;
+  delete proseOnly.deployments[0].proxy.timelock;
+  delete proseOnly.deployments[0].proxy.upgradeAuthorityRole;
+  errorsFor(proseOnly, "$.deployments[0].proxy");
 
   const transparentWithoutAdmin = proxy();
-  transparentWithoutAdmin.proxy.kind = "transparent";
-  delete transparentWithoutAdmin.proxy.admin;
-  errorsFor(transparentWithoutAdmin, "$.proxy.admin");
+  transparentWithoutAdmin.deployments[0].proxy.kind = "transparent";
+  delete transparentWithoutAdmin.deployments[0].proxy.admin;
+  errorsFor(transparentWithoutAdmin, "$.deployments[0].proxy.admin");
 
   const beaconWithoutBeacon = proxy();
-  beaconWithoutBeacon.proxy.kind = "beacon";
-  errorsFor(beaconWithoutBeacon, "$.proxy.beacon");
+  beaconWithoutBeacon.deployments[0].proxy.kind = "beacon";
+  errorsFor(beaconWithoutBeacon, "$.deployments[0].proxy.beacon");
 
   const validBeacon = proxy();
-  validBeacon.proxy.kind = "beacon";
-  validBeacon.proxy.beacon = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  validBeacon.deployments[0].proxy.kind = "beacon";
+  validBeacon.deployments[0].proxy.beacon =
+    "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
   assert.deepEqual(validate(validBeacon), []);
 
   const roleLinked = proxy();
-  delete roleLinked.proxy.admin;
-  delete roleLinked.proxy.timelock;
+  delete roleLinked.deployments[0].proxy.admin;
+  delete roleLinked.deployments[0].proxy.timelock;
   assert.deepEqual(validate(roleLinked), []);
 
   const unknownRole = structuredClone(roleLinked);
-  unknownRole.proxy.upgradeAuthorityRole = "UNKNOWN_ROLE";
-  errorsFor(unknownRole, "$.proxy.upgradeAuthorityRole");
+  unknownRole.deployments[0].proxy.upgradeAuthorityRole = "UNKNOWN_ROLE";
+  errorsFor(unknownRole, "$.deployments[0].proxy.upgradeAuthorityRole");
 
   const duplicateRole = structuredClone(roleLinked);
   duplicateRole.privilegedRoles.push(
     structuredClone(duplicateRole.privilegedRoles[0]),
   );
-  errorsFor(duplicateRole, "$.proxy.upgradeAuthorityRole");
+  errorsFor(duplicateRole, "$.deployments[0].proxy.upgradeAuthorityRole");
 
   const emptyRole = structuredClone(roleLinked);
   emptyRole.privilegedRoles[0].holders = [];
-  errorsFor(emptyRole, "$.proxy.upgradeAuthorityRole");
+  errorsFor(emptyRole, "$.deployments[0].proxy.upgradeAuthorityRole");
 
   const unlistedAdmin = proxy();
-  unlistedAdmin.proxy.admin = "0x3333333333333333333333333333333333333333";
-  errorsFor(unlistedAdmin, "$.proxy.admin");
+  unlistedAdmin.deployments[0].proxy.admin =
+    "0x3333333333333333333333333333333333333333";
+  errorsFor(unlistedAdmin, "$.deployments[0].proxy.admin");
 
   const unlistedTimelock = proxy();
-  unlistedTimelock.proxy.timelock =
+  unlistedTimelock.deployments[0].proxy.timelock =
     "0x4444444444444444444444444444444444444444";
-  errorsFor(unlistedTimelock, "$.proxy.timelock");
+  errorsFor(unlistedTimelock, "$.deployments[0].proxy.timelock");
 
   const malformed = immutable();
-  malformed.proxy = { kind: "unknown", upgradeable: "yes" };
-  errorsFor(malformed, "$.proxy.kind");
-  errorsFor(malformed, "$.proxy.upgradeable");
+  malformed.deployments[0].proxy = { kind: "unknown", upgradeable: "yes" };
+  errorsFor(malformed, "$.deployments[0].proxy.kind");
+  errorsFor(malformed, "$.deployments[0].proxy.upgradeable");
+});
+
+test("validates proxy authority independently for every deployment", () => {
+  const manifest = multiChain();
+  assert.notEqual(
+    manifest.deployments[0].proxy.implementation,
+    manifest.deployments[1].proxy.implementation,
+  );
+  assert.notEqual(
+    manifest.deployments[0].proxy.admin,
+    manifest.deployments[1].proxy.admin,
+  );
+  assert.deepEqual(validate(manifest), []);
+
+  manifest.deployments[1].proxy.admin =
+    "0x9999999999999999999999999999999999999999";
+  errorsFor(manifest, "$.deployments[1].proxy.admin");
 });
 
 test("requires source-verification evidence consistent with its status", () => {
@@ -582,9 +622,9 @@ test("rejects placeholder publication evidence in otherwise schema-valid manifes
   manifest.deployments[0].deployment.blockNumber = 0;
   manifest.deployments[0].runtimeCodehash = zeroHash;
   manifest.deployments[0].creationCodehash = zeroHash;
-  manifest.proxy.implementation = zeroAddress;
-  manifest.proxy.admin = zeroAddress;
-  manifest.proxy.timelock = zeroAddress;
+  manifest.deployments[0].proxy.implementation = zeroAddress;
+  manifest.deployments[0].proxy.admin = zeroAddress;
+  manifest.deployments[0].proxy.timelock = zeroAddress;
   manifest.privilegedRoles[0].holders[0] = zeroAddress;
   manifest.externalDependencies[0].addresses[0] = zeroAddress;
   manifest.gas.estimates.checkFund.typical = 0;
@@ -598,9 +638,9 @@ test("rejects placeholder publication evidence in otherwise schema-valid manifes
     "$.deployments[0].deployment.blockNumber",
     "$.deployments[0].runtimeCodehash",
     "$.deployments[0].creationCodehash",
-    "$.proxy.implementation",
-    "$.proxy.admin",
-    "$.proxy.timelock",
+    "$.deployments[0].proxy.implementation",
+    "$.deployments[0].proxy.admin",
+    "$.deployments[0].proxy.timelock",
     "$.privilegedRoles[0].holders[0]",
     "$.externalDependencies[0].addresses[0]",
     "$.gas.estimates.checkFund.typical",

@@ -23,7 +23,8 @@
         "transactionHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "blockNumber": 12345678
       },
-      "runtimeCodehash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "runtimeCodehash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "proxy": { "kind": "none", "upgradeable": false }
     }
   ],
   "callbacks": ["checkFund", "checkClaim"],
@@ -41,7 +42,6 @@
       { "chainId": 8453, "url": "https://basescan.org", "status": "verified" }
     ]
   },
-  "proxy": { "kind": "none", "upgradeable": false },
   "privilegedRoles": [],
   "externalDependencies": [],
   "liveness": {

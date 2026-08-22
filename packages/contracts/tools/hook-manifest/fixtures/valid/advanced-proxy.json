@@ -28,7 +28,16 @@
         "blockNumber": 23456789
       },
       "runtimeCodehash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-      "creationCodehash": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      "creationCodehash": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "proxy": {
+        "kind": "uups",
+        "upgradeable": true,
+        "implementation": "0x6666666666666666666666666666666666666666",
+        "admin": "0x7777777777777777777777777777777777777777",
+        "timelock": "0x8888888888888888888888888888888888888888",
+        "upgradeAuthorityRole": "UPGRADE_AUTHORITY_ROLE",
+        "upgradeAuthorityDescription": "A 48-hour timelock controlled by the governance multisig authorizes upgrades."
+      }
     }
   ],
   "callbacks": [
@@ -72,15 +81,6 @@
         "status": "pending"
       }
     ]
-  },
-  "proxy": {
-    "kind": "uups",
-    "upgradeable": true,
-    "implementation": "0x6666666666666666666666666666666666666666",
-    "admin": "0x7777777777777777777777777777777777777777",
-    "timelock": "0x8888888888888888888888888888888888888888",
-    "upgradeAuthorityRole": "UPGRADE_AUTHORITY_ROLE",
-    "upgradeAuthorityDescription": "A 48-hour timelock controlled by the governance multisig authorizes upgrades."
   },
   "privilegedRoles": [
     {
