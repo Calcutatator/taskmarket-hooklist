@@ -23,7 +23,12 @@
         "blockNumber": 1
       },
       "runtimeCodehash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "proxy": { "kind": "uups", "upgradeable": false }
+      "proxy": { "kind": "uups", "upgradeable": false },
+      "gas": {
+        "estimates": {
+          "checkFund": { "typical": 1, "maximum": 1, "methodology": "x" }
+        }
+      }
     }
   ],
   "callbacks": ["notACallback"],
@@ -37,12 +42,6 @@
   "privilegedRoles": [],
   "externalDependencies": [],
   "liveness": { "requirements": [], "failureMode": "x" },
-  "gas": {
-    "network": "base",
-    "estimates": {
-      "checkFund": { "typical": 1, "maximum": 1, "methodology": "x" }
-    }
-  },
   "security": { "audits": [], "notes": ["x"] },
   "listing": { "status": "listed" },
   "conformance": { "status": "not-claimed", "standard": "ITMPHook" },

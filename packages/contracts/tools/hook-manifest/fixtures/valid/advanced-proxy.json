@@ -37,6 +37,35 @@
         "timelock": "0x8888888888888888888888888888888888888888",
         "upgradeAuthorityRole": "UPGRADE_AUTHORITY_ROLE",
         "upgradeAuthorityDescription": "A 48-hour timelock controlled by the governance multisig authorizes upgrades."
+      },
+      "gas": {
+        "estimates": {
+          "checkFund": {
+            "typical": 83000,
+            "maximum": 120000,
+            "methodology": "forge gas snapshot with oracle cache miss"
+          },
+          "checkClaim": {
+            "typical": 45000,
+            "maximum": 70000,
+            "methodology": "forge gas snapshot"
+          },
+          "checkComplete": {
+            "typical": 51000,
+            "maximum": 80000,
+            "methodology": "forge gas snapshot"
+          },
+          "onCancel": {
+            "typical": 33000,
+            "maximum": 50000,
+            "methodology": "forge gas snapshot"
+          },
+          "onExpire": {
+            "typical": 33000,
+            "maximum": 50000,
+            "methodology": "forge gas snapshot"
+          }
+        }
       }
     }
   ],
@@ -86,15 +115,26 @@
     {
       "name": "UPGRADE_AUTHORITY_ROLE",
       "holders": [
-        "0x7777777777777777777777777777777777777777",
-        "0x8888888888888888888888888888888888888888"
+        {
+          "chainId": 8453,
+          "address": "0x7777777777777777777777777777777777777777"
+        },
+        {
+          "chainId": 8453,
+          "address": "0x8888888888888888888888888888888888888888"
+        }
       ],
       "capabilities": ["authorize implementation upgrades"],
       "renounceable": false
     },
     {
       "name": "POLICY_ADMIN_ROLE",
-      "holders": ["0x9999999999999999999999999999999999999999"],
+      "holders": [
+        {
+          "chainId": 8453,
+          "address": "0x9999999999999999999999999999999999999999"
+        }
+      ],
       "capabilities": ["change policy caps"],
       "renounceable": false
     }
@@ -103,45 +143,20 @@
     {
       "name": "Policy oracle",
       "kind": "oracle",
-      "addresses": ["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-      "url": "https://example.com/oracle",
-      "purpose": "Supplies the policy root used during checkFund."
+      "purpose": "Supplies the policy root used during checkFund.",
+      "deployments": [
+        {
+          "chainId": 8453,
+          "addresses": ["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+          "url": "https://example.com/oracle"
+        }
+      ]
     }
   ],
   "liveness": {
     "requirements": ["Policy oracle RPC availability"],
     "failureMode": "An unavailable oracle causes checkFund to revert.",
     "recovery": "Governance can pause new policy-dependent tasks or upgrade after timelock."
-  },
-  "gas": {
-    "network": "base",
-    "estimates": {
-      "checkFund": {
-        "typical": 83000,
-        "maximum": 120000,
-        "methodology": "forge gas snapshot with oracle cache miss"
-      },
-      "checkClaim": {
-        "typical": 45000,
-        "maximum": 70000,
-        "methodology": "forge gas snapshot"
-      },
-      "checkComplete": {
-        "typical": 51000,
-        "maximum": 80000,
-        "methodology": "forge gas snapshot"
-      },
-      "onCancel": {
-        "typical": 33000,
-        "maximum": 50000,
-        "methodology": "forge gas snapshot"
-      },
-      "onExpire": {
-        "typical": 33000,
-        "maximum": 50000,
-        "methodology": "forge gas snapshot"
-      }
-    }
   },
   "security": {
     "audits": [

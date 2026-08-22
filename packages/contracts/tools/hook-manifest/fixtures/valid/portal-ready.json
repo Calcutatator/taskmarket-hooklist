@@ -27,7 +27,16 @@
         "blockNumber": 123
       },
       "runtimeCodehash": "0x2222222222222222222222222222222222222222222222222222222222222222",
-      "proxy": { "kind": "none", "upgradeable": false }
+      "proxy": { "kind": "none", "upgradeable": false },
+      "gas": {
+        "estimates": {
+          "checkFund": {
+            "typical": 100000,
+            "maximum": 120000,
+            "methodology": "Foundry gas snapshot on a Base fork."
+          }
+        }
+      }
     }
   ],
   "callbacks": ["checkFund"],
@@ -45,16 +54,6 @@
   "liveness": {
     "requirements": [],
     "failureMode": "A rejecting checkFund callback blocks task creation."
-  },
-  "gas": {
-    "network": "base",
-    "estimates": {
-      "checkFund": {
-        "typical": 100000,
-        "maximum": 120000,
-        "methodology": "Foundry gas snapshot on a Base fork."
-      }
-    }
   },
   "security": {
     "audits": [

@@ -1,16 +1,16 @@
 {
   "manifestVersion": "1.0.0",
   "identity": {
-    "name": "Simple immutable hook",
-    "slug": "simple-immutable-hook",
+    "name": "Duplicate dependency bindings",
+    "slug": "duplicate-dependency-bindings",
     "version": "1.0.0",
-    "description": "Example allow-list hook with no mutable configuration."
+    "description": "Invalid fixture with duplicate chain bindings and normalized addresses."
   },
   "author": { "name": "Example Labs", "url": "https://example.com" },
   "source": {
-    "repository": "https://github.com/example/simple-hook",
+    "repository": "https://github.com/example/hook",
     "commit": "abcdef1234567890",
-    "path": "src/SimpleHook.sol"
+    "path": "src/Hook.sol"
   },
   "license": "MIT",
   "deployments": [
@@ -30,19 +30,14 @@
           "checkFund": {
             "typical": 24000,
             "maximum": 35000,
-            "methodology": "forge gas snapshot, warm storage"
-          },
-          "checkClaim": {
-            "typical": 26000,
-            "maximum": 40000,
-            "methodology": "forge gas snapshot, warm storage"
+            "methodology": "forge gas snapshot on Base"
           }
         }
       }
     }
   ],
-  "callbacks": ["checkFund", "checkClaim"],
-  "taskModes": ["claim"],
+  "callbacks": ["checkFund"],
+  "taskModes": ["bounty"],
   "hookData": {
     "encoding": "none",
     "schema": {},
@@ -50,22 +45,35 @@
       { "name": "no configuration", "decoded": null, "encoded": "0x" }
     ]
   },
-  "sourceVerification": {
-    "status": "verified",
-    "verifiers": [
-      { "chainId": 8453, "url": "https://basescan.org", "status": "verified" }
-    ]
-  },
+  "sourceVerification": { "status": "unverified", "verifiers": [] },
   "privilegedRoles": [],
-  "externalDependencies": [],
+  "externalDependencies": [
+    {
+      "name": "Policy registry",
+      "kind": "contract",
+      "purpose": "Supplies a policy root.",
+      "deployments": [
+        {
+          "chainId": 8453,
+          "addresses": [
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          ]
+        },
+        {
+          "chainId": 8453,
+          "addresses": ["0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
+        }
+      ]
+    }
+  ],
   "liveness": {
     "requirements": [],
-    "failureMode": "No off-chain dependency; a check rejection reverts the calling lifecycle operation.",
-    "recovery": "Deploy a new hook and attach it to future tasks."
+    "failureMode": "No off-chain dependency."
   },
   "security": {
     "audits": [{ "status": "unaudited", "scope": "Example fixture only" }],
-    "notes": ["Fixture addresses and hashes are placeholders."]
+    "notes": ["Fixture addresses and hashes are test data."]
   },
   "listing": { "status": "unlisted" },
   "conformance": {

@@ -28,6 +28,22 @@ The manifest is deliberately descriptive. Four fields must not be conflated:
 requires its `report` URL. Consumers should verify all claims against the cited sources
 and the chain; a valid manifest is not an endorsement.
 
+## Field ownership
+
+Version 1 uses four explicit ownership scopes so multi-chain evidence cannot silently
+borrow values from another deployment:
+
+| Scope                                                    | Fields                                                                                                                                |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Source-global hook declaration                           | `identity`, `author`, `source`, `license`, `callbacks`, `taskModes`, `hookData`, `liveness`, `security`, `listing`, and `conformance` |
+| Deployment-owned runtime evidence                        | `deployments[].chainId`, network label, hook and diamond addresses, deploy transaction/block, bytecode hashes, `proxy`, and `gas`     |
+| Reusable definitions with chain-bound locators           | `privilegedRoles[].holders[]` and `externalDependencies[].deployments[]`                                                              |
+| Cross-deployment aggregates with explicit chain evidence | `sourceVerification` and `protocolDefault`                                                                                            |
+
+Source-global fields describe the one logical hook version named by this manifest.
+They are not measurements of a particular deployment. Runtime values that can differ
+by chain either live directly inside a deployment or carry a declared `chainId`.
+
 Every externally rendered URL is HTTPS-only: author and source links, verifier and
 dependency URLs, audit reports, listings, conformance evidence, and protocol-default
 evidence. The spelling must start with `https://` and include a nonempty authority;
@@ -35,14 +51,14 @@ shortened forms such as `https:example.com`, `https:/example.com`, and the empty
 `https:///example.com` form are invalid. Consumers must still escape and safely render
 those untrusted destinations.
 
-For publication, `sourceVerification.status: verified` requires at least one verifier
-and every verifier entry must be verified. `partially-verified` requires both verified
-and pending/unverified evidence. Verifier chain IDs must match declared deployments,
-and each `(chainId, normalized URL)` pair must be unique so contradictory duplicate
-entries cannot satisfy partial verification. The CLI uses the standard WHATWG URL
-serialization for this comparison, which includes lowercasing the host, removing the
-default HTTPS port, resolving path dot segments, and adding the implied root slash.
-Query strings and fragments remain significant.
+For publication, `sourceVerification.status: verified` requires verified evidence for
+every declared deployment chain and every verifier entry must be verified.
+`partially-verified` requires both verified and pending/unverified evidence. Verifier
+chain IDs must match declared deployments, and each `(chainId, normalized URL)` pair
+must be unique so contradictory duplicate entries cannot satisfy partial verification.
+The CLI uses the standard WHATWG URL serialization for this comparison, which includes
+lowercasing the host, removing the default HTTPS port, resolving path dot segments, and
+adding the implied root slash. Query strings and fragments remain significant.
 
 ## Required deployment evidence
 
@@ -52,6 +68,11 @@ Addresses are strict 20-byte `0x` hex values; transactions and codehashes are st
 `bytes32`. The source is pinned by repository URL, a nonzero commit, and source path.
 Published gas estimates must be nonzero. A zero address, all-zero hash or commit, zero
 deployment block, or zero gas estimate is rejected as incomplete evidence.
+
+Gas evidence is deployment-specific. Every deployment includes
+`gas.estimates.<callback>` with `typical`, `maximum`, and `methodology`; there is no
+free-form global network label. Each deployment must cover the manifest's `callbacks`
+exactly, and measurements may differ across chains.
 
 Proxy metadata is also deployment-specific. Every `deployments[]` entry includes its own
 `proxy` object, including immutable deployments as `{ "kind": "none", "upgradeable":
@@ -103,26 +124,46 @@ Every upgradeable `deployments[].proxy` declares its implementation, an authorit
 description, and at least one concrete authority locator: `admin`, `timelock`, or
 `upgradeAuthorityRole`. Transparent proxies require `admin`; beacon proxies additionally
 require the `beacon` contract address. Every declared admin or timelock address must
-also appear in a `privilegedRoles[].holders` list. `upgradeAuthorityRole`, when used,
-must exactly and uniquely name a privileged role with at least one holder. This keeps
-each deployment's prose explanation tied to concrete addresses and capabilities.
+also appear in a `privilegedRoles[].holders[]` object with the same deployment
+`chainId`. Each holder is `{ "chainId": ..., "address": "0x..." }`.
+`upgradeAuthorityRole`, when used, must exactly and uniquely name a privileged role
+with at least one holder on that deployment's chain. Role names and normalized
+`(chainId, address)` holder pairs must be unique. This keeps each deployment's prose
+explanation tied to concrete chain-local addresses and capabilities.
 `kind: none` is reserved for immutable deployments and must omit every proxy-only
 authority field. Manifest builders must emit this object inside every deployment;
 builders for upgradeable hooks must populate each chain's own locators and role links.
 
 Publishable `externalDependencies` are also kind-aware. `contract`, `token`, `oracle`,
-and `relayer` entries require at least one nonzero on-chain address. `api` entries
-require an HTTPS URL. `other` covers mixed or uncommon dependencies and requires at
-least one nonzero address or HTTPS URL. Optional URLs may still explain an on-chain
-dependency, but cannot replace its address; omit `addresses` instead of publishing an
-empty list. List every external contract or service and its purpose, plus liveness
-failure and recovery behavior.
+and `relayer` entries require at least one nonzero on-chain address in every declared
+dependency binding. Each dependency has
+`deployments: [{ "chainId": ..., "addresses": [...], "url": "https://..." }]`;
+binding chain IDs must name manifest deployments and may occur only once per dependency.
+`api` bindings require an HTTPS URL and forbid addresses. `other` covers mixed or
+uncommon dependencies and requires at least one nonzero address or HTTPS URL per
+binding. Normalized addresses may not repeat within a binding, while the same address
+on two different chains remains two distinct locators. List every external contract or
+service and its purpose, plus liveness failure and recovery behavior.
 
-Gas estimates must match `callbacks` exactly and include a methodology. A `candidate`
-protocol-default claim requires evidence. A `default-on-some-chains` or
+Every deployment's gas estimates must match `callbacks` exactly and include a
+methodology. A `candidate` protocol-default claim requires evidence. A
+`default-on-some-chains` or
 `default-on-all-declared-chains` claim also requires deployment-backed chain IDs; the
 latter must list every declared deployment. Keep security assumptions, audits, and known
 limitations in `security.notes`.
+
+## Unpublished version 1 migration
+
+The version 1 schema was corrected before publication, so there is no compatibility
+branch for the ambiguous draft shape. Builders must make these mechanical migrations:
+
+- Move root `gas.estimates` into every `deployments[].gas.estimates`, emit a complete
+  callback map for each deployment, and remove `gas.network`.
+- Replace each role holder address string with `{ "chainId": ..., "address": ... }`.
+- Replace dependency-level `addresses` or `url` with chain-specific
+  `externalDependencies[].deployments[]` bindings.
+
+A root `gas` singleton or dependency locator without a deployment binding is invalid.
 
 The valid fixtures are test data, not real deployments. `portal-ready.json` matches the
 portal generator's ready output shape and is validated in the package test suite:
