@@ -26,6 +26,13 @@ test('opens the native Hooklist builder and preserves its explicit draft state',
   ).toBeVisible();
   await expect(page.getByText('Draft scaffold')).toBeVisible();
   await expect(page.getByText(/intentionally marked x-draft/i)).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      )
+    )
+    .toBeLessThanOrEqual(1);
 });
 
 test('renders the Next 404 for malformed and unobserved Hooklist detail routes', async ({

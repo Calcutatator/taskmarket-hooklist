@@ -214,7 +214,7 @@ export function HookBuilder({
     filename: string,
     type: string
   ) => (
-    <Card>
+    <Card className="min-w-0">
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
           <div>
@@ -235,10 +235,10 @@ export function HookBuilder({
           </div>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="min-w-0">
         <pre
           aria-label={`${label} preview`}
-          className="max-h-96 overflow-auto rounded-lg border border-border/58 bg-background/52 p-4 text-xs leading-5 text-foreground"
+          className="max-h-96 max-w-full overflow-auto rounded-lg border border-border/58 bg-background/52 p-4 text-xs leading-5 text-foreground"
           tabIndex={0}
         >
           <code>{content}</code>
@@ -248,7 +248,7 @@ export function HookBuilder({
   );
 
   return (
-    <section aria-labelledby="hook-builder-heading" className="grid gap-6">
+    <section aria-labelledby="hook-builder-heading" className="grid min-w-0 gap-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <p className="font-mono text-xs font-semibold uppercase tracking-[0.14em] text-primary">
@@ -270,8 +270,8 @@ export function HookBuilder({
           <Link href="/hooks">Back to discovery</Link>
         </Button>
       </div>
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
-        <div className="grid gap-5">
+      <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
+        <div className="grid min-w-0 gap-5">
           <Card>
             <CardHeader>
               <CardTitle>Identity and source</CardTitle>
@@ -710,7 +710,7 @@ export function HookBuilder({
             </CardContent>
           </Card>
         </div>
-        <div className="grid content-start gap-5">
+        <div className="grid min-w-0 content-start gap-5">
           <Card>
             <CardHeader>
               <CardTitle>Publish after independent review</CardTitle>
