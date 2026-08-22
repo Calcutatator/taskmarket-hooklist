@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
@@ -36,8 +36,6 @@ test("generates a substituted, reproducible project", async (t) => {
     "reputation-hook",
     "--taskmarket",
     mixedCaseAddress,
-    "--hook-name",
-    "ReputationHook",
   );
   assert.equal(result.status, 0, result.stderr);
   const root = path.join(cwd, "reputation-hook");
@@ -72,7 +70,7 @@ test("generates a substituted, reproducible project", async (t) => {
     assert.ok(readme.includes(command), `README missing ${command}`);
     assert.ok(result.stdout.includes(command), `next steps missing ${command}`);
   }
-  assert.ok(readme.includes("set -a\nsource .env\nset +a\nforge script"));
+  assert.ok(readme.includes("set -a\n. ./.env\nset +a\nforge script"));
   assert.ok(readme.includes("forge test -j 1"));
   assert.ok(result.stdout.includes("forge test -j 1"));
   assert.match(readme, /forge script .*--verify/);
@@ -81,7 +79,13 @@ test("generates a substituted, reproducible project", async (t) => {
 test("rejects invalid names and existing targets without overwriting", async (t) => {
   const cwd = await temporaryDirectory();
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  for (const invalidName of ["Bad_Name", "bad--name", "bad-", "-bad"]) {
+  for (const invalidName of [
+    "Bad_Name",
+    "bad--name",
+    "bad-",
+    "-bad",
+    "con",
+  ]) {
     assert.notEqual(
       run(cwd, invalidName, "--taskmarket", address).status,
       0,
@@ -105,10 +109,64 @@ test("rejects invalid names and existing targets without overwriting", async (t)
       .status,
     0,
   );
+  assert.equal(run(cwd, "hook", "--taskmarket", address).status, 0);
+  await stat(path.join(cwd, "hook/src/Hook.sol"));
   assert.equal(run(cwd, "safe-hook", "--taskmarket", address).status, 0);
+  const generatedHook = path.join(cwd, "safe-hook/src/SafeHook.sol");
+  const originalHook = await readFile(generatedHook, "utf8");
   const second = run(cwd, "safe-hook", "--taskmarket", address);
   assert.notEqual(second.status, 0);
   assert.match(second.stderr, /target already exists/);
+  assert.equal(await readFile(generatedHook, "utf8"), originalHook);
+});
+
+test("enforces portable path-component boundaries before writing", async (t) => {
+  const cwd = await temporaryDirectory();
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  const longestDefaultProjectName = "a".repeat(245);
+  const longestDefaultHookName = `A${"a".repeat(244)}Hook`;
+  assert.equal(
+    Buffer.byteLength(`${longestDefaultHookName}.t.sol`),
+    255,
+  );
+  assert.equal(
+    run(cwd, longestDefaultProjectName, "--taskmarket", address).status,
+    0,
+  );
+  await stat(
+    path.join(
+      cwd,
+      longestDefaultProjectName,
+      "test",
+      `${longestDefaultHookName}.t.sol`,
+    ),
+  );
+
+  const tooLongDefaultProjectName = "a".repeat(246);
+  const longRenderedPath = run(
+    cwd,
+    tooLongDefaultProjectName,
+    "--taskmarket",
+    address,
+  );
+  assert.notEqual(longRenderedPath.status, 0);
+  assert.match(longRenderedPath.stderr, /generated path is not portable/);
+  await assert.rejects(stat(path.join(cwd, tooLongDefaultProjectName)), {
+    code: "ENOENT",
+  });
+
+  const tooLongProjectName = "b".repeat(256);
+  const longProject = run(
+    cwd,
+    tooLongProjectName,
+    "--taskmarket",
+    address,
+    "--hook-name",
+    "ShortHook",
+  );
+  assert.notEqual(longProject.status, 0);
+  assert.match(longProject.stderr, /project name is not portable/);
+  assert.ok(!(await readdir(cwd)).includes(tooLongProjectName));
 });
 
 test("generated project compiles and its Foundry tests pass against this checkout", async (t) => {

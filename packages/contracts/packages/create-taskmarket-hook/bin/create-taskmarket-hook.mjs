@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, writeFile, access } from "node:fs/promises";
+import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
 
@@ -33,11 +33,21 @@ function parseArgs(args) {
 }
 
 function solidityName(projectName) {
+  const baseName = projectName
+    .split("-")
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join("");
+  return baseName.endsWith("Hook") ? baseName : `${baseName}Hook`;
+}
+
+const maxFileComponentBytes = 255;
+const windowsReservedName =
+  /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+
+function isPortableFileComponent(component) {
   return (
-    projectName
-      .split("-")
-      .map((part) => part[0].toUpperCase() + part.slice(1))
-      .join("") + "Hook"
+    Buffer.byteLength(component) <= maxFileComponentBytes &&
+    !windowsReservedName.test(component)
   );
 }
 
@@ -257,7 +267,7 @@ Set \`PRIVATE_KEY\`, \`FORGE_BASE_SEPOLIA_RPC_URL\`, and \`FORGE_ETHERSCAN_API_K
 
 \`\`\`sh
 set -a
-source .env
+. ./.env
 set +a
 forge script script/Deploy.s.sol:Deploy --rpc-url base_sepolia --broadcast --verify
 \`\`\`
@@ -280,13 +290,15 @@ async function main() {
   } = parsed;
   if (!projectName || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(projectName))
     return fail("project name must be lowercase kebab-case");
+  if (!isPortableFileComponent(projectName))
+    return fail("project name is not portable across supported filesystems");
   if (
     !taskmarket ||
     !/^0x[0-9a-fA-F]{40}$/.test(taskmarket) ||
     /^0x0{40}$/i.test(taskmarket)
   )
     return fail("--taskmarket must be a non-zero 20-byte address");
-  if (!/^[A-Z][A-Za-z0-9]*Hook$/.test(hookName))
+  if (!/^(?:Hook|[A-Z][A-Za-z0-9]*Hook)$/.test(hookName))
     return fail("--hook-name must be a PascalCase name ending in Hook");
 
   const target = path.resolve(process.cwd(), projectName);
@@ -301,14 +313,33 @@ async function main() {
     taskmarket: taskmarket.toLowerCase(),
     hookName,
   });
-  await mkdir(target, { recursive: false });
-  await Promise.all(
-    Object.entries(files).map(async ([file, contents]) => {
+  const nonPortablePath = Object.keys(files).find((file) =>
+    file.split("/").some((component) => !isPortableFileComponent(component)),
+  );
+  if (nonPortablePath)
+    return fail(`generated path is not portable: ${nonPortablePath}`);
+  let targetCreated = false;
+  try {
+    await mkdir(target, { recursive: false });
+    targetCreated = true;
+    for (const [file, contents] of Object.entries(files)) {
       const destination = path.join(target, file);
       await mkdir(path.dirname(destination), { recursive: true });
       await writeFile(destination, contents);
-    }),
-  );
+    }
+  } catch (error) {
+    if (targetCreated) {
+      try {
+        await rm(target, { recursive: true, force: true });
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          `generation failed: ${error.message}; cleanup failed: ${cleanupError.message}`,
+        );
+      }
+    }
+    throw error;
+  }
   console.log(
     `Created ${target}\n\nNext:\n  cd ${projectName}\n  ${installCommands.join("\n  ")}\n  forge test -j 1`,
   );
