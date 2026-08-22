@@ -69,6 +69,11 @@ Addresses are strict 20-byte `0x` hex values; transactions and codehashes are st
 Published gas estimates must be nonzero. A zero address, all-zero hash or commit, zero
 deployment block, or zero gas estimate is rejected as incomplete evidence.
 
+All manifest `chainId`, deployment block, and gas estimate values are JavaScript safe
+integers: chain IDs are positive and blocks/gas values are nonnegative (or positive when
+published). Values above `9007199254740991` are rejected so browser and CLI consumers
+cannot silently compare rounded chain or measurement data.
+
 Gas evidence is deployment-specific. Every deployment includes
 `gas.estimates.<callback>` with `typical`, `maximum`, and `methodology`; there is no
 free-form global network label. Each deployment must cover the manifest's `callbacks`

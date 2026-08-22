@@ -48,6 +48,14 @@ function normalizedEffectiveHttpsUrl(value) {
   }
 }
 
+function isSafePositiveInteger(value) {
+  return Number.isSafeInteger(value) && value >= 1;
+}
+
+function isSafeNonnegativeInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
 function checkSemanticConsistency(manifest, errors) {
   if (
     manifest === null ||
@@ -62,7 +70,7 @@ function checkSemanticConsistency(manifest, errors) {
   const firstDeploymentByChain = new Map();
   deployments.forEach((deployment, deploymentIndex) => {
     const chainId = deployment?.chainId;
-    if (!Number.isInteger(chainId)) return;
+    if (!isSafePositiveInteger(chainId)) return;
     declaredChains.add(chainId);
     if (firstDeploymentByChain.has(chainId)) {
       errors.push(
@@ -94,8 +102,8 @@ function checkSemanticConsistency(manifest, errors) {
       const estimate = estimates[callback];
       if (
         estimate &&
-        Number.isInteger(estimate.typical) &&
-        Number.isInteger(estimate.maximum) &&
+        isSafeNonnegativeInteger(estimate.typical) &&
+        isSafeNonnegativeInteger(estimate.maximum) &&
         estimate.maximum < estimate.typical
       ) {
         errors.push(
@@ -127,12 +135,12 @@ function checkSemanticConsistency(manifest, errors) {
     holders.forEach((holder, holderIndex) => {
       const chainId = holder?.chainId;
       const address = holder?.address;
-      if (Number.isInteger(chainId) && !declaredChains.has(chainId)) {
+      if (isSafePositiveInteger(chainId) && !declaredChains.has(chainId)) {
         errors.push(
           `$.privilegedRoles[${roleIndex}].holders[${holderIndex}].chainId: must reference a declared deployment`,
         );
       }
-      if (Number.isInteger(chainId) && typeof address === "string") {
+      if (isSafePositiveInteger(chainId) && typeof address === "string") {
         const key = JSON.stringify([chainId, address.toLowerCase()]);
         if (holderIndexes.has(key)) {
           errors.push(
@@ -153,7 +161,7 @@ function checkSemanticConsistency(manifest, errors) {
       const address = proxy[field];
       if (
         typeof address === "string" &&
-        Number.isInteger(deployment?.chainId) &&
+        isSafePositiveInteger(deployment?.chainId) &&
         !holderAddressesByChain.has(
           JSON.stringify([deployment.chainId, address.toLowerCase()]),
         )
@@ -205,7 +213,7 @@ function checkSemanticConsistency(manifest, errors) {
     const bindingIndexes = new Map();
     bindings.forEach((binding, bindingIndex) => {
       const chainId = binding?.chainId;
-      if (Number.isInteger(chainId)) {
+      if (isSafePositiveInteger(chainId)) {
         if (!declaredChains.has(chainId)) {
           errors.push(
             `$.externalDependencies[${dependencyIndex}].deployments[${bindingIndex}].chainId: must reference a declared deployment`,
@@ -244,7 +252,7 @@ function checkSemanticConsistency(manifest, errors) {
     verifiers.forEach((verifier, index) => {
       if (
         verifier &&
-        Number.isInteger(verifier.chainId) &&
+        isSafePositiveInteger(verifier.chainId) &&
         !declaredChains.has(verifier.chainId)
       ) {
         errors.push(
@@ -253,7 +261,7 @@ function checkSemanticConsistency(manifest, errors) {
       }
       if (
         verifier &&
-        Number.isInteger(verifier.chainId) &&
+        isSafePositiveInteger(verifier.chainId) &&
         typeof verifier.url === "string"
       ) {
         const normalizedUrl = normalizedEffectiveHttpsUrl(verifier.url);
@@ -278,14 +286,14 @@ function checkSemanticConsistency(manifest, errors) {
         verifiers
           .filter(
             (verifier) =>
-              Number.isInteger(verifier?.chainId) &&
+              isSafePositiveInteger(verifier?.chainId) &&
               verifier?.status === "verified",
           )
           .map((verifier) => verifier.chainId),
       );
       deployments.forEach((deployment, deploymentIndex) => {
         if (
-          Number.isInteger(deployment?.chainId) &&
+          isSafePositiveInteger(deployment?.chainId) &&
           !verifiedChains.has(deployment.chainId)
         ) {
           errors.push(
@@ -299,7 +307,7 @@ function checkSemanticConsistency(manifest, errors) {
   const protocolDefault = manifest.protocolDefault;
   if (protocolDefault && Array.isArray(protocolDefault.chains)) {
     protocolDefault.chains.forEach((chainId, index) => {
-      if (Number.isInteger(chainId) && !declaredChains.has(chainId)) {
+      if (isSafePositiveInteger(chainId) && !declaredChains.has(chainId)) {
         errors.push(
           `$.protocolDefault.chains[${index}]: must reference a declared deployment`,
         );

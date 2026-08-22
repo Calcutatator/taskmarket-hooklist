@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -75,6 +76,154 @@ test("AJV validates all ready fixtures against the canonical Draft 2020-12 schem
       validateSchema(manifest),
       true,
       JSON.stringify(validateSchema.errors, null, 2),
+    );
+  }
+});
+
+test("AJV accepts JavaScript safe-integer boundaries for every manifest numeric field", () => {
+  const max = Number.MAX_SAFE_INTEGER;
+  const manifest = proxy();
+  manifest.deployments[0].chainId = max;
+  manifest.deployments[0].deployment.blockNumber = max;
+  for (const estimate of Object.values(manifest.deployments[0].gas.estimates)) {
+    estimate.typical = max;
+    estimate.maximum = max;
+  }
+  manifest.sourceVerification.verifiers[0].chainId = max;
+  manifest.privilegedRoles = [
+    {
+      name: "max-safe authority",
+      holders: [
+        { chainId: max, address: "0x3333333333333333333333333333333333333333" },
+      ],
+      capabilities: ["emergency pause"],
+    },
+  ];
+  manifest.externalDependencies = [
+    {
+      name: "max-safe dependency",
+      kind: "contract",
+      purpose: "Boundary coverage.",
+      deployments: [
+        {
+          chainId: max,
+          addresses: ["0x4444444444444444444444444444444444444444"],
+        },
+      ],
+    },
+  ];
+  manifest.protocolDefault = {
+    status: "default-on-all-declared-chains",
+    chains: [max],
+    evidence: "https://example.com/default",
+  };
+  assert.equal(
+    validateSchema(manifest),
+    true,
+    JSON.stringify(validateSchema.errors, null, 2),
+  );
+});
+
+test("AJV rejects unsafe numeric values at every indexed manifest field", () => {
+  const unsafe = Number.MAX_SAFE_INTEGER + 1;
+  const cases = [
+    [
+      "deployment chain",
+      "/deployments/0/chainId",
+      (manifest) => {
+        manifest.deployments[0].chainId = unsafe;
+      },
+    ],
+    [
+      "deployment block",
+      "/deployments/0/deployment/blockNumber",
+      (manifest) => {
+        manifest.deployments[0].deployment.blockNumber = unsafe;
+      },
+    ],
+    [
+      "gas typical",
+      "/deployments/0/gas/estimates/checkFund/typical",
+      (manifest) => {
+        manifest.deployments[0].gas.estimates.checkFund.typical = unsafe;
+      },
+    ],
+    [
+      "gas maximum",
+      "/deployments/0/gas/estimates/checkFund/maximum",
+      (manifest) => {
+        manifest.deployments[0].gas.estimates.checkFund.maximum = unsafe;
+      },
+    ],
+    [
+      "verifier chain",
+      "/sourceVerification/verifiers/0/chainId",
+      (manifest) => {
+        manifest.sourceVerification.verifiers[0].chainId = unsafe;
+      },
+    ],
+    [
+      "role holder chain",
+      "/privilegedRoles/0/holders/0/chainId",
+      (manifest) => {
+        manifest.privilegedRoles[0].holders[0].chainId = unsafe;
+      },
+    ],
+    [
+      "dependency binding chain",
+      "/externalDependencies/0/deployments/0/chainId",
+      (manifest) => {
+        manifest.externalDependencies[0].deployments[0].chainId = unsafe;
+      },
+    ],
+    [
+      "protocol default chain",
+      "/protocolDefault/chains/0",
+      (manifest) => {
+        manifest.protocolDefault = {
+          status: "default-on-some-chains",
+          chains: [unsafe],
+          evidence: "https://example.com/default",
+        };
+      },
+    ],
+  ];
+  for (const [label, path, mutate] of cases) {
+    const manifest = proxy();
+    mutate(manifest);
+    assertSchemaInvalid(manifest, [path]);
+    assert.ok(Number.isInteger(unsafe), `${label} test uses a parsed integer`);
+  }
+});
+
+test("CLI rejects raw JSON literals above the JavaScript safe range without precision loss", () => {
+  const raw = readFileSync(
+    new URL("../fixtures/invalid/unsafe-numeric-literal.json", import.meta.url),
+    "utf8",
+  );
+  const parsed = JSON.parse(raw);
+  assert.ok(raw.includes("9007199254740993"));
+  assert.equal(parsed.deployments[0].chainId, Number.MAX_SAFE_INTEGER + 1);
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      "tools/hook-manifest/validate.mjs",
+      "tools/hook-manifest/fixtures/invalid/unsafe-numeric-literal.json",
+    ],
+    { cwd: process.cwd(), encoding: "utf8" },
+  );
+  assert.equal(result.status, 1, result.stderr);
+  for (const path of [
+    "$.deployments[0].chainId",
+    "$.deployments[0].deployment.blockNumber",
+    "$.deployments[0].gas.estimates.checkFund.typical",
+    "$.deployments[0].gas.estimates.checkFund.maximum",
+    "$.sourceVerification.verifiers[0].chainId",
+  ]) {
+    assert.ok(
+      result.stderr.includes(path),
+      `expected ${path} in:\n${result.stderr}`,
     );
   }
 });

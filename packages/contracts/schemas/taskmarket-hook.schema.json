@@ -45,6 +45,18 @@
       "type": "string",
       "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
     },
+    "safePositiveInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991,
+      "description": "A positive JavaScript safe integer. Manifest numeric values are parsed by JavaScript and must not lose precision."
+    },
+    "safeNonnegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "A nonnegative JavaScript safe integer. Manifest numeric values are parsed by JavaScript and must not lose precision."
+    },
     "httpsUri": {
       "type": "string",
       "format": "uri",
@@ -61,7 +73,7 @@
       "additionalProperties": false,
       "required": ["chainId", "address"],
       "properties": {
-        "chainId": { "type": "integer", "minimum": 1 },
+        "chainId": { "$ref": "#/$defs/safePositiveInteger" },
         "address": { "$ref": "#/$defs/address" }
       }
     },
@@ -201,8 +213,8 @@
               "additionalProperties": false,
               "required": ["typical", "maximum", "methodology"],
               "properties": {
-                "typical": { "type": "integer", "minimum": 0 },
-                "maximum": { "type": "integer", "minimum": 0 },
+                "typical": { "$ref": "#/$defs/safeNonnegativeInteger" },
+                "maximum": { "$ref": "#/$defs/safeNonnegativeInteger" },
                 "methodology": { "type": "string", "minLength": 1 }
               }
             }
@@ -217,7 +229,7 @@
       "additionalProperties": false,
       "required": ["chainId"],
       "properties": {
-        "chainId": { "type": "integer", "minimum": 1 },
+        "chainId": { "$ref": "#/$defs/safePositiveInteger" },
         "addresses": {
           "type": "array",
           "minItems": 1,
@@ -241,7 +253,7 @@
         "gas"
       ],
       "properties": {
-        "chainId": { "type": "integer", "minimum": 1 },
+        "chainId": { "$ref": "#/$defs/safePositiveInteger" },
         "network": { "type": "string", "minLength": 1 },
         "hook": { "$ref": "#/$defs/address" },
         "taskmarketDiamond": { "$ref": "#/$defs/address" },
@@ -251,7 +263,7 @@
           "required": ["transactionHash", "blockNumber"],
           "properties": {
             "transactionHash": { "$ref": "#/$defs/txHash" },
-            "blockNumber": { "type": "integer", "minimum": 0 }
+            "blockNumber": { "$ref": "#/$defs/safeNonnegativeInteger" }
           }
         },
         "runtimeCodehash": { "$ref": "#/$defs/bytes32" },
@@ -297,7 +309,7 @@
                 "type": "object",
                 "properties": {
                   "transactionHash": { "$ref": "#/$defs/nonZeroTxHash" },
-                  "blockNumber": { "type": "integer", "minimum": 1 }
+                  "blockNumber": { "$ref": "#/$defs/safePositiveInteger" }
                 }
               },
               "runtimeCodehash": { "$ref": "#/$defs/nonZeroBytes32" },
@@ -320,8 +332,8 @@
                       "^(checkFund|checkClaim|checkSelectWorker|checkSubmit|checkEvaluate|checkComplete|onComplete|onForfeit|onCancel|onExpire)$": {
                         "type": "object",
                         "properties": {
-                          "typical": { "type": "integer", "minimum": 1 },
-                          "maximum": { "type": "integer", "minimum": 1 }
+                          "typical": { "$ref": "#/$defs/safePositiveInteger" },
+                          "maximum": { "$ref": "#/$defs/safePositiveInteger" }
                         }
                       }
                     }
@@ -705,7 +717,7 @@
             "additionalProperties": false,
             "required": ["chainId", "url", "status"],
             "properties": {
-              "chainId": { "type": "integer", "minimum": 1 },
+              "chainId": { "$ref": "#/$defs/safePositiveInteger" },
               "url": { "$ref": "#/$defs/httpsUri" },
               "status": { "enum": ["verified", "unverified", "pending"] }
             }
@@ -893,7 +905,7 @@
         "chains": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "type": "integer", "minimum": 1 }
+          "items": { "$ref": "#/$defs/safePositiveInteger" }
         }
       }
     }
