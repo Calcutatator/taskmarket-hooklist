@@ -218,13 +218,14 @@ function git(directory, ...args) {
   assert.equal(result.status, 0, result.stderr);
 }
 
-function runChangeDetector(makefileBefore, makefileAfter) {
+function runChangeDetector(makefileBefore, makefileAfter, lockfileAfter) {
   const directory = mkdtempSync(join(tmpdir(), "ci-change-detector-"));
   const workflowCopy = join(directory, ".github", "workflows", "ci.yml");
   const output = join(directory, "github-output");
   mkdirSync(join(directory, ".github", "workflows"), { recursive: true });
   writeFileSync(workflowCopy, readFileSync(workflow, "utf8"));
   writeFileSync(join(directory, "Makefile"), makefileBefore);
+  writeFileSync(join(directory, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
 
   try {
     git(directory, "init", "-q");
@@ -233,7 +234,9 @@ function runChangeDetector(makefileBefore, makefileAfter) {
     git(directory, "add", ".");
     git(directory, "commit", "-qm", "base");
     writeFileSync(join(directory, "Makefile"), makefileAfter);
-    git(directory, "add", "Makefile");
+    if (lockfileAfter !== undefined)
+      writeFileSync(join(directory, "pnpm-lock.yaml"), lockfileAfter);
+    git(directory, "add", ".");
     git(directory, "commit", "-qm", "change");
 
     const script = [
@@ -298,6 +301,15 @@ test("contracts detector follows only its relevant standalone Makefile target", 
   assert.equal(unrelatedTargetChanged.contracts, "false");
   assert.equal(unrelatedTargetChanged.quality_js, "false");
   assert.equal(unrelatedTargetChanged.other, "false");
+});
+
+test("contracts detector selects a root lockfile-only change", () => {
+  const output = runChangeDetector(
+    "SHELL := /bin/bash\n",
+    "SHELL := /bin/bash\n",
+    "lockfileVersion: '9.0'\nsettings:\n  autoInstallPeers: true\n",
+  );
+  assert.equal(output.contracts, "true");
 });
 
 test("broad JS detectors keep Turbo's root pseudo-package excluded", () => {

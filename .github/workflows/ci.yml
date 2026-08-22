@@ -108,9 +108,9 @@ jobs:
           affected() { echo "$AFFECTED" | grep -q "\"$1\""; }
 
           CONTRACTS=false
-          if git diff --name-only "$RANGE" | grep -Eq '^(packages/contracts/|apps/web/public/schemas/taskmarket-hook/|scripts/(run-ci-test|check-hook-manifest-schema-drift)\.mjs$)'; then
+          if git diff --name-only "$RANGE" | grep -Eq '^(pnpm-lock\.yaml$|packages/contracts/|apps/web/public/schemas/taskmarket-hook/|scripts/(run-ci-test|check-hook-manifest-schema-drift)\.mjs$)'; then
             CONTRACTS=true
-            git diff --name-only "$RANGE" | grep -E '^(packages/contracts/|apps/web/public/schemas/taskmarket-hook/|scripts/(run-ci-test|check-hook-manifest-schema-drift)\.mjs$)' | head -5
+            git diff --name-only "$RANGE" | grep -E '^(pnpm-lock\.yaml$|packages/contracts/|apps/web/public/schemas/taskmarket-hook/|scripts/(run-ci-test|check-hook-manifest-schema-drift)\.mjs$)' | head -5
           fi
 
           WEB=false
