@@ -16,6 +16,7 @@ const fixture = (name) =>
   );
 const immutable = () => fixture("valid/simple-immutable.json");
 const proxy = () => fixture("valid/advanced-proxy.json");
+const multiChain = () => fixture("valid/multi-chain-proxies.json");
 const portalReady = () => fixture("valid/portal-ready.json");
 const ajv = new Ajv2020({
   allErrors: true,
@@ -46,9 +47,9 @@ function placeholderProxy() {
   manifest.deployments[0].deployment.blockNumber = 0;
   manifest.deployments[0].runtimeCodehash = zeroHash;
   manifest.deployments[0].creationCodehash = zeroHash;
-  manifest.proxy.implementation = zeroAddress;
-  manifest.proxy.admin = zeroAddress;
-  manifest.proxy.timelock = zeroAddress;
+  manifest.deployments[0].proxy.implementation = zeroAddress;
+  manifest.deployments[0].proxy.admin = zeroAddress;
+  manifest.deployments[0].proxy.timelock = zeroAddress;
   manifest.privilegedRoles[0].holders[0] = zeroAddress;
   manifest.externalDependencies[0].addresses[0] = zeroAddress;
   manifest.gas.estimates.checkFund.typical = 0;
@@ -66,6 +67,7 @@ test("AJV validates all ready fixtures against the canonical Draft 2020-12 schem
   for (const name of [
     "valid/simple-immutable.json",
     "valid/advanced-proxy.json",
+    "valid/multi-chain-proxies.json",
     "valid/portal-ready.json",
   ]) {
     const manifest = fixture(name);
@@ -75,6 +77,20 @@ test("AJV validates all ready fixtures against the canonical Draft 2020-12 schem
       JSON.stringify(validateSchema.errors, null, 2),
     );
   }
+});
+
+test("AJV rejects ambiguous singleton proxy metadata for multi-chain manifests", () => {
+  const manifest = fixture("invalid/multi-chain-singleton-proxy.json");
+  assertSchemaInvalid(manifest, ["/deployments/0", "/deployments/1"]);
+  assert.ok(
+    validateSchema.errors?.some(
+      (error) =>
+        error.instancePath === "" &&
+        error.keyword === "additionalProperties" &&
+        error.params.additionalProperty === "proxy",
+    ),
+    JSON.stringify(validateSchema.errors, null, 2),
+  );
 });
 
 test("AJV requires portable slash-separated repository-relative source paths", () => {
@@ -121,9 +137,9 @@ test("AJV rejects every placeholder evidence branch in a published manifest", ()
     "/deployments/0/deployment/blockNumber",
     "/deployments/0/runtimeCodehash",
     "/deployments/0/creationCodehash",
-    "/proxy/implementation",
-    "/proxy/admin",
-    "/proxy/timelock",
+    "/deployments/0/proxy/implementation",
+    "/deployments/0/proxy/admin",
+    "/deployments/0/proxy/timelock",
     "/privilegedRoles/0/holders/0",
     "/externalDependencies/0/addresses/0",
     "/gas/estimates/checkFund/typical",
@@ -264,9 +280,10 @@ test("AJV requires a nonempty HTTPS authority", () => {
 
 test("AJV requires kind-specific proxy locators and concrete upgrade authority", () => {
   const roleLinked = proxy();
-  delete roleLinked.proxy.admin;
-  delete roleLinked.proxy.timelock;
-  roleLinked.proxy.upgradeAuthorityRole = "UPGRADE_AUTHORITY_ROLE";
+  delete roleLinked.deployments[0].proxy.admin;
+  delete roleLinked.deployments[0].proxy.timelock;
+  roleLinked.deployments[0].proxy.upgradeAuthorityRole =
+    "UPGRADE_AUTHORITY_ROLE";
   assert.equal(
     validateSchema(roleLinked),
     true,
@@ -274,34 +291,49 @@ test("AJV requires kind-specific proxy locators and concrete upgrade authority",
   );
 
   const proseOnly = proxy();
-  delete proseOnly.proxy.admin;
-  delete proseOnly.proxy.timelock;
-  delete proseOnly.proxy.upgradeAuthorityRole;
-  assertSchemaInvalid(proseOnly, ["/proxy"]);
+  delete proseOnly.deployments[0].proxy.admin;
+  delete proseOnly.deployments[0].proxy.timelock;
+  delete proseOnly.deployments[0].proxy.upgradeAuthorityRole;
+  assertSchemaInvalid(proseOnly, ["/deployments/0/proxy"]);
 
   const transparent = proxy();
-  transparent.proxy.kind = "transparent";
-  delete transparent.proxy.admin;
-  assertSchemaInvalid(transparent, ["/proxy"]);
+  transparent.deployments[0].proxy.kind = "transparent";
+  delete transparent.deployments[0].proxy.admin;
+  assertSchemaInvalid(transparent, ["/deployments/0/proxy"]);
 
   const beacon = proxy();
-  beacon.proxy.kind = "beacon";
-  delete beacon.proxy.beacon;
-  assertSchemaInvalid(beacon, ["/proxy"]);
+  beacon.deployments[0].proxy.kind = "beacon";
+  delete beacon.deployments[0].proxy.beacon;
+  assertSchemaInvalid(beacon, ["/deployments/0/proxy"]);
 
-  beacon.proxy.beacon = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  beacon.deployments[0].proxy.beacon =
+    "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
   assert.equal(
     validateSchema(beacon),
     true,
     JSON.stringify(validateSchema.errors, null, 2),
   );
 
-  beacon.proxy.beacon = `0x${"0".repeat(40)}`;
-  assertSchemaInvalid(beacon, ["/proxy/beacon"]);
+  beacon.deployments[0].proxy.beacon = `0x${"0".repeat(40)}`;
+  assertSchemaInvalid(beacon, ["/deployments/0/proxy/beacon"]);
 
   const strayBeacon = proxy();
-  strayBeacon.proxy.beacon = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-  assertSchemaInvalid(strayBeacon, ["/proxy/beacon"]);
+  strayBeacon.deployments[0].proxy.beacon =
+    "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  assertSchemaInvalid(strayBeacon, ["/deployments/0/proxy/beacon"]);
+});
+
+test("AJV accepts distinct proxy metadata on each deployment", () => {
+  const manifest = multiChain();
+  assert.equal(
+    validateSchema(manifest),
+    true,
+    JSON.stringify(validateSchema.errors, null, 2),
+  );
+  assert.notDeepEqual(
+    manifest.deployments[0].proxy,
+    manifest.deployments[1].proxy,
+  );
 });
 
 test("AJV requires kind-aware non-vacuous external dependency evidence", () => {

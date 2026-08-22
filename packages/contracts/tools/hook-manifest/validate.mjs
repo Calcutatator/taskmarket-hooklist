@@ -98,24 +98,27 @@ function checkSemanticConsistency(manifest, errors) {
   const privilegedRoles = Array.isArray(manifest.privilegedRoles)
     ? manifest.privilegedRoles
     : [];
-  const proxy = manifest.proxy;
-  if (proxy?.upgradeable === true) {
-    const holderAddresses = new Set(
-      privilegedRoles.flatMap((role) =>
-        Array.isArray(role?.holders)
-          ? role.holders
-              .filter((holder) => typeof holder === "string")
-              .map((holder) => holder.toLowerCase())
-          : [],
-      ),
-    );
+  const holderAddresses = new Set(
+    privilegedRoles.flatMap((role) =>
+      Array.isArray(role?.holders)
+        ? role.holders
+            .filter((holder) => typeof holder === "string")
+            .map((holder) => holder.toLowerCase())
+        : [],
+    ),
+  );
+  deployments.forEach((deployment, deploymentIndex) => {
+    const proxy = deployment?.proxy;
+    if (proxy?.upgradeable !== true) return;
     for (const field of ["admin", "timelock"]) {
       const address = proxy[field];
       if (
         typeof address === "string" &&
         !holderAddresses.has(address.toLowerCase())
       ) {
-        errors.push(`$.proxy.${field}: must appear in privilegedRoles holders`);
+        errors.push(
+          `$.deployments[${deploymentIndex}].proxy.${field}: must appear in privilegedRoles holders`,
+        );
       }
     }
 
@@ -130,11 +133,11 @@ function checkSemanticConsistency(manifest, errors) {
         matches[0].holders.length === 0
       ) {
         errors.push(
-          "$.proxy.upgradeAuthorityRole: must reference exactly one privilegedRoles entry with holders",
+          `$.deployments[${deploymentIndex}].proxy.upgradeAuthorityRole: must reference exactly one privilegedRoles entry with holders`,
         );
       }
     }
-  }
+  });
 
   const verifiers = manifest.sourceVerification?.verifiers;
   if (Array.isArray(verifiers)) {

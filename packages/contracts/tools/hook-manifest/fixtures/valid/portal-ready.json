@@ -26,7 +26,8 @@
         "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
         "blockNumber": 123
       },
-      "runtimeCodehash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+      "runtimeCodehash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "proxy": { "kind": "none", "upgradeable": false }
     }
   ],
   "callbacks": ["checkFund"],
@@ -39,7 +40,6 @@
     ]
   },
   "sourceVerification": { "status": "unverified", "verifiers": [] },
-  "proxy": { "kind": "none", "upgradeable": false },
   "privilegedRoles": [],
   "externalDependencies": [],
   "liveness": {

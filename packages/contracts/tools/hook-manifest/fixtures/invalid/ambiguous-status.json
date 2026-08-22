@@ -22,7 +22,8 @@
         "transactionHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "blockNumber": 1
       },
-      "runtimeCodehash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "runtimeCodehash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "proxy": { "kind": "uups", "upgradeable": false }
     }
   ],
   "callbacks": ["notACallback"],
@@ -33,7 +34,6 @@
     "examples": [{ "name": "wrong wire", "decoded": null, "encoded": "0x01" }]
   },
   "sourceVerification": { "status": "unverified", "verifiers": [] },
-  "proxy": { "kind": "uups", "upgradeable": false },
   "privilegedRoles": [],
   "externalDependencies": [],
   "liveness": { "requirements": [], "failureMode": "x" },

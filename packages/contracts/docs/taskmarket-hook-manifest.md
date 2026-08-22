@@ -53,6 +53,12 @@ Addresses are strict 20-byte `0x` hex values; transactions and codehashes are st
 Published gas estimates must be nonzero. A zero address, all-zero hash or commit, zero
 deployment block, or zero gas estimate is rejected as incomplete evidence.
 
+Proxy metadata is also deployment-specific. Every `deployments[]` entry includes its own
+`proxy` object, including immutable deployments as `{ "kind": "none", "upgradeable":
+false }`. A manifest can therefore describe different proxy kinds, implementations,
+admins, beacons, or timelocks on different chains without implying that one chain's
+addresses apply globally. A top-level `proxy` singleton is invalid.
+
 `source.path` is a portable, slash-separated path relative to the repository root. It
 must have nonempty segments and no leading or trailing slash, backslash, Windows drive
 prefix, `.` or `..` segment, empty segment, C0 control character, or DEL character.
@@ -93,16 +99,16 @@ URL; vendor additions may use `x-` keys.
 
 ## Operations and trust
 
-Every upgradeable proxy declares its implementation, an authority description, and at
-least one concrete authority locator: `admin`, `timelock`, or
+Every upgradeable `deployments[].proxy` declares its implementation, an authority
+description, and at least one concrete authority locator: `admin`, `timelock`, or
 `upgradeAuthorityRole`. Transparent proxies require `admin`; beacon proxies additionally
 require the `beacon` contract address. Every declared admin or timelock address must
 also appear in a `privilegedRoles[].holders` list. `upgradeAuthorityRole`, when used,
 must exactly and uniquely name a privileged role with at least one holder. This keeps
-the prose explanation tied to concrete addresses and capabilities. `kind: none` is
-reserved for immutable hooks and must omit every proxy-only authority field. Existing
-portal builders that emit immutable `kind: none` declarations require no change;
-builders for upgradeable hooks must populate these locators and role links.
+each deployment's prose explanation tied to concrete addresses and capabilities.
+`kind: none` is reserved for immutable deployments and must omit every proxy-only
+authority field. Manifest builders must emit this object inside every deployment;
+builders for upgradeable hooks must populate each chain's own locators and role links.
 
 Publishable `externalDependencies` are also kind-aware. `contract`, `token`, `oracle`,
 and `relayer` entries require at least one nonzero on-chain address. `api` entries
@@ -124,5 +130,6 @@ portal generator's ready output shape and is validated in the package test suite
 ```sh
 pnpm validate:hook-manifest -- tools/hook-manifest/fixtures/valid/simple-immutable.json
 pnpm validate:hook-manifest -- tools/hook-manifest/fixtures/valid/advanced-proxy.json
+pnpm validate:hook-manifest -- tools/hook-manifest/fixtures/valid/multi-chain-proxies.json
 pnpm validate:hook-manifest -- tools/hook-manifest/fixtures/valid/portal-ready.json
 ```
