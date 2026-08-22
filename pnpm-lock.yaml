@@ -639,6 +639,13 @@ importers:
         version: 2.1.9(@types/node@20.19.33)
 
   packages/contracts:
+    dependencies:
+      ajv:
+        specifier: ^8.18.0
+        version: 8.18.0
+      ajv-formats:
+        specifier: ^3.0.1
+        version: 3.0.1(ajv@8.18.0)
     devDependencies:
       '@types/node':
         specifier: ^20.11.0

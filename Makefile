@@ -6,7 +6,7 @@ CI_TEST_BUDGET_SECONDS := 300
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start storybook storybook-ci storybook-image storybook-image-smoke storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test e2e slap-chop slap-chop-health skill-conformance skill-export docs-og-check discord-blueprint-check adr-audit contract ci-config-check ci-config-fix ci-quality-js ci-test ui-ci ui-ci-build ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli discord disable register signed-smoke dither-kit
+.PHONY: help init install build dev start storybook storybook-ci storybook-image storybook-image-smoke storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test e2e slap-chop slap-chop-health skill-conformance skill-export docs-og-check hook-manifest-schema-drift discord-blueprint-check adr-audit contract ci-config-check ci-config-fix ci-quality-js ci-test ui-ci ui-ci-build ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli discord disable register signed-smoke dither-kit
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -39,11 +39,12 @@ help:
 	@echo "  make skill-conformance    - Check shipped skill against platform contracts"
 	@echo "  make skill-export SKILLS_MARKET_OUTPUT=<dir> - Export the canonical skills.sh package"
 	@echo "  make docs-og-check        - Check docs pages have required og/twitter meta tags"
+	@echo "  make hook-manifest-schema-drift - Check the hosted hook schema matches the contracts source"
 	@echo "  make lint-check adr       - Check docs/adr/ ADRs follow numbering/status rules"
 	@echo "  make adr-audit            - Regenerate ADR/RFC indexes and embodiment audit reports"
 	@echo "  make lint-check specs     - Check docs/specs/ follow the Spec-lite structural template"
 	@echo "  make test adr             - Run the adr package's own unit test suite (also covers spec-lint)"
-	@echo "  make contract <cmd>       - Contract tools (audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|snapshot-check-ci|storage-check|doc|test|test-ci)"
+	@echo "  make contract <cmd>       - Contract tools (audit|abi-check|coverage|coverage-check|hook-manifest|snapshot|snapshot-check|snapshot-check-ci|storage-check|doc|test|test-ci)"
 	@echo "  make contract <owner-cmd> <testnet|mainnet> - Owner actions (pause|unpause|accept-ownership)"
 	@echo "  make ci-config-check      - Check CI workflow and benchmark script formatting"
 	@echo "  make ci-config-fix        - Format CI workflow and benchmark script"
@@ -769,10 +770,13 @@ docs-og-check:
 	pnpm --filter @taskmarket/docs build && \
 	pnpm --filter @taskmarket/docs check-og
 
+hook-manifest-schema-drift:
+	$(ENV_LOADER) && node scripts/check-hook-manifest-schema-drift.mjs
+
 contract:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|snapshot-check-ci|storage-check|doc|test|test-ci"; \
+		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|hook-manifest|snapshot|snapshot-check|snapshot-check-ci|storage-check|doc|test|test-ci"; \
 		echo "       make contract <pause|unpause|accept-ownership> <testnet|mainnet>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "audit" ]; then \
@@ -829,6 +833,8 @@ contract:
 			echo "Run 'make build contracts' and commit packages/contracts/abi/."; \
 			exit 1; \
 		fi; \
+	elif [ "$(word 1,$(ARGS))" = "hook-manifest" ]; then \
+		cd packages/contracts && pnpm test:hook-manifest; \
 	elif [ "$(word 1,$(ARGS))" = "doc" ]; then \
 		cd packages/contracts && forge doc --out docs/natspec && \
 		echo "Docs written to packages/contracts/docs/natspec"; \
@@ -871,19 +877,19 @@ contract:
 			--rpc-url $$OWNER_RPC; \
 	else \
 		echo "Unknown command: $(word 1,$(ARGS))"; \
-		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|snapshot-check-ci|storage-check|doc|test|test-ci"; \
+		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|hook-manifest|snapshot|snapshot-check|snapshot-check-ci|storage-check|doc|test|test-ci"; \
 		echo "       make contract <pause|unpause|accept-ownership> <testnet|mainnet>"; \
 		exit 1; \
 	fi
 
 ci-config-check:
 	$(ENV_LOADER) && \
-	pnpm exec prettier --check .github/workflows/ci.yml .github/workflows/deploy-preview.yml .github/workflows/deploy-production.yml .github/workflows/deploy-testnet.yml .github/workflows/rollback-slap-chop-games.yml scripts/run-ci-test.mjs scripts/run-ci-test.test.mjs scripts/verify-ci-gate.mjs scripts/verify-ci-gate.test.mjs scripts/verify-preview-teardown.test.mjs scripts/verify-slap-chop-health.mjs scripts/verify-slap-chop-health.test.mjs && \
+	pnpm exec prettier --check .github/workflows/ci.yml .github/workflows/deploy-preview.yml .github/workflows/deploy-production.yml .github/workflows/deploy-testnet.yml .github/workflows/rollback-slap-chop-games.yml scripts/check-hook-manifest-schema-drift.mjs scripts/run-ci-test.mjs scripts/run-ci-test.test.mjs scripts/verify-ci-gate.mjs scripts/verify-ci-gate.test.mjs scripts/verify-preview-teardown.test.mjs scripts/verify-slap-chop-health.mjs scripts/verify-slap-chop-health.test.mjs && \
 	node --test scripts/run-ci-test.test.mjs scripts/verify-ci-gate.test.mjs scripts/verify-preview-teardown.test.mjs scripts/verify-slap-chop-health.test.mjs
 
 ci-config-fix:
 	$(ENV_LOADER) && \
-	pnpm exec prettier --write .github/workflows/ci.yml .github/workflows/deploy-preview.yml .github/workflows/deploy-production.yml .github/workflows/deploy-testnet.yml .github/workflows/rollback-slap-chop-games.yml scripts/run-ci-test.mjs scripts/run-ci-test.test.mjs scripts/verify-ci-gate.mjs scripts/verify-ci-gate.test.mjs scripts/verify-preview-teardown.test.mjs scripts/verify-slap-chop-health.mjs scripts/verify-slap-chop-health.test.mjs
+	pnpm exec prettier --write .github/workflows/ci.yml .github/workflows/deploy-preview.yml .github/workflows/deploy-production.yml .github/workflows/deploy-testnet.yml .github/workflows/rollback-slap-chop-games.yml scripts/check-hook-manifest-schema-drift.mjs scripts/run-ci-test.mjs scripts/run-ci-test.test.mjs scripts/verify-ci-gate.mjs scripts/verify-ci-gate.test.mjs scripts/verify-preview-teardown.test.mjs scripts/verify-slap-chop-health.mjs scripts/verify-slap-chop-health.test.mjs
 
 slap-chop-health:
 	$(ENV_LOADER) && node scripts/verify-slap-chop-health.mjs

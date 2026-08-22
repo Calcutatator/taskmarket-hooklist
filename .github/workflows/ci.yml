@@ -108,9 +108,9 @@ jobs:
           affected() { echo "$AFFECTED" | grep -q "\"$1\""; }
 
           CONTRACTS=false
-          if git diff --name-only "$RANGE" | grep -Eq '^(packages/contracts/|scripts/run-ci-test\.mjs$)'; then
+          if git diff --name-only "$RANGE" | grep -Eq '^(packages/contracts/|apps/web/public/schemas/taskmarket-hook/|scripts/(run-ci-test|check-hook-manifest-schema-drift)\.mjs$)'; then
             CONTRACTS=true
-            git diff --name-only "$RANGE" | grep -E '^(packages/contracts/|scripts/run-ci-test\.mjs$)' | head -5
+            git diff --name-only "$RANGE" | grep -E '^(packages/contracts/|apps/web/public/schemas/taskmarket-hook/|scripts/(run-ci-test|check-hook-manifest-schema-drift)\.mjs$)' | head -5
           fi
 
           WEB=false
@@ -632,6 +632,12 @@ jobs:
       - run: make lint-check contracts
 
       - run: make format-check contracts
+
+      - name: Hook manifest schema and validator checks
+        run: make contract hook-manifest
+
+      - name: Hook manifest public-copy check
+        run: make hook-manifest-schema-drift
 
       - name: Contract test shard
         timeout-minutes: 6
