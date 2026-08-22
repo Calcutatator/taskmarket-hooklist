@@ -835,8 +835,8 @@ contract:
 	elif [ "$(word 1,$(ARGS))" = "test" ]; then \
 		cd packages/contracts && forge test -j 1 --summary; \
 	elif [ "$(word 1,$(ARGS))" = "test-ci" ]; then \
-		cd packages/contracts && FOUNDRY_PROFILE=ci node ../../scripts/run-ci-test.mjs contracts-ci $(CI_TEST_BUDGET_SECONDS) -- \
-			forge test -j 1 --summary; \
+		cd packages/contracts && node ../../scripts/run-ci-test.mjs contracts-ci $(CI_TEST_BUDGET_SECONDS) -- \
+			pnpm test:ci; \
 	elif [ "$(word 1,$(ARGS))" = "pause" ] || [ "$(word 1,$(ARGS))" = "unpause" ] || \
 	     [ "$(word 1,$(ARGS))" = "accept-ownership" ]; then \
 		case "$(word 1,$(ARGS))" in \
