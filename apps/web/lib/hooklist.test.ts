@@ -18,6 +18,8 @@ const evidence = {
   conformanceStatus: 'tested',
   conformanceEvidenceUrl: 'https://github.com/taskmarket/hooks/actions/runs/1',
   deploymentBlockNumber: '123',
+  deploymentChainId: '8453',
+  deploymentNetwork: 'base',
   deploymentTransactionHash: `0x${'1'.repeat(64)}`,
   description: 'Rejects tasks that do not include an approved configuration.',
   gasMethodology: 'Foundry gas snapshot on a Base fork.',
@@ -44,11 +46,117 @@ describe('Hooklist manifest builder', () => {
   it('keeps an incomplete manifest visibly draft instead of publishing placeholders', () => {
     const manifest = buildHookManifest(initialHookBuilderInput);
 
-    expect(manifestReadiness(initialHookBuilderInput).ready).toBe(false);
+    expect(manifestReadiness(initialHookBuilderInput)).toMatchObject({
+      missing: expect.arrayContaining(['deployment chain ID', 'deployment network']),
+      ready: false,
+    });
     expect(manifest['x-draft']).toMatchObject({
       missing: expect.arrayContaining(['project name']),
     });
+    expect(manifest.deployments[0]).toMatchObject({
+      chainId: 1,
+      network: 'draft',
+      proxy: { kind: 'none', upgradeable: false },
+    });
     expect(manifest.deployments[0].deployment.transactionHash).toBe(`0x${'0'.repeat(64)}`);
+    expect(manifest).not.toHaveProperty('proxy');
+  });
+
+  it('keeps Base Sepolia deployment, verifier, proxy, and gas evidence on one chain', () => {
+    const input = {
+      ...evidence,
+      deploymentChainId: '84532',
+      deploymentNetwork: 'base-sepolia',
+      sourceVerification: 'verified',
+      sourceVerificationVerifiers: JSON.stringify([
+        {
+          chainId: 84532,
+          status: 'verified',
+          url: 'https://sepolia.basescan.org/address/0x1111111111111111111111111111111111111111',
+        },
+      ]),
+    };
+
+    expect(manifestReadiness(input)).toMatchObject({ missing: [], ready: true });
+    const manifest = buildHookManifest(input);
+    expect(manifest.deployments[0]).toMatchObject({
+      chainId: 84532,
+      network: 'base-sepolia',
+      proxy: { kind: 'none', upgradeable: false },
+    });
+    expect(manifest.gas.network).toBe('base-sepolia');
+    expect(manifest.sourceVerification.verifiers).toEqual([
+      expect.objectContaining({ chainId: 84532 }),
+    ]);
+    expect(manifest).not.toHaveProperty('proxy');
+  });
+
+  it('scopes ERC-1967 implementation and authority to the selected deployment', () => {
+    const admin = '0x4444444444444444444444444444444444444444';
+    const input = {
+      ...evidence,
+      privilegedRoles: JSON.stringify([
+        {
+          name: 'proxy administrator',
+          holders: [admin],
+          capabilities: ['upgrade hook implementation'],
+        },
+      ]),
+      proxyAdmin: admin,
+      proxyImplementation: '0x3333333333333333333333333333333333333333',
+      upgradeability: 'erc1967' as const,
+      upgradeAuthorityDescription: 'The declared proxy administrator controls upgrades.',
+    };
+
+    expect(manifestReadiness(input)).toMatchObject({ missing: [], ready: true });
+    const manifest = buildHookManifest(input);
+    expect(manifest).not.toHaveProperty('proxy');
+    expect(manifest.deployments[0].proxy).toEqual({
+      admin,
+      implementation: input.proxyImplementation,
+      kind: 'erc1967',
+      upgradeable: true,
+      upgradeAuthorityDescription: input.upgradeAuthorityDescription,
+    });
+  });
+
+  it('keeps verifier evidence for a different chain non-publishable', () => {
+    const input = {
+      ...evidence,
+      deploymentChainId: '84532',
+      deploymentNetwork: 'base-sepolia',
+      sourceVerification: 'verified',
+      sourceVerificationVerifiers: JSON.stringify([
+        {
+          chainId: 8453,
+          status: 'verified',
+          url: 'https://basescan.org/address/0x1111111111111111111111111111111111111111',
+        },
+      ]),
+    };
+
+    expect(manifestReadiness(input)).toMatchObject({
+      missing: expect.arrayContaining(['source verification declaration and verifier evidence']),
+      ready: false,
+    });
+    expect(buildHookManifest(input)).toHaveProperty('x-draft');
+  });
+
+  it.each([
+    ['empty', ''],
+    ['zero', '0'],
+    ['negative', '-1'],
+    ['unsafe', '9007199254740992'],
+    ['exponent notation', '8.4532e4'],
+    ['leading zero', '084532'],
+  ])('rejects deployment chain IDs that are %s', (_label, deploymentChainId) => {
+    const input = { ...evidence, deploymentChainId };
+
+    expect(manifestReadiness(input)).toMatchObject({
+      missing: expect.arrayContaining(['deployment chain ID']),
+      ready: false,
+    });
+    expect(buildHookManifest(input).deployments[0].chainId).toBe(1);
   });
 
   it('requires nonzero evidence, valid ABI parameters and JSON, and bounded gas', () => {
@@ -625,10 +733,16 @@ contract PolicyGuardHook is BaseTMPHook {
     expect(manifestReadiness(evidence).ready).toBe(true);
     expect(manifest['x-draft']).toBeUndefined();
     expect(manifest.callbacks).toEqual(['checkFund']);
+    expect(manifest.deployments[0]).toMatchObject({
+      chainId: 8453,
+      network: 'base',
+      proxy: { kind: 'none', upgradeable: false },
+    });
     expect(manifest.conformance).toMatchObject({
       evidence: evidence.conformanceEvidenceUrl,
       status: 'tested',
     });
+    expect(manifest.gas.network).toBe('base');
     expect(manifest.gas.estimates.checkFund).toMatchObject({ maximum: 120000, typical: 100000 });
     expect(solidity).toContain('@taskmarket/contracts/src/hooks/base/BaseTMPHook.sol');
     expect(solidity).toContain('error HookPolicyNotImplemented();');

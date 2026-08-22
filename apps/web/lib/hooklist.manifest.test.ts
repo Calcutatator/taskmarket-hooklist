@@ -21,6 +21,8 @@ const readyInput = {
   conformanceStatus: 'tested',
   conformanceEvidenceUrl: 'https://github.com/taskmarket/hooks/actions/runs/1',
   deploymentBlockNumber: '123',
+  deploymentChainId: '8453',
+  deploymentNetwork: 'base',
   deploymentTransactionHash: `0x${'1'.repeat(64)}`,
   description: 'Rejects incomplete configuration.',
   gasMethodology: 'Foundry gas snapshot on a Base fork.',
@@ -195,6 +197,60 @@ describe('Hooklist canonical manifest integration', () => {
     expect(validate(manifest)).toEqual([]);
   });
 
+  it('publishes Base Sepolia chain, verifier, proxy, and gas evidence consistently', () => {
+    const input = {
+      ...readyInput,
+      deploymentChainId: '84532',
+      deploymentNetwork: 'base-sepolia',
+      sourceVerification: 'verified',
+      sourceVerificationVerifiers: JSON.stringify([
+        {
+          chainId: 84532,
+          status: 'verified',
+          url: 'https://sepolia.basescan.org/address/0x1111111111111111111111111111111111111111',
+        },
+      ]),
+    } satisfies HookBuilderInput;
+    const manifest = buildHookManifest(input);
+
+    expect(manifestReadiness(input)).toMatchObject({ missing: [], ready: true });
+    expect(manifest).not.toHaveProperty('x-draft');
+    expect(manifest).not.toHaveProperty('proxy');
+    expect(manifest.deployments[0]).toMatchObject({
+      chainId: 84532,
+      network: 'base-sepolia',
+      proxy: { kind: 'none', upgradeable: false },
+    });
+    expect(manifest.gas.network).toBe('base-sepolia');
+    expect(validate(manifest)).toEqual([]);
+  });
+
+  it('rejects verifier evidence from outside the selected deployment chain', () => {
+    const input = {
+      ...readyInput,
+      deploymentChainId: '84532',
+      deploymentNetwork: 'base-sepolia',
+      sourceVerification: 'verified',
+      sourceVerificationVerifiers: JSON.stringify([
+        {
+          chainId: 8453,
+          status: 'verified',
+          url: 'https://basescan.org/address/0x1111111111111111111111111111111111111111',
+        },
+      ]),
+    } satisfies HookBuilderInput;
+    const draft = buildHookManifest(input);
+
+    expect(manifestReadiness(input)).toMatchObject({
+      missing: expect.arrayContaining(['source verification declaration and verifier evidence']),
+      ready: false,
+    });
+    expect(draft).toHaveProperty('x-draft');
+    expect(validate(draft)).toEqual(
+      expect.arrayContaining([expect.stringContaining('must reference a declared deployment')])
+    );
+  });
+
   it.each(['https:example.com', 'https:/example.com', 'https:///example.com'])(
     'rejects WHATWG-normalized non-canonical HTTPS input %j in builder and validator',
     (url) => {
@@ -260,6 +316,7 @@ describe('Hooklist canonical manifest integration', () => {
 
     expect(manifestReadiness(input).ready).toBe(true);
     expect(manifest).not.toHaveProperty('x-draft');
+    expect(manifest).not.toHaveProperty('proxy');
     expect(validate(manifest)).toEqual([]);
   });
 
@@ -328,6 +385,13 @@ describe('Hooklist canonical manifest integration', () => {
 
     expect(manifestReadiness(input).ready).toBe(true);
     expect(manifest).not.toHaveProperty('x-draft');
+    expect(manifest).not.toHaveProperty('proxy');
+    expect(manifest.deployments[0].proxy).toMatchObject({
+      admin,
+      implementation: input.proxyImplementation,
+      kind: 'erc1967',
+      upgradeable: true,
+    });
     expect(validate(manifest)).toEqual([]);
   });
 });

@@ -28,6 +28,12 @@ test('opens the native Hooklist builder and preserves its explicit draft state',
   ).toBeVisible();
   await expect(page.getByText('Draft scaffold')).toBeVisible();
   await expect(page.getByText(/intentionally marked x-draft/i)).toBeVisible();
+  await page.getByLabel('Deployment chain ID').fill('84532');
+  await page.getByLabel('Deployment network').fill('base-sepolia');
+  await expect(page.getByLabel('taskmarket-hook.json preview')).toContainText('"chainId": 84532');
+  await expect(page.getByLabel('taskmarket-hook.json preview')).toContainText(
+    '"network": "base-sepolia"'
+  );
   await expect
     .poll(() =>
       page.evaluate(

@@ -377,11 +377,30 @@ export function HookBuilder({
             <CardHeader>
               <CardTitle>Deployment and hook data</CardTitle>
               <CardDescription>
-                Use measured, chain-specific values. Empty or zero hashes cannot become
-                publish-ready.
+                Identify the exact chain and use measured, chain-specific values. Empty or zero
+                hashes cannot become publish-ready.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
+              <Field label="Deployment chain ID">
+                <Input
+                  inputMode="numeric"
+                  onChange={(event) => update('deploymentChainId', event.target.value)}
+                  placeholder="84532"
+                  value={input.deploymentChainId}
+                />
+              </Field>
+              <Field label="Deployment network">
+                <Input
+                  onChange={(event) => update('deploymentNetwork', event.target.value)}
+                  placeholder="base-sepolia"
+                  value={input.deploymentNetwork}
+                />
+              </Field>
+              <p className="text-sm leading-5 text-muted-foreground sm:col-span-2">
+                The deployment, verifier evidence, proxy authority, and gas measurements must all
+                describe this chain.
+              </p>
               <Field label="Taskmarket Diamond address">
                 <Input
                   onChange={(event) => update('taskmarket', event.target.value)}
@@ -465,9 +484,10 @@ export function HookBuilder({
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>Upgradeability and gas</CardTitle>
+              <CardTitle>Deployment authority and gas</CardTitle>
               <CardDescription>
-                Proxy metadata and gas limits are safety data, not cosmetic fields.
+                Proxy metadata belongs to the deployment chain above. Authority and gas limits are
+                safety data, not cosmetic fields.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -583,7 +603,7 @@ export function HookBuilder({
                 <Textarea
                   className="sm:col-span-2"
                   onChange={(event) => update('sourceVerificationVerifiers', event.target.value)}
-                  placeholder='[{"chainId":8453,"url":"https://basescan.org/address/...","status":"verified"}]'
+                  placeholder={`[{"chainId":${input.deploymentChainId || '84532'},"url":"https://explorer.example/address/...","status":"verified"}]`}
                   value={input.sourceVerificationVerifiers}
                 />
               </Field>

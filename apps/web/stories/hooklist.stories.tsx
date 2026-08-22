@@ -112,6 +112,14 @@ export const BuilderDraft: Story = {
     await expect(canvas.getByLabelText('Solidity scaffold preview')).toHaveTextContent(
       'function _checkClaim('
     );
+    await userEvent.type(canvas.getByLabelText('Deployment chain ID'), '84532');
+    await userEvent.type(canvas.getByLabelText('Deployment network'), 'base-sepolia');
+    await expect(canvas.getByLabelText('taskmarket-hook.json preview')).toHaveTextContent(
+      '"chainId": 84532'
+    );
+    await expect(canvas.getByLabelText('taskmarket-hook.json preview')).toHaveTextContent(
+      '"network": "base-sepolia"'
+    );
   },
   render: () => (
     <div className="mx-auto max-w-7xl p-4 sm:p-8">
@@ -125,6 +133,14 @@ export const BuilderReady: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByText('Evidence complete')).toBeVisible();
     await expect(canvas.queryByText('Draft scaffold')).not.toBeInTheDocument();
+    await expect(canvas.getByLabelText('Deployment chain ID')).toHaveValue('84532');
+    await expect(canvas.getByLabelText('Deployment network')).toHaveValue('base-sepolia');
+    await expect(canvas.getByLabelText('taskmarket-hook.json preview')).toHaveTextContent(
+      '"chainId": 84532'
+    );
+    await expect(canvas.getByLabelText('taskmarket-hook.json preview')).toHaveTextContent(
+      '"network": "base-sepolia"'
+    );
   },
   render: () => (
     <div className="mx-auto max-w-7xl p-4 sm:p-8">
@@ -137,9 +153,11 @@ export const BuilderReady: Story = {
           conformanceStatus: 'tested',
           conformanceEvidenceUrl: 'https://github.com/taskmarket/hooks/actions/runs/1',
           deploymentBlockNumber: '123',
+          deploymentChainId: '84532',
+          deploymentNetwork: 'base-sepolia',
           deploymentTransactionHash: `0x${'1'.repeat(64)}`,
           description: 'Rejects incomplete configuration.',
-          gasMethodology: 'Foundry gas snapshot on a Base fork.',
+          gasMethodology: 'Foundry gas snapshot on a Base Sepolia fork.',
           hookAddress: '0x1111111111111111111111111111111111111111',
           livenessFailureMode: 'A rejecting callback blocks task creation.',
           livenessRequirements: '[]',

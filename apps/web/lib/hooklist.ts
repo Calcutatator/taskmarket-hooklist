@@ -41,6 +41,8 @@ export type HookBuilderInput = {
   sourcePath: string;
   callbacks: HookCallback[];
   modes: HookMode[];
+  deploymentChainId: string;
+  deploymentNetwork: string;
   taskmarket: string;
   hookAddress: string;
   deploymentTransactionHash: string;
@@ -88,6 +90,8 @@ export const initialHookBuilderInput: HookBuilderInput = {
   sourcePath: '',
   callbacks: ['checkFund'],
   modes: ['bounty'],
+  deploymentChainId: '',
+  deploymentNetwork: '',
   taskmarket: '',
   hookAddress: '',
   deploymentTransactionHash: '',
@@ -247,7 +251,7 @@ function hasOnlyKeys(value: object, keys: string[]) {
   return Object.keys(value).every((key) => keys.includes(key));
 }
 
-function validVerifierList(value: string, status: string) {
+function validVerifierList(value: string, status: string, deploymentChainId: number | null) {
   const verifiers = parseArray(value);
   if (!verifiers) return false;
   const valid = verifiers.every(
@@ -257,7 +261,8 @@ function validVerifierList(value: string, status: string) {
       !Array.isArray(verifier) &&
       hasOnlyKeys(verifier, ['chainId', 'url', 'status']) &&
       Number.isInteger((verifier as { chainId?: unknown }).chainId) &&
-      (verifier as { chainId: number }).chainId === 8453 &&
+      (deploymentChainId === null ||
+        (verifier as { chainId: number }).chainId === deploymentChainId) &&
       isHttpsUrl((verifier as { url?: string }).url ?? '') &&
       ['verified', 'unverified', 'pending'].includes((verifier as { status?: string }).status ?? '')
   );
@@ -380,6 +385,7 @@ function contractName(value: string) {
 
 export function manifestReadiness(input: HookBuilderInput) {
   const missing: string[] = [];
+  const deploymentChainId = parseCanonicalPositiveSafeInteger(input.deploymentChainId);
   const deploymentBlockNumber = parseCanonicalPositiveSafeInteger(input.deploymentBlockNumber);
   const typicalGas = parseCanonicalPositiveSafeInteger(input.typicalGas);
   const maximumGas = parseCanonicalPositiveSafeInteger(input.maximumGas);
@@ -400,6 +406,8 @@ export function manifestReadiness(input: HookBuilderInput) {
   if (new Set(input.modes).size !== input.modes.length) missing.push('unique task modes');
   if (input.modes.some((mode) => !hookModes.some((name) => name === mode)))
     missing.push('supported task modes');
+  if (deploymentChainId === null) missing.push('deployment chain ID');
+  if (!input.deploymentNetwork.trim()) missing.push('deployment network');
   if (!isNonZeroAddress(input.taskmarket)) missing.push('nonzero Taskmarket Diamond address');
   if (!isNonZeroAddress(input.hookAddress)) missing.push('nonzero deployed hook address');
   if (!nonZeroBytes32Pattern.test(input.deploymentTransactionHash))
@@ -436,7 +444,11 @@ export function manifestReadiness(input: HookBuilderInput) {
     !['verified', 'partially-verified', 'unverified', 'not-applicable'].includes(
       input.sourceVerification
     ) ||
-    !validVerifierList(input.sourceVerificationVerifiers, input.sourceVerification)
+    !validVerifierList(
+      input.sourceVerificationVerifiers,
+      input.sourceVerification,
+      deploymentChainId
+    )
   )
     missing.push('source verification declaration and verifier evidence');
   if (!['unlisted', 'submitted', 'listed', 'delisted'].includes(input.listingStatus))
@@ -514,6 +526,8 @@ export function buildHookManifest(input: HookBuilderInput) {
   const livenessRequirements = parseArray(input.livenessRequirements) ?? [];
   const placeholderAddress = `0x${'0'.repeat(40)}`;
   const placeholderHash = `0x${'0'.repeat(64)}`;
+  const deploymentChainId = parseCanonicalPositiveSafeInteger(input.deploymentChainId);
+  const deploymentNetwork = input.deploymentNetwork.trim();
   const deploymentBlockNumber = parseCanonicalPositiveSafeInteger(input.deploymentBlockNumber);
   const typical = parseCanonicalPositiveSafeInteger(input.typicalGas) ?? 0;
   const parsedMaximum = parseCanonicalPositiveSafeInteger(input.maximumGas);
@@ -539,8 +553,8 @@ export function buildHookManifest(input: HookBuilderInput) {
     license: 'MIT',
     deployments: [
       {
-        chainId: 8453,
-        network: 'base',
+        chainId: deploymentChainId ?? 1,
+        network: deploymentNetwork || 'draft',
         hook: addressPattern.test(input.hookAddress) ? input.hookAddress : placeholderAddress,
         taskmarketDiamond: addressPattern.test(input.taskmarket)
           ? input.taskmarket
@@ -554,6 +568,21 @@ export function buildHookManifest(input: HookBuilderInput) {
         runtimeCodehash: nonZeroBytes32Pattern.test(input.runtimeCodehash)
           ? input.runtimeCodehash
           : placeholderHash,
+        proxy:
+          input.upgradeability === 'erc1967'
+            ? {
+                kind: 'erc1967',
+                upgradeable: true,
+                implementation: addressPattern.test(input.proxyImplementation)
+                  ? input.proxyImplementation
+                  : placeholderAddress,
+                admin: addressPattern.test(input.proxyAdmin)
+                  ? input.proxyAdmin
+                  : placeholderAddress,
+                upgradeAuthorityDescription:
+                  input.upgradeAuthorityDescription || 'DRAFT: authority has not been verified.',
+              }
+            : { kind: 'none', upgradeable: false },
       },
     ],
     callbacks,
@@ -579,19 +608,6 @@ export function buildHookManifest(input: HookBuilderInput) {
             examples: [{ name: 'no configuration', decoded: null, encoded: '0x' }],
           },
     sourceVerification: { status: input.sourceVerification || 'unverified', verifiers },
-    proxy:
-      input.upgradeability === 'erc1967'
-        ? {
-            kind: 'erc1967',
-            upgradeable: true,
-            implementation: addressPattern.test(input.proxyImplementation)
-              ? input.proxyImplementation
-              : placeholderAddress,
-            admin: addressPattern.test(input.proxyAdmin) ? input.proxyAdmin : placeholderAddress,
-            upgradeAuthorityDescription:
-              input.upgradeAuthorityDescription || 'DRAFT: authority has not been verified.',
-          }
-        : { kind: 'none', upgradeable: false },
     privilegedRoles: roles,
     externalDependencies: dependencies,
     liveness: {
@@ -600,7 +616,7 @@ export function buildHookManifest(input: HookBuilderInput) {
       ...(input.livenessRecovery ? { recovery: input.livenessRecovery } : {}),
     },
     gas: {
-      network: 'base',
+      network: deploymentNetwork || 'draft',
       estimates: Object.fromEntries(
         callbacks.map((callback) => [
           callback,
