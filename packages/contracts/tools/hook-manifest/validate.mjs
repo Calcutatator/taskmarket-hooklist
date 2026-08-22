@@ -85,9 +85,51 @@ function checkSemanticConsistency(manifest, errors) {
     });
   }
 
-  const verifierChains = manifest.sourceVerification?.verifiers;
-  if (Array.isArray(verifierChains))
-    verifierChains.forEach((verifier, index) => {
+  const privilegedRoles = Array.isArray(manifest.privilegedRoles)
+    ? manifest.privilegedRoles
+    : [];
+  const proxy = manifest.proxy;
+  if (proxy?.upgradeable === true) {
+    const holderAddresses = new Set(
+      privilegedRoles.flatMap((role) =>
+        Array.isArray(role?.holders)
+          ? role.holders
+              .filter((holder) => typeof holder === "string")
+              .map((holder) => holder.toLowerCase())
+          : [],
+      ),
+    );
+    for (const field of ["admin", "timelock"]) {
+      const address = proxy[field];
+      if (
+        typeof address === "string" &&
+        !holderAddresses.has(address.toLowerCase())
+      ) {
+        errors.push(`$.proxy.${field}: must appear in privilegedRoles holders`);
+      }
+    }
+
+    const upgradeAuthorityRole = proxy.upgradeAuthorityRole;
+    if (typeof upgradeAuthorityRole === "string") {
+      const matches = privilegedRoles.filter(
+        (role) => role?.name === upgradeAuthorityRole,
+      );
+      if (
+        matches.length !== 1 ||
+        !Array.isArray(matches[0]?.holders) ||
+        matches[0].holders.length === 0
+      ) {
+        errors.push(
+          "$.proxy.upgradeAuthorityRole: must reference exactly one privilegedRoles entry with holders",
+        );
+      }
+    }
+  }
+
+  const verifiers = manifest.sourceVerification?.verifiers;
+  if (Array.isArray(verifiers)) {
+    const evidenceKeys = new Map();
+    verifiers.forEach((verifier, index) => {
       if (
         verifier &&
         Number.isInteger(verifier.chainId) &&
@@ -97,7 +139,22 @@ function checkSemanticConsistency(manifest, errors) {
           `$.sourceVerification.verifiers[${index}].chainId: must reference a declared deployment`,
         );
       }
+      if (
+        verifier &&
+        Number.isInteger(verifier.chainId) &&
+        typeof verifier.url === "string"
+      ) {
+        const key = JSON.stringify([verifier.chainId, verifier.url]);
+        if (evidenceKeys.has(key)) {
+          errors.push(
+            `$.sourceVerification.verifiers[${index}].url: duplicates chainId and url from verifier ${evidenceKeys.get(key)}`,
+          );
+        } else {
+          evidenceKeys.set(key, index);
+        }
+      }
     });
+  }
 
   const protocolDefault = manifest.protocolDefault;
   if (protocolDefault && Array.isArray(protocolDefault.chains)) {

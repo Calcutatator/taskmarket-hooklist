@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -188,6 +194,122 @@ test("rejects a job the gate does not list in needs", () => {
 test("accepts ci.yml as committed", () => {
   const result = run(["--check-workflow", workflow]);
   assert.equal(result.status, 0, result.stderr);
+});
+
+function changeDetectorScript() {
+  const source = readFileSync(workflow, "utf8");
+  const detector = source.match(
+    /      - id: filter\n        run: \|\n([\s\S]*?)\n  skill-conformance:/,
+  )?.[1];
+  assert.ok(detector, "changes.filter step not found");
+  return detector
+    .split("\n")
+    .map((line) => line.replace(/^ {10}/, ""))
+    .join("\n")
+    .replaceAll("${{ github.event_name }}", "push")
+    .replaceAll("${{ github.base_ref }}", "");
+}
+
+function git(directory, ...args) {
+  const result = spawnSync("git", args, {
+    cwd: directory,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+}
+
+function runChangeDetector(makefileBefore, makefileAfter) {
+  const directory = mkdtempSync(join(tmpdir(), "ci-change-detector-"));
+  const workflowCopy = join(directory, ".github", "workflows", "ci.yml");
+  const output = join(directory, "github-output");
+  mkdirSync(join(directory, ".github", "workflows"), { recursive: true });
+  writeFileSync(workflowCopy, readFileSync(workflow, "utf8"));
+  writeFileSync(join(directory, "Makefile"), makefileBefore);
+
+  try {
+    git(directory, "init", "-q");
+    git(directory, "config", "user.name", "CI Detector Test");
+    git(directory, "config", "user.email", "ci-detector@example.test");
+    git(directory, "add", ".");
+    git(directory, "commit", "-qm", "base");
+    writeFileSync(join(directory, "Makefile"), makefileAfter);
+    git(directory, "add", "Makefile");
+    git(directory, "commit", "-qm", "change");
+
+    const script = [
+      `pnpm() { printf '%s\\n' '{"packages":["//"]}'; }`,
+      changeDetectorScript(),
+    ].join("\n");
+    const result = spawnSync("/bin/bash", ["-c", script], {
+      cwd: directory,
+      env: { ...process.env, GITHUB_OUTPUT: output },
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    return Object.fromEntries(
+      readFileSync(output, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => line.split("=", 2)),
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+test("contracts detector follows only its relevant standalone Makefile target", () => {
+  const before = [
+    "SHELL := /bin/bash",
+    "# unchanged shared header 01",
+    "# unchanged shared header 02",
+    "# unchanged shared header 03",
+    "# unchanged shared header 04",
+    "# unchanged shared header 05",
+    "# unchanged shared header 06",
+    "# unchanged shared header 07",
+    "# unchanged shared header 08",
+    "# unchanged shared header 09",
+    "# unchanged shared header 10",
+    "# unchanged shared header 11",
+    "# unchanged shared header 12",
+    "# unchanged shared header 13",
+    "",
+    "hook-manifest-schema-drift:",
+    "\t@echo old schema check",
+    "",
+    "unrelated:",
+    "\t@echo old unrelated target",
+    "",
+  ].join("\n");
+
+  const hookTargetChanged = runChangeDetector(
+    before,
+    before.replace("old schema check", "new schema check"),
+  );
+  assert.equal(hookTargetChanged.contracts, "true");
+  assert.equal(hookTargetChanged.quality_js, "false");
+  assert.equal(hookTargetChanged.other, "false");
+
+  const unrelatedTargetChanged = runChangeDetector(
+    before,
+    before.replace("old unrelated target", "new unrelated target"),
+  );
+  assert.equal(unrelatedTargetChanged.contracts, "false");
+  assert.equal(unrelatedTargetChanged.quality_js, "false");
+  assert.equal(unrelatedTargetChanged.other, "false");
+});
+
+test("broad JS detectors keep Turbo's root pseudo-package excluded", () => {
+  const source = readFileSync(workflow, "utf8");
+  assert.match(
+    source,
+    /any_affected_outside "@taskmarket\/contracts" "@taskmarket\/docs" "@taskmarket\/web" "\/\/" && QUALITY_JS=true/,
+  );
+  assert.match(
+    source,
+    /any_affected_outside "@taskmarket\/contracts" "@taskmarket\/docs" "@taskmarket\/backend" "@taskmarket\/web" "\/\/" && OTHER=true/,
+  );
 });
 
 function checkMutated(mutate) {

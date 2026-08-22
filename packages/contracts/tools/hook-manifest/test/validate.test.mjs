@@ -59,6 +59,35 @@ test("enforces nested strings, formats, hashes, enums, and unknown properties", 
   }
 });
 
+test("CLI rejects non-portable, absolute, traversing, and control-bearing source paths", () => {
+  for (const path of [
+    "",
+    "/src/Hook.sol",
+    "src/Hook.sol/",
+    "src//Hook.sol",
+    "./src/Hook.sol",
+    "src/./Hook.sol",
+    "../Hook.sol",
+    "src/../Hook.sol",
+    "C:/repo/Hook.sol",
+    "C:\\repo\\Hook.sol",
+    "\\\\server\\share\\Hook.sol",
+    "//server/share/Hook.sol",
+    "src\\Hook.sol",
+    "src/\nHook.sol",
+    "src/\u0001Hook.sol",
+    "src/\u007fHook.sol",
+  ]) {
+    const manifest = immutable();
+    manifest.source.path = path;
+    errorsFor(manifest, "$.source.path");
+  }
+
+  const portable = immutable();
+  portable.source.path = ".github/hooks/Hook Example.sol";
+  assert.deepEqual(validate(portable), []);
+});
+
 test("rejects non-HTTPS schemes for every externally rendered URL", () => {
   const manifest = proxy();
   manifest.author.url = "http://example.com/author";
@@ -158,6 +187,54 @@ test("rejects contradictory proxy declarations and validates authority fields", 
   immutableWithAdmin.proxy.admin = "0x3333333333333333333333333333333333333333";
   errorsFor(immutableWithAdmin, "$.proxy.admin");
 
+  const proseOnly = proxy();
+  delete proseOnly.proxy.admin;
+  delete proseOnly.proxy.timelock;
+  delete proseOnly.proxy.upgradeAuthorityRole;
+  errorsFor(proseOnly, "$.proxy");
+
+  const transparentWithoutAdmin = proxy();
+  transparentWithoutAdmin.proxy.kind = "transparent";
+  delete transparentWithoutAdmin.proxy.admin;
+  errorsFor(transparentWithoutAdmin, "$.proxy.admin");
+
+  const beaconWithoutBeacon = proxy();
+  beaconWithoutBeacon.proxy.kind = "beacon";
+  errorsFor(beaconWithoutBeacon, "$.proxy.beacon");
+
+  const validBeacon = proxy();
+  validBeacon.proxy.kind = "beacon";
+  validBeacon.proxy.beacon = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  assert.deepEqual(validate(validBeacon), []);
+
+  const roleLinked = proxy();
+  delete roleLinked.proxy.admin;
+  delete roleLinked.proxy.timelock;
+  assert.deepEqual(validate(roleLinked), []);
+
+  const unknownRole = structuredClone(roleLinked);
+  unknownRole.proxy.upgradeAuthorityRole = "UNKNOWN_ROLE";
+  errorsFor(unknownRole, "$.proxy.upgradeAuthorityRole");
+
+  const duplicateRole = structuredClone(roleLinked);
+  duplicateRole.privilegedRoles.push(
+    structuredClone(duplicateRole.privilegedRoles[0]),
+  );
+  errorsFor(duplicateRole, "$.proxy.upgradeAuthorityRole");
+
+  const emptyRole = structuredClone(roleLinked);
+  emptyRole.privilegedRoles[0].holders = [];
+  errorsFor(emptyRole, "$.proxy.upgradeAuthorityRole");
+
+  const unlistedAdmin = proxy();
+  unlistedAdmin.proxy.admin = "0x3333333333333333333333333333333333333333";
+  errorsFor(unlistedAdmin, "$.proxy.admin");
+
+  const unlistedTimelock = proxy();
+  unlistedTimelock.proxy.timelock =
+    "0x4444444444444444444444444444444444444444";
+  errorsFor(unlistedTimelock, "$.proxy.timelock");
+
   const malformed = immutable();
   malformed.proxy = { kind: "unknown", upgradeable: "yes" };
   errorsFor(malformed, "$.proxy.kind");
@@ -197,6 +274,18 @@ test("requires source-verification evidence consistent with its status", () => {
       ),
     );
   }
+});
+
+test("rejects duplicate verifier evidence keyed by chainId and URL", () => {
+  const manifest = proxy();
+  manifest.sourceVerification.verifiers[1] = {
+    ...structuredClone(manifest.sourceVerification.verifiers[0]),
+    status: "pending",
+  };
+  const errors = validate(manifest);
+  assert.deepEqual(errors, [
+    "$.sourceVerification.verifiers[1].url: duplicates chainId and url from verifier 0",
+  ]);
 });
 
 test("validates privileged roles, dependencies, liveness, and security details", () => {
@@ -244,6 +333,82 @@ test("validates privileged roles, dependencies, liveness, and security details",
       errors.some((error) => error.includes(path)),
       `expected ${path} in:\n${errors.join("\n")}`,
     );
+});
+
+test("requires kind-aware non-vacuous external dependency locators", () => {
+  const dependency = (kind) => ({
+    name: `${kind} dependency`,
+    kind,
+    purpose: "Required by hook execution.",
+  });
+
+  for (const kind of ["contract", "token", "oracle", "relayer"]) {
+    const missing = immutable();
+    missing.externalDependencies = [dependency(kind)];
+    errorsFor(missing, "$.externalDependencies[0].addresses");
+
+    const empty = immutable();
+    empty.externalDependencies = [{ ...dependency(kind), addresses: [] }];
+    errorsFor(empty, "$.externalDependencies[0].addresses");
+
+    const zero = immutable();
+    zero.externalDependencies = [
+      { ...dependency(kind), addresses: [`0x${"0".repeat(40)}`] },
+    ];
+    errorsFor(zero, "$.externalDependencies[0].addresses[0]");
+  }
+
+  const api = immutable();
+  api.externalDependencies = [
+    { ...dependency("api"), url: "https://api.example.com/v1" },
+  ];
+  assert.deepEqual(validate(api), []);
+
+  api.externalDependencies[0].addresses = [];
+  errorsFor(api, "$.externalDependencies[0].addresses");
+
+  const apiWithoutUrl = immutable();
+  apiWithoutUrl.externalDependencies = [
+    {
+      ...dependency("api"),
+      addresses: ["0x3333333333333333333333333333333333333333"],
+    },
+  ];
+  errorsFor(apiWithoutUrl, "$.externalDependencies[0].url");
+
+  for (const kind of ["other"]) {
+    const byAddress = immutable();
+    byAddress.externalDependencies = [
+      {
+        ...dependency(kind),
+        addresses: ["0x3333333333333333333333333333333333333333"],
+      },
+    ];
+    assert.deepEqual(validate(byAddress), []);
+
+    const byUrl = immutable();
+    byUrl.externalDependencies = [
+      { ...dependency(kind), url: "https://dependency.example.com" },
+    ];
+    assert.deepEqual(validate(byUrl), []);
+
+    byUrl.externalDependencies[0].addresses = [];
+    errorsFor(byUrl, "$.externalDependencies[0].addresses");
+
+    const missing = immutable();
+    missing.externalDependencies = [dependency(kind)];
+    errorsFor(missing, "$.externalDependencies[0]");
+
+    const empty = immutable();
+    empty.externalDependencies = [{ ...dependency(kind), addresses: [] }];
+    errorsFor(empty, "$.externalDependencies[0].addresses");
+
+    const zero = immutable();
+    zero.externalDependencies = [
+      { ...dependency(kind), addresses: [`0x${"0".repeat(40)}`] },
+    ];
+    errorsFor(zero, "$.externalDependencies[0].addresses[0]");
+  }
 });
 
 test("requires gas estimates to match callbacks exactly and orders bounds", () => {

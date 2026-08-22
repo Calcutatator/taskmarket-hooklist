@@ -169,6 +169,7 @@ jobs:
 
           if [ "$CONTRACTS" = "false" ] && { [ "$MAKEFILE_HEADER_CHANGED" = "true" ] \
               || block_changed "Makefile" '^contract:' '^[a-zA-Z0-9_.-]+:' \
+              || block_changed "Makefile" '^hook-manifest-schema-drift:' '^[a-zA-Z0-9_.-]+:' \
               || block_changed ".github/workflows/ci.yml" '^  quality-contracts:' '^  [a-zA-Z_-]+:$'; }; then
             CONTRACTS=true
             echo "contracts-relevant block changed in Makefile or ci.yml"

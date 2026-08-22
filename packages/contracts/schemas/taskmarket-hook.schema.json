@@ -156,6 +156,7 @@
           "properties": {
             "implementation": { "$ref": "#/$defs/nonZeroAddress" },
             "admin": { "$ref": "#/$defs/nonZeroAddress" },
+            "beacon": { "$ref": "#/$defs/nonZeroAddress" },
             "timelock": { "$ref": "#/$defs/nonZeroAddress" }
           }
         },
@@ -178,9 +179,74 @@
             "properties": {
               "addresses": {
                 "type": "array",
+                "minItems": 1,
                 "items": { "$ref": "#/$defs/nonZeroAddress" }
               }
-            }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "enum": ["contract", "oracle", "token", "relayer"]
+                    }
+                  },
+                  "required": ["kind"]
+                },
+                "then": {
+                  "type": "object",
+                  "properties": {
+                    "addresses": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": { "$ref": "#/$defs/nonZeroAddress" }
+                    }
+                  },
+                  "required": ["addresses"]
+                }
+              },
+              {
+                "if": {
+                  "type": "object",
+                  "properties": { "kind": { "const": "api" } },
+                  "required": ["kind"]
+                },
+                "then": {
+                  "type": "object",
+                  "properties": { "url": {} },
+                  "required": ["url"]
+                }
+              },
+              {
+                "if": {
+                  "type": "object",
+                  "properties": { "kind": { "const": "other" } },
+                  "required": ["kind"]
+                },
+                "then": {
+                  "type": "object",
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "addresses": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": { "$ref": "#/$defs/nonZeroAddress" }
+                        }
+                      },
+                      "required": ["addresses"]
+                    },
+                    {
+                      "type": "object",
+                      "properties": { "url": {} },
+                      "required": ["url"]
+                    }
+                  ]
+                }
+              }
+            ]
           }
         },
         "gas": {
@@ -436,7 +502,7 @@
         "commit": { "type": "string", "pattern": "^[a-fA-F0-9]{7,64}$" },
         "path": {
           "type": "string",
-          "pattern": "^(?!/)(?!.*\\.\\.)[^\\u0000]+$"
+          "pattern": "^(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.?(/|$))(?!.*//)(?!.*[\\\\\\u0000-\\u001F\\u007F])[^/]+(?:/[^/]+)*$"
         }
       }
     },
@@ -554,7 +620,16 @@
         "upgradeable": { "type": "boolean" },
         "implementation": { "$ref": "#/$defs/address" },
         "admin": { "$ref": "#/$defs/address" },
+        "beacon": {
+          "$ref": "#/$defs/address",
+          "description": "Beacon contract read by a beacon proxy; required only for kind beacon."
+        },
         "timelock": { "$ref": "#/$defs/address" },
+        "upgradeAuthorityRole": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact privilegedRoles[].name entry that authorizes upgrades. The CLI requires this reference to resolve uniquely when present."
+        },
         "upgradeAuthorityDescription": { "type": "string", "minLength": 1 }
       },
       "allOf": [
@@ -565,6 +640,23 @@
           },
           "then": {
             "required": ["implementation", "upgradeAuthorityDescription"],
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": { "admin": {} },
+                "required": ["admin"]
+              },
+              {
+                "type": "object",
+                "properties": { "timelock": {} },
+                "required": ["timelock"]
+              },
+              {
+                "type": "object",
+                "properties": { "upgradeAuthorityRole": {} },
+                "required": ["upgradeAuthorityRole"]
+              }
+            ],
             "properties": {
               "kind": {
                 "enum": ["erc1967", "transparent", "uups", "beacon", "custom"]
@@ -578,9 +670,39 @@
               "kind": { "const": "none" },
               "implementation": false,
               "admin": false,
+              "beacon": false,
               "timelock": false,
+              "upgradeAuthorityRole": false,
               "upgradeAuthorityDescription": false
             }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": { "kind": { "const": "transparent" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "type": "object",
+            "properties": { "admin": {} },
+            "required": ["admin"]
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": { "kind": { "const": "beacon" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "type": "object",
+            "properties": { "beacon": {} },
+            "required": ["beacon"]
+          },
+          "else": {
+            "type": "object",
+            "properties": { "beacon": false }
           }
         }
       ]
@@ -591,7 +713,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "kind", "addresses", "purpose"],
+        "required": ["name", "kind", "purpose"],
         "properties": {
           "name": { "type": "string", "minLength": 1 },
           "kind": {
@@ -719,7 +841,7 @@
       }
     }
   },
-  "$comment": "Generic Draft 2020-12 validation enforces non-placeholder evidence whenever x-draft is absent or false. A true/object x-draft marker conditionally permits placeholder editing output but explicitly marks it non-publishable. The CLI additionally enforces unique deployment chainIds, verifier/protocol-default chains drawn from deployments, exact callback-to-gas-estimate coverage, typical <= maximum, exact all/some-chain default semantics, and always reports drafts non-publishable.",
+  "$comment": "Generic Draft 2020-12 validation enforces non-placeholder evidence whenever x-draft is absent or false. A true/object x-draft marker conditionally permits placeholder editing output but explicitly marks it non-publishable. The CLI additionally enforces unique deployment chainIds and verifier (chainId, url) pairs, verifier/protocol-default chains drawn from deployments, concrete proxy authority links to privileged roles, exact callback-to-gas-estimate coverage, typical <= maximum, exact all/some-chain default semantics, and always reports drafts non-publishable.",
   "allOf": [
     {
       "if": { "properties": { "x-draft": {} }, "required": ["x-draft"] },

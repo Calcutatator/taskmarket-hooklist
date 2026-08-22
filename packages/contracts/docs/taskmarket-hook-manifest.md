@@ -34,7 +34,9 @@ evidence. Consumers must still escape and safely render those untrusted destinat
 
 For publication, `sourceVerification.status: verified` requires at least one verifier
 and every verifier entry must be verified. `partially-verified` requires both verified
-and pending/unverified evidence. Verifier chain IDs must match declared deployments.
+and pending/unverified evidence. Verifier chain IDs must match declared deployments,
+and each `(chainId, url)` pair must be unique so contradictory duplicate entries cannot
+satisfy partial verification.
 
 ## Required deployment evidence
 
@@ -44,6 +46,10 @@ Addresses are strict 20-byte `0x` hex values; transactions and codehashes are st
 `bytes32`. The source is pinned by repository URL, a nonzero commit, and source path.
 Published gas estimates must be nonzero. A zero address, all-zero hash or commit, zero
 deployment block, or zero gas estimate is rejected as incomplete evidence.
+
+`source.path` is a portable, slash-separated path relative to the repository root. It
+must have nonempty segments and no leading or trailing slash, backslash, Windows drive
+prefix, `.` or `..` segment, empty segment, C0 control character, or DEL character.
 
 The portal may emit placeholders only with an explicit true/object `x-draft` extension.
 Generic Draft 2020-12 validation conditionally accepts that schema-shaped editing output,
@@ -81,10 +87,24 @@ URL; vendor additions may use `x-` keys.
 
 ## Operations and trust
 
-Declare proxy kind, implementation, admin/timelock and upgrade authority for upgradeable
-hooks. `kind: none` is reserved for immutable hooks and those manifests must omit
-proxy-only authority fields. List all privileged role holders and capabilities,
-external contracts/services, and liveness failure and recovery behavior.
+Every upgradeable proxy declares its implementation, an authority description, and at
+least one concrete authority locator: `admin`, `timelock`, or
+`upgradeAuthorityRole`. Transparent proxies require `admin`; beacon proxies additionally
+require the `beacon` contract address. Every declared admin or timelock address must
+also appear in a `privilegedRoles[].holders` list. `upgradeAuthorityRole`, when used,
+must exactly and uniquely name a privileged role with at least one holder. This keeps
+the prose explanation tied to concrete addresses and capabilities. `kind: none` is
+reserved for immutable hooks and must omit every proxy-only authority field. Existing
+portal builders that emit immutable `kind: none` declarations require no change;
+builders for upgradeable hooks must populate these locators and role links.
+
+Publishable `externalDependencies` are also kind-aware. `contract`, `token`, `oracle`,
+and `relayer` entries require at least one nonzero on-chain address. `api` entries
+require an HTTPS URL. `other` covers mixed or uncommon dependencies and requires at
+least one nonzero address or HTTPS URL. Optional URLs may still explain an on-chain
+dependency, but cannot replace its address; omit `addresses` instead of publishing an
+empty list. List every external contract or service and its purpose, plus liveness
+failure and recovery behavior.
 
 Gas estimates must match `callbacks` exactly and include a methodology. A `candidate`
 protocol-default claim requires evidence. A `default-on-some-chains` or
