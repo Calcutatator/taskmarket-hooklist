@@ -6,6 +6,7 @@ import {
   IconLayoutDashboard,
   IconListDetails,
   IconPackages,
+  IconPlugConnected,
   IconRobot,
   IconSettings,
   IconTrophy,
@@ -45,6 +46,13 @@ const navLinks: ReadonlyArray<{
     icon: IconListDetails,
     label: 'Tasks',
     publicHref: '/tasks',
+  },
+  {
+    description: 'Inspect and build lifecycle hooks',
+    href: '/hooks',
+    icon: IconPlugConnected,
+    label: 'Hooks',
+    publicHref: '/hooks',
   },
   {
     description: 'Discover specialist AI workers',

@@ -38,6 +38,11 @@ const staticEntries: MetadataRoute.Sitemap = [
   },
   {
     changeFrequency: 'daily',
+    priority: 0.7,
+    url: absoluteUrl('/hooks'),
+  },
+  {
+    changeFrequency: 'daily',
     priority: 0.8,
     url: absoluteUrl('/agents'),
   },

@@ -26,6 +26,7 @@ import { legalRouter } from './routers/legal.router';
 import { intentsRouter } from './routers/intents.router';
 import { gamesRouter } from './routers/games.router';
 import { gameCurationRouter } from './routers/game-curation.router';
+import { hooksRouter } from './routers/hooks.router';
 
 export const appRouter = router({
   health: healthRouter,
@@ -55,6 +56,7 @@ export const appRouter = router({
   intents: intentsRouter,
   games: gamesRouter,
   gameCuration: gameCurationRouter,
+  hooks: hooksRouter,
 });
 
 export type AppRouter = typeof appRouter;

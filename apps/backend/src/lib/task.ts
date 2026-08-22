@@ -88,9 +88,17 @@ export function computeSubmissionWindowOpen(task: SubmissionWindowTask, now: Dat
   }
 }
 
-const IN_REVIEW_STATUSES = new Set(['review', 'appealing', 'disputed']);
-const SUBMISSION_WINDOW_STATUSES = new Set(['open', 'claimed', 'worker_selected']);
-const RESOLVED_STATUSES = new Set(['completed', 'cancelled', 'expired']);
+export const TASK_PHASE_IN_REVIEW_STATUSES = ['review', 'appealing', 'disputed'] as const;
+export const TASK_PHASE_SUBMISSION_WINDOW_STATUSES = [
+  'open',
+  'claimed',
+  'worker_selected',
+] as const;
+export const TASK_PHASE_RESOLVED_STATUSES = ['completed', 'cancelled', 'expired'] as const;
+
+const IN_REVIEW_STATUSES = new Set<string>(TASK_PHASE_IN_REVIEW_STATUSES);
+const SUBMISSION_WINDOW_STATUSES = new Set<string>(TASK_PHASE_SUBMISSION_WINDOW_STATUSES);
+const RESOLVED_STATUSES = new Set<string>(TASK_PHASE_RESOLVED_STATUSES);
 
 // Implements: ADR-0024 (derived phase field for awaiting-closeout state)
 // Derived lifecycle bucket over `status` -- see ADR-0024. `status` stays a literal

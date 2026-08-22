@@ -18,6 +18,7 @@
     "format:write": "prettier . --write",
     "type-check": "tsc --noEmit",
     "test": "vitest run --project=unit",
+    "test:hook-manifest": "vitest run --project=unit lib/hooklist.manifest.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:update": "playwright test --update-snapshots",
     "test:watch": "vitest --project=unit"

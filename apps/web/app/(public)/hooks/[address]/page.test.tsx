@@ -1,0 +1,59 @@
+import { render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const api = vi.hoisted(() => ({ fetchHook: vi.fn() }));
+
+vi.mock('@/lib/api/server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api/server')>();
+  return { ...actual, fetchHook: api.fetchHook };
+});
+
+import { ApiConnectionError } from '@/lib/api/server';
+
+import HookPage from './page';
+
+const address = '0x1111111111111111111111111111111111111111';
+const hook = {
+  activePhaseTaskCount: 1,
+  address,
+  modes: ['bounty'] as const,
+  taskCount: 9,
+  taskIds: Array.from({ length: 8 }, (_, index) => `task-${index + 1}`),
+};
+
+describe('public Hooklist detail route', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.fetchHook.mockResolvedValue(hook);
+  });
+
+  it('uses the dedicated address lookup and renders at most eight public task references', async () => {
+    render(await HookPage({ params: Promise.resolve({ address }) }));
+
+    expect(api.fetchHook).toHaveBeenCalledWith(address);
+    expect(screen.getAllByRole('link', { name: /View task/i })).toHaveLength(8);
+  });
+
+  it('returns a Next 404 for malformed and missing hook addresses', async () => {
+    await expect(
+      HookPage({ params: Promise.resolve({ address: 'not-an-address' }) })
+    ).rejects.toMatchObject({ digest: 'NEXT_HTTP_ERROR_FALLBACK;404' });
+    expect(api.fetchHook).not.toHaveBeenCalled();
+
+    api.fetchHook.mockResolvedValueOnce(null);
+    await expect(HookPage({ params: Promise.resolve({ address }) })).rejects.toMatchObject({
+      digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+    });
+  });
+
+  it('retains an explicit API-unavailable state instead of turning it into a 404', async () => {
+    api.fetchHook.mockRejectedValue(
+      new ApiConnectionError('unavailable', { path: `/api/hooks/${address}`, status: 503 })
+    );
+
+    render(await HookPage({ params: Promise.resolve({ address }) }));
+
+    expect(screen.getByText('Could not load this hook')).toBeVisible();
+    expect(screen.getByText(/public market API is unavailable/i)).toBeVisible();
+  });
+});

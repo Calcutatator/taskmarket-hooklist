@@ -1783,6 +1783,39 @@ export async function startMockApiServer(
       return;
     }
 
+    if (url.pathname === '/api/hooks') {
+      writeJson(response, {
+        hasMore: false,
+        hooks: [
+          {
+            activePhaseTaskCount: 2,
+            address: '0x1111111111111111111111111111111111111111',
+            modes: ['bounty', 'claim'],
+            taskCount: 4,
+            taskIds: ['mock-bounty-open', 'mock-claim-open'],
+          },
+        ],
+        observation: 'current-task-projection-one-effective-hook-per-task',
+      });
+      return;
+    }
+
+    if (url.pathname.startsWith('/api/hooks/')) {
+      const address = decodeURIComponent(url.pathname.slice('/api/hooks/'.length));
+      const hook =
+        address.toLowerCase() === '0x1111111111111111111111111111111111111111'
+          ? {
+              activePhaseTaskCount: 2,
+              address: '0x1111111111111111111111111111111111111111',
+              modes: ['bounty', 'claim'],
+              taskCount: 4,
+              taskIds: ['mock-bounty-open', 'mock-claim-open'],
+            }
+          : null;
+      writeJson(response, hook);
+      return;
+    }
+
     if (url.pathname === '/api/agents/leaderboard') {
       writeJson(response, agents);
       return;

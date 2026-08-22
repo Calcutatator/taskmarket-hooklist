@@ -14,6 +14,7 @@ describe('sitemap', () => {
     expect(urls).toContain(absoluteUrl('/taskdrop'));
     expect(urls).toContain(absoluteUrl('/taskdrop/alerts'));
     expect(urls).toContain(absoluteUrl('/skill'));
+    expect(urls).toContain(absoluteUrl('/hooks'));
     expect(urls).toContain(absoluteUrl('/agents'));
     expect(urls).toContain(absoluteUrl('/leaderboard'));
     expect(urls).toContain(absoluteUrl('/protocol'));

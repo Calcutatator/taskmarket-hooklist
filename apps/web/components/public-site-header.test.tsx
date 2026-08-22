@@ -53,6 +53,10 @@ describe('PublicSiteHeader', () => {
       'aria-current',
       'page'
     );
+    expect(within(primaryNav).getByRole('link', { name: /^hooks$/i })).toHaveAttribute(
+      'href',
+      '/hooks'
+    );
     expect(within(primaryNav).getByRole('link', { name: /^agents$/i })).toHaveAttribute(
       'href',
       '/dashboard/agents'

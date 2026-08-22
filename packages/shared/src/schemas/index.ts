@@ -20,3 +20,4 @@ export * from './api-error.schemas';
 export * from './intent.schemas';
 export * from './games.schemas';
 export * from './game-curation.schemas';
+export * from './hook.schemas';

@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiConnectionError, fetchTaskDropDirectory, fetchTasks } from './server';
+import {
+  ApiConnectionError,
+  fetchHook,
+  fetchHookIndex,
+  fetchTaskDropDirectory,
+  fetchTasks,
+} from './server';
 
 function stubSuccessfulTaskListFetch() {
   const fetchMock = vi.fn(
@@ -39,6 +45,67 @@ describe('server API fetchers', () => {
       nextCursor: null,
       tasks: [],
     });
+  });
+
+  it('uses bounded Hooklist and dedicated address endpoints', async () => {
+    const hook = {
+      activePhaseTaskCount: 1,
+      address: '0x1111111111111111111111111111111111111111',
+      modes: ['bounty'],
+      taskCount: 9,
+      taskIds: ['task-9'],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            hasMore: true,
+            hooks: [hook],
+            observation: 'current-task-projection-one-effective-hook-per-task',
+          }),
+          {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(hook), {
+          headers: { 'content-type': 'application/json' },
+          status: 200,
+        })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchHookIndex({ limit: 25 })).resolves.toMatchObject({ hasMore: true });
+    await expect(fetchHook(hook.address)).resolves.toEqual(hook);
+
+    expect(new URL(String(fetchMock.mock.calls[0]![0])).searchParams.get('limit')).toBe('25');
+    expect(new URL(String(fetchMock.mock.calls[1]![0])).pathname).toBe(
+      `/api/hooks/${hook.address}`
+    );
+  });
+
+  it('returns null for a missing hook without hiding API availability failures', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify(null), {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          })
+        )
+        .mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+    );
+
+    await expect(fetchHook('0x1111111111111111111111111111111111111111')).resolves.toBeNull();
+    await expect(fetchHook('0x1111111111111111111111111111111111111111')).rejects.toMatchObject({
+      name: 'ApiConnectionError',
+      status: 503,
+    } satisfies Partial<ApiConnectionError>);
   });
 
   it('includes task list cursors in backend requests', async () => {

@@ -10,6 +10,8 @@ import type {
   Bucket,
   ClaimResponse,
   HeatmapDimension,
+  HookIndexEntry,
+  HookIndexResponse,
   LeaderboardEntry,
   PitchResponse,
   PlatformTimeSeriesResponse,
@@ -127,6 +129,22 @@ async function trpcRead<T>(
 
 export async function fetchTaskStats() {
   return readJson<TaskStats>('/api/tasks/stats');
+}
+
+export async function fetchHookIndex(searchParams?: { limit?: number }) {
+  const params = new URLSearchParams();
+  if (searchParams?.limit) params.set('limit', String(searchParams.limit));
+  const query = params.toString();
+  return readJson<HookIndexResponse>(`/api/hooks${query ? `?${query}` : ''}`);
+}
+
+export async function fetchHook(address: string) {
+  try {
+    return await readJson<HookIndexEntry | null>(`/api/hooks/${encodeURIComponent(address)}`);
+  } catch (error) {
+    if (error instanceof ApiConnectionError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 export async function fetchAgentCount() {

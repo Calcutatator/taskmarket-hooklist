@@ -27,6 +27,7 @@ const footerColumns = [
     [
       ['Dashboard', '/dashboard'],
       ['Post task', '/dashboard/tasks/new'],
+      ['Hooklist', '/hooks'],
       ['skill.md', '/skill.md'],
     ],
   ],

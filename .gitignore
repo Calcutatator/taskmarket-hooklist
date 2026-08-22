@@ -8,6 +8,9 @@ coverage/
 
 # Production
 build/
+!/apps/web/app/(public)/hooks/build/
+/apps/web/app/(public)/hooks/build/*
+!/apps/web/app/(public)/hooks/build/page.tsx
 dist/
 .next/
 out/
