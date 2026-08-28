@@ -7,7 +7,7 @@
     "start": "node server.mjs",
     "dev": "node server.mjs",
     "check": "node --check public/config.js && node --check public/app.js && node --check server.mjs && node --check api/hooks.js && node --check scripts/build-pages.js && node --check scripts/validate-pages.js",
-    "test": "node --test",
+    "test": "node --test test/*.test.js",
     "registry:build": "node scripts/build-registry.js",
     "registry:validate": "node scripts/validate-registry.js",
     "pages:build": "node scripts/build-pages.js",

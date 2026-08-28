@@ -69,6 +69,12 @@ For reproducible fixture builds, pass a local Taskmarket task response:
 node scripts/build-registry.js --input tasks.json --generated-at 2026-08-21T00:00:00Z
 ```
 
+## Hook projects
+
+[`affiliate-sidecar-hook/`](affiliate-sidecar-hook/) is an opt-in Foundry hook that escrows an explicit
+affiliate amount `Y` alongside an independent Taskmarket reward `X`. Its project README documents the
+signed funding payload, lifecycle behavior, tests, and Base Sepolia deployment flow.
+
 ## Deploy
 
 The repository is ready to import into Vercel with the **Other** framework preset. Vercel serves `public/` as the static output and deploys `api/hooks.js` as the live registry function; `vercel.json` gives the first refresh up to 30 seconds and adds restrictive browser security headers. No build command or environment variable is required for the default Taskmarket API.
