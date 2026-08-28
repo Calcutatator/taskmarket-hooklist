@@ -7,10 +7,10 @@ An opt-in Taskmarket V1 hook that adds a flexible, separately funded affiliate r
 - `X` and `Y` are independent explicit token amounts. The contract imposes no percentage relationship.
 - Taskmarket's platform fee applies to `X`; it does not apply to `Y`.
 
-For example, `X = 90 USDC` and `Y = 10 USDC` requires 100 USDC of funding. With Taskmarket's current
-default 7.5% platform fee, the worker receives 83.25 USDC, the platform receives 6.75 USDC, and the
-affiliate receives 10 USDC after successful completion. These are only example values: callers select
-both amounts for every task.
+For example, `X = 90 USDC` and `Y = 10 USDC` requires 100 USDC of funding. If the task's fee snapshot
+were 7.5%, the worker would receive 83.25 USDC, the platform would receive 6.75 USDC, and the affiliate
+would receive 10 USDC after successful completion. These values and the 7.5% fee are hypothetical:
+callers select both amounts for every task, and Taskmarket stamps its then-current fee onto the task.
 
 ### Relationship to x402aff
 
@@ -155,6 +155,20 @@ configuration changed. Serialize concurrent creation requests per requester wher
 protocol-default hook or fee change between quoting and mining can likewise change `hooksHash` or `feeBps`
 and require a fresh quote and signature.
 
+### Diamond upgrades and quote-time trust
+
+The hook is permanently bound to an owner-upgradeable Taskmarket Diamond. The Diamond owner can replace
+facets and change the protocol-default hook list. Default hooks may themselves be upgradeable. The funding
+signature binds the fee value and the final ordered hook addresses, but it does not bind Diamond facet
+bytecode or implementation bytecode behind a hook proxy.
+
+Under the reviewed V20 behavior, a nonce, fee, or default-hook address change between signing and mining
+changes the committed task terms and makes creation revert atomically. The integration must re-read state,
+recompute the task ID and terms, and obtain a new signature. An implementation upgrade at an unchanged
+address is not detected by that hash. Monitor Diamond and default-hook upgrades, stop quoting during an
+unreviewed change, and re-review both creation and terminal-state semantics before resuming. The deployment
+preflight below is a point-in-time compatibility check, not a guarantee about future upgrades.
+
 ### Refund recipient
 
 The payer explicitly signs the refund recipient. Set it to:
@@ -165,10 +179,29 @@ The payer explicitly signs the refund recipient. Set it to:
 
 The contract never guesses between those models.
 
+### Immutable recipient liveness
+
 The beneficiary and refund recipient are immutable after funding. The hook rejects the zero address and its
 own address, but it has no recipient-rotation or emergency-withdrawal path. A typo, lost wallet, incompatible
 contract recipient, or an address later blocked by the payment token can make `Y` permanently unclaimable.
-Validate both recipients before signing and treat token blacklist/freeze behavior as part of the risk model.
+Validate both recipients before signing and treat wallet availability and token blacklist/freeze behavior as
+ongoing liveness dependencies.
+
+### Hook gas budget
+
+Taskmarket V20 forwards a fixed 1,000,000 gas stipend to each hook call. `checkFund` reconstructs terms from
+several Diamond getters, hashes dynamic task metadata, validates the payer signature, and transfers `Y`.
+Very large `contentURI`, tags, hook data/signatures, or an expensive ERC-1271 wallet validation can exhaust
+that stipend. Task creation then reverts atomically as a rejected funding hook. Bound production metadata and
+payload sizes and test representative smart-wallet payers against the target deployment; ordinary transaction
+gas limits cannot raise the per-hook stipend.
+
+### Shared hook data compatibility
+
+Taskmarket forwards one shared `hookData` byte string to every V1 hook on the task. This payload works with
+hooks that ignore `hookData`. Coexistence with another configuration-consuming hook requires a common outer
+envelope agreed by every consumer. This contract currently decodes its V1 tuple directly and does not provide
+such an envelope, so an incompatible second consumer will make task creation revert.
 
 ## Deliberate V1 behavior
 
@@ -180,10 +213,6 @@ Validate both recipients before signing and treat token blacklist/freeze behavio
 - Sidecar expiry never runs independently of Taskmarket. If the core task stays nonterminal, `Y` stays
   escrowed too. For example, an active Bounty/Benchmark submission may require requester action before the
   core can reach `Expired`; neither the payer nor refund recipient can bypass that state machine here.
-- `hookData` is shared by all V1 hooks on a task. This payload works alongside hooks that ignore
-  `hookData`; coexistence with another configuration-consuming hook requires a common outer envelope agreed
-  by every consuming hook. This contract currently decodes its V1 tuple directly and does not supply such an
-  envelope.
 - There is no owner withdrawal path. Escrow liabilities can leave only through predetermined affiliate
   payment or refund claims.
 - The hook supports EOA signatures and ERC-1271 smart-wallet signatures through OpenZeppelin's
@@ -230,10 +259,16 @@ documentation: `0x0A24E9c3b9E31B8258329e187470ACc16497Cec7`. Before starting a b
 - Base Sepolia chain ID `84532`
 - Contract code at the configured Diamond address
 - `diamondVersion() == 20`
+- The Diamond's `usdcToken()` to equal
+  [Circle's canonical Base Sepolia USDC](https://developers.circle.com/stablecoins/usdc-contract-addresses)
+  at `0x036CbD53842c5426634e7929541eC2318f3dCF7e`, with contract code present
+- Code-backed Diamond loupe routes for `diamondVersion()`, `usdcToken()`, and every task getter this hook
+  directly calls
 
 The guard deliberately rejects other chains, missing/wrong contracts, older revisions, and unreviewed newer
-revisions. Verify the address and revision independently before broadcasting; changing the constants is a
-new deployment decision, not a routine workaround for the guard.
+revisions. It does not pin mutable fee/default-hook state or facet bytecode, and it cannot prevent a later
+Diamond upgrade. Verify the address, revision, payment token, and current upgrade state independently before
+broadcasting; changing the constants is a new deployment decision, not a routine workaround for the guard.
 
 Set `PRIVATE_KEY`, `FORGE_BASE_SEPOLIA_RPC_URL`, and `FORGE_ETHERSCAN_API_KEY` in `.env`, then run:
 
@@ -253,3 +288,11 @@ This implementation has automated tests but has not been independently audited. 
 task, and a `checkFund` revert rejects creation, so verify bytecode, deployment parameters, both production
 allowances, the signed task-terms calculation, recipient recoverability, and the complete x402/PGTR funding
 integration before using real funds.
+
+For registry disclosure, its current security status is **unaudited** and its conformance status is **tested**
+by the unit, fuzz, and local Diamond integration suite. A registry listing is discovery metadata, not an audit,
+endorsement, or protocol-default designation.
+
+## License
+
+[MIT](LICENSE)
