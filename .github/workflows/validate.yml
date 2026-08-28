@@ -21,3 +21,27 @@ jobs:
       - run: npm run check
       - run: npm run registry:validate
       - run: npm test
+
+  affiliate-sidecar-hook:
+    name: Validate affiliate sidecar hook
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: affiliate-sidecar-hook
+    steps:
+      - uses: actions/checkout@v6
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - name: Install pinned Foundry dependencies
+        run: |
+          forge install --no-git daydreamsai/taskmarket-contracts@a85cc8dae76e0fc6da9e463375fd2e385710d442
+          forge install --no-git OpenZeppelin/openzeppelin-contracts@fcbae5394ae8ad52d8e580a3477db99814b9d565
+          forge install --no-git OpenZeppelin/openzeppelin-contracts-upgradeable@7bf4727aacdbfaa0f36cbd664654d0c9e1dc52bf
+          forge install --no-git foundry-rs/forge-std@1801b0541f4fda118a10798fd3486bb7051c5dd6
+      - name: Check formatting
+        run: forge fmt --check
+      - name: Build
+        run: forge build
+      - name: Test
+        run: forge test -j 1
